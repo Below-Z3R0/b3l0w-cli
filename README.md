@@ -147,6 +147,63 @@ Un binario `b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` (0700).
 un `b3l0w-update` en un directorio del PATH lo haría correr con este
 usuario, y este CLI pide sudo. `git` acepta ese riesgo; acá no.
 
+## Plugins incluidos
+
+Los tres plugins viven en `internal/plugins/` y se compilan a binarios
+`b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/`. El core los ejecuta como
+extensión: `b3l0w <nombre> …`.
+
+### `b3l0w we` — Wallpaper Engine
+
+Catálogo del Workshop de Steam, conversión a video, posters, miniaturas y fondos
+de color. Es además el backend del plugin de Noctalia `b3l0w/wallpaper`.
+
+```
+b3l0w we list [--json]              catálogo del workshop
+b3l0w we info <id> [--json]         un wallpaper con sus propiedades
+b3l0w we convert --out DIR          convierte a video (extract o record)
+b3l0w we poster --out DIR           PNG por wallpaper (usa el motor)
+b3l0w we still --file V --out J     cuadro de un video (miniaturas)
+b3l0w we scan --dir R --kind image  imágenes o videos de una carpeta
+b3l0w we solid --color '#rrggbb'    wallpaper de un solo color
+b3l0w we deps [--json]              qué falta en el sistema
+```
+
+Detalle completo, esquemas JSON y contrato con el plugin:
+[SPEC-we.md](SPEC-we.md).
+
+Lo que no es obvio:
+
+- `--crf 0` **copia** el archivo en vez de recodificar (md5 idéntico); es el modo
+  para los wallpapers `video`, que no necesitan el motor.
+- `we scan --thumbs DIR` genera miniaturas de 320 px con cuatro ffmpeg en paralelo
+  y las cachea por hash de ruta: 55 fondos en 4 s la primera vez, 12 ms después.
+- El nombre de las miniaturas (`v-<djb2(ruta)>.jpg`) es contrato con el plugin de
+  Noctalia; cambiarlo acá implica cambiarlo allá.
+
+### `b3l0w docker` — contenedores
+
+```
+b3l0w docker snapshot [--json]      estado completo en una pasada
+b3l0w docker start|stop|restart ID
+b3l0w docker logs ID [--tail N]
+b3l0w docker stats [--json]
+b3l0w docker inspect ID [--json]
+b3l0w docker run --image IMG [--name N] [--network NET] [--port P] [--env K=V]
+b3l0w docker remove|rmi|volume-rm|network-rm
+```
+
+### `b3l0w anilist` — biblioteca y carátulas
+
+```
+b3l0w anilist sync                  biblioteca + carátulas en un paso
+b3l0w anilist discover trending|popular|top|new|seasonal
+b3l0w anilist library               sólo la biblioteca
+b3l0w anilist covers                sólo las carátulas
+b3l0w anilist mutate                guarda progreso/estado de una entrada
+b3l0w anilist status                token y caché
+```
+
 ## Roadmap
 
 - **Etapa 2**: repo pacman `[b3l0w]` firmado y PKGBUILDs. Los programas
@@ -160,6 +217,12 @@ usuario, y este CLI pide sudo. `git` acepta ese riesgo; acá no.
 
 ```bash
 go build -ldflags "-X github.com/Below-Z3R0/b3l0w/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
+go build -o ~/.local/lib/b3l0w/plugins/b3l0w-we ./cmd/b3l0w-we
+go build -o ~/.local/lib/b3l0w/plugins/b3l0w-docker ./cmd/b3l0w-docker
+go build -o ~/.local/lib/b3l0w/plugins/b3l0w-anilist ./cmd/b3l0w-anilist
 go test ./...
 bash scripts/smoke-test.sh ./b3l0w
 ```
+
+Los plugins se construyen **por separado**: `go build -o ARCHIVO ./cmd/x ./cmd/y`
+falla porque no puede escribir dos paquetes en un mismo archivo.
