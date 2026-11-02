@@ -67,6 +67,7 @@ type Snapshot struct {
 	Images     []Image     `json:"images"`
 	Volumes    []Volume    `json:"volumes"`
 	Networks   []Network   `json:"networks"`
+	Projects   []Project   `json:"projects"`
 	Running    int         `json:"running"`
 	Stopped    int         `json:"stopped"`
 	Unhealthy  int         `json:"unhealthy"`
@@ -323,6 +324,7 @@ func Collect(ctx context.Context, run Runner, includeStopped bool) Snapshot {
 		Images:     []Image{},
 		Volumes:    []Volume{},
 		Networks:   []Network{},
+		Projects:   []Project{},
 	}
 	// Cada goroutine devuelve su resultado por canal. Escribir el struct
 	// compartido desde tres goroutines es una carrera aunque los campos sean
@@ -392,5 +394,6 @@ func Collect(ctx context.Context, run Runner, includeStopped bool) Snapshot {
 			snap.Unhealthy++
 		}
 	}
+	snap.Projects = GroupProjects(snap.Containers)
 	return snap
 }

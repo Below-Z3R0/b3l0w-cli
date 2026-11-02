@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,8 @@ uso: b3l0w docker <comando> [opciones]
   logs <id> [--tail N]             últimas líneas
   stats [--json]                   CPU/RAM/IO por contenedor (una muestra)
   inspect <id> [--json]            env, labels, montajes, redes, health
+  events [--since 6h] [--json]       últimos eventos de contenedor
+  compose <proyecto> [--action A]    up|down|restart|stop|pull de un stack
   info [--json]                    CPUs, RAM, versión, driver, conteos
   df [--json]                      espacio usado y recuperable
   prune <destino> [--json]         containers|images|volumes|builder|system
@@ -55,6 +58,10 @@ func Run(args []string) int {
 		return logs(args[1:])
 	case "stats":
 		return statsCmd(args[1:])
+	case "events":
+		return eventsCmd(args[1:])
+	case "compose":
+		return composeCmd(args[1:])
 	case "info":
 		return infoCmd(args[1:])
 	case "inspect":
@@ -73,6 +80,30 @@ func Run(args []string) int {
 // sacarFlag quita un flag booleano de la lista: Go deja de parsear flags en el
 // primer argumento posicional, así que `inspect <id> --json` perdía el --json
 // y respondía en texto.
+// extraerValor saca `--flag valor` de cualquier posición: Go deja de parsear
+// flags en el primer posicional, así que `logs <id> --tail 120` perdía el tail
+// y devolvía el log entero (el panel publicaba 200 líneas y no llegaban).
+func extraerValor(args []string, nombre string) ([]string, string, bool) {
+	resto := make([]string, 0, len(args))
+	valor := ""
+	encontrado := false
+	for i := 0; i < len(args); i++ {
+		if args[i] == nombre && i+1 < len(args) {
+			valor = args[i+1]
+			encontrado = true
+			i++
+			continue
+		}
+		if v, ok := strings.CutPrefix(args[i], nombre+"="); ok {
+			valor = v
+			encontrado = true
+			continue
+		}
+		resto = append(resto, args[i])
+	}
+	return resto, valor, encontrado
+}
+
 func sacarFlag(args []string, nombre string) ([]string, bool) {
 	encontrado := false
 	resto := args[:0]
@@ -84,6 +115,59 @@ func sacarFlag(args []string, nombre string) ([]string, bool) {
 		resto = append(resto, arg)
 	}
 	return resto, encontrado
+}
+
+func eventsCmd(args []string) int {
+	args, jsonFlag := sacarFlag(args, "--json")
+	_ = jsonFlag
+	desde := "6h"
+	fs := flag.NewFlagSet("events", flag.ExitOnError)
+	fs.StringVar(&desde, "since", "6h", "ventana (6h, 30m, 24h)")
+	fs.Parse(args)
+	ctx, cancel := ctxDe()
+	defer cancel()
+	eventos, err := docker.Events(ctx, docker.Exec, desde)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "events:", err)
+		return 1
+	}
+	data, _ := json.Marshal(map[string]any{"since": desde, "events": eventos, "total": len(eventos)})
+	fmt.Println(string(data))
+	return 0
+}
+
+func composeCmd(args []string) int {
+	args, jsonFlag := sacarFlag(args, "--json")
+	_ = jsonFlag
+	fs := flag.NewFlagSet("compose", flag.ExitOnError)
+	accion := fs.String("action", "restart", "up|down|restart|stop|pull")
+	fs.Parse(args)
+
+	// `compose ls` lista los stacks: se arma desde el snapshot de
+	// contenedores (las etiquetas de compose), sin un proceso extra.
+	if len(args) >= 1 && args[0] == "ls" {
+		ctx, cancel := ctxDe()
+		defer cancel()
+		snap := docker.Collect(ctx, docker.Exec, true)
+		projects := docker.GroupProjects(snap.Containers)
+		data, _ := json.Marshal(map[string]any{"projects": projects})
+		fmt.Println(string(data))
+		return 0
+	}
+
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "uso: b3l0w docker compose ls\n       b3l0w docker compose <proyecto> --action up|down|restart|stop|pull")
+		return 2
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.ComposeAction(ctx, docker.Exec, args[0], *accion)
+	data, _ := json.Marshal(map[string]any{"ok": err == nil && res.OK, "command": res.Command, "output": res.Output})
+	fmt.Println(string(data))
+	if err != nil {
+		return 1
+	}
+	return 0
 }
 
 func infoCmd(args []string) int {
@@ -137,6 +221,7 @@ func snapshot(args []string) int {
 }
 
 func control(action string, args []string) int {
+	args, jsonFlag := sacarFlag(args, "--json")
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "falta el id del contenedor\n")
 		return 2
@@ -155,10 +240,11 @@ func control(action string, args []string) int {
 	default:
 		res, err = docker.Remove(ctx, docker.Exec, args[0])
 	}
-	return salida(res, err)
+	return salidaJSON(res, err, jsonFlag)
 }
 
 func removeResource(what string, args []string) int {
+	args, jsonFlag := sacarFlag(args, "--json")
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "falta el recurso\n")
 		return 2
@@ -175,7 +261,7 @@ func removeResource(what string, args []string) int {
 	default:
 		res, err = docker.RemoveNetwork(ctx, docker.Exec, args[0])
 	}
-	return salida(res, err)
+	return salidaJSON(res, err, jsonFlag)
 }
 
 func runImage(args []string) int {
@@ -206,16 +292,23 @@ func runImage(args []string) int {
 func logs(args []string) int {
 	args, jsonFlag := sacarFlag(args, "--json")
 	_ = jsonFlag
-	fs := flag.NewFlagSet("logs", flag.ExitOnError)
-	tail := fs.Int("tail", 200, "líneas")
-	fs.Parse(args)
-	if fs.NArg() == 0 {
+	args, valor, hay := extraerValor(args, "--tail")
+	tail := 80
+	if hay {
+		if n, err := strconv.Atoi(valor); err == nil && n > 0 {
+			tail = n
+		}
+	}
+	if tail > 400 {
+		tail = 400
+	}
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "falta el id")
 		return 2
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	texto, err := docker.Logs(ctx, docker.Exec, fs.Arg(0), *tail)
+	texto, err := docker.Logs(ctx, docker.Exec, args[0], tail)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -302,15 +395,50 @@ func pruneCmd(args []string) int {
 	fs := flag.NewFlagSet("prune", flag.ExitOnError)
 	asJSON := fs.Bool("json", jsonFlag, "salida JSON")
 	fs.Parse(args)
-	if fs.NArg() == 0 {
+	validos := map[string]bool{"containers": true, "images": true, "volumes": true, "builder": true, "system": true}
+	destino := fs.Arg(0)
+	if destino == "" {
 		fmt.Fprintln(os.Stderr, "falta el destino: containers|images|volumes|builder|system")
+		return 2
+	}
+	if !validos[destino] {
+		// Sin esto el plugin recibía {"ok":false} sin motivo.
+		msg := fmt.Sprintf("destino inválido: %q (containers|images|volumes|builder|system)", destino)
+		if *asJSON {
+			json.NewEncoder(os.Stdout).Encode(map[string]any{"ok": false, "error": msg, "command": ""})
+		} else {
+			fmt.Fprintln(os.Stderr, msg)
+		}
 		return 2
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := docker.Prune(ctx, docker.Exec, fs.Arg(0))
+	res, err := docker.Prune(ctx, docker.Exec, destino)
 	if *asJSON {
-		json.NewEncoder(os.Stdout).Encode(res)
+		cuerpo := map[string]any{"ok": err == nil && res.OK, "command": res.Command, "output": res.Output}
+		if err != nil {
+			cuerpo["error"] = err.Error()
+		}
+		json.NewEncoder(os.Stdout).Encode(cuerpo)
+		if err != nil {
+			return 1
+		}
+		return 0
+	}
+	return salida(res, err)
+}
+
+// salidaJSON distingue el modo máquina: el plugin de Noctalia parsea stdout, y
+// si acá se imprime texto el callback recibe basura y reporta error aunque la
+// acción haya funcionado.
+func salidaJSON(res docker.Action, err error, asJSON bool) int {
+	if asJSON {
+		cuerpo := map[string]any{"ok": err == nil, "command": res.Command, "output": res.Output}
+		if err != nil {
+			cuerpo["error"] = err.Error()
+		}
+		data, _ := json.Marshal(cuerpo)
+		fmt.Println(string(data))
 		if err != nil {
 			return 1
 		}
