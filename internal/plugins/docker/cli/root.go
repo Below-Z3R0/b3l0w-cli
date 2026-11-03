@@ -33,6 +33,14 @@ uso: b3l0w docker <comando> [opciones]
   info [--json]                    CPUs, RAM, versión, driver, conteos
   df [--json]                      espacio usado y recuperable
   prune <destino> [--json]         containers|images|volumes|builder|system
+  exec --id ID CMD... [--json]      corre un comando en el contenedor
+  cp --from ID RUTA --to RUTA       copia archivos (RUTA con "id:" = del contenedor)
+  commit --id ID [--repo R] [--tag T] [--message M]   crea una imagen
+  pause|unpause --id ID             congela / reanuda un contenedor
+  rename --id ID --name N           renombra un contenedor
+  tag --id ID --repo R [--tag T]     etiqueta una imagen
+  top <id> [--json]                 procesos del contenedor
+  history <id> [--json]             historial de capas de una imagen
 `
 
 // Run despacha un subcomando de `b3l0w docker` y devuelve el código de salida:
@@ -68,6 +76,24 @@ func Run(args []string) int {
 		return inspectCmd(args[1:])
 	case "df":
 		return dfCmd(args[1:])
+	case "exec":
+		return execCmd(args[1:])
+	case "cp":
+		return copyCmd(args[1:])
+	case "commit":
+		return commitCmd(args[1:])
+	case "pause":
+		return pauseCmd(args, true)
+	case "unpause":
+		return pauseCmd(args, false)
+	case "rename":
+		return renameCmd(args[1:])
+	case "tag":
+		return tagCmd(args[1:])
+	case "top":
+		return topCmd(args[1:])
+	case "history":
+		return historyCmd(args[1:])
 	case "prune":
 		return pruneCmd(args[1:])
 	default:
@@ -478,4 +504,214 @@ func (l *listaFlag) String() string { return strings.Join(*l, ",") }
 func (l *listaFlag) Set(v string) error {
 	*l = append(*l, v)
 	return nil
+}
+
+
+
+// ── funciones de Docker Desktop ──────────────────────────────────────────
+
+// jsonFlag de un comando: el flag puede venir en cualquier posición.
+func flagJSON(args []string) ([]string, bool) {
+	return sacarFlag(args, "--json")
+}
+
+// runSimple ejecuta un comando de docker con un argumento y devuelve la
+// salida. Se usa para `top` y `history`, que no tienen forma propia.
+func runSimple(args []string, comando string) (docker.Action, error) {
+	resto, _ := flagJSON(args)
+	if len(resto) == 0 {
+		return docker.Action{OK: false, Command: "docker " + comando}, fmt.Errorf("%s: falta el argumento", comando)
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	return docker.RunCommand(ctx, docker.Exec, comando, resto)
+}
+
+// execCmd corre un comando dentro de un contenedor en ejecución.
+func execCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	argv, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("exec: falta --id")
+	}
+	if len(argv) == 0 {
+		return errorSimple("exec: falta el comando")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.ExecInContainer(ctx, docker.Exec, id, argv)
+	if err != nil {
+		return imprimirExec(res, err, jsonFlag)
+	}
+	return imprimirExec(res, nil, jsonFlag)
+}
+
+// imprimirExec imprime el resultado de exec.
+func imprimirExec(res docker.ExecResult, err error, jsonFlag bool) int {
+	if jsonFlag {
+		cuerpo := map[string]any{"ok": err == nil, "running": res.Running, "exit": res.Exit, "output": res.Output}
+		if err != nil {
+			cuerpo["error"] = err.Error()
+		}
+		data, _ := json.Marshal(cuerpo)
+		fmt.Println(string(data))
+		if err != nil {
+			return 1
+		}
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	fmt.Println(res.Output)
+	return 0
+}
+
+// copyCmd copia archivos de o hacia un contenedor.
+func copyCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--from")
+	if !ok || id == "" {
+		return errorSimple("cp: falta --from <contenedor>")
+	}
+	// El origen es el primer argumento posicional que sobra.
+	origen := ""
+	if len(resto) > 0 {
+		origen = resto[0]
+	}
+	if origen == "" {
+		return errorSimple("cp: falta la ruta de origen")
+	}
+	_, destino, _ := extraerValor(resto, "--to")
+	if destino == "" {
+		return errorSimple("cp: falta --to <destino>")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	var res docker.CopyResult
+	var err error
+	if strings.Contains(origen, ":") {
+		res, err = docker.CopyFrom(ctx, docker.Exec, id, origen, destino)
+	} else {
+		res, err = docker.Copy(ctx, docker.Exec, id, origen, destino)
+	}
+	if err != nil {
+		return imprimirCopy(res, err, jsonFlag)
+	}
+	return imprimirCopy(res, nil, jsonFlag)
+}
+
+// imprimirCopy imprime el resultado de cp.
+func imprimirCopy(res docker.CopyResult, err error, jsonFlag bool) int {
+	if jsonFlag {
+		cuerpo := map[string]any{"ok": err == nil, "path": res.Path, "output": res.Output}
+		if err != nil {
+			cuerpo["error"] = err.Error()
+		}
+		data, _ := json.Marshal(cuerpo)
+		fmt.Println(string(data))
+		if err != nil {
+			return 1
+		}
+		return 0
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	return 0
+}
+
+// commitCmd crea una imagen desde el estado de un contenedor.
+func commitCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("commit: falta --id")
+	}
+	_, repo, _ := extraerValor(resto, "--repo")
+	_, tag, _ := extraerValor(resto, "--tag")
+	_, mensaje, _ := extraerValor(resto, "--message")
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Commit(ctx, docker.Exec, id, repo, tag, mensaje)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// pauseCmd congela o reanuda un contenedor.
+func pauseCmd(args []string, pausar bool) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		if pausar {
+			return errorSimple("pause: falta --id")
+		}
+		return errorSimple("unpause: falta --id")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	var res docker.Action
+	var err error
+	if pausar {
+		res, err = docker.Pause(ctx, docker.Exec, id)
+	} else {
+		res, err = docker.Unpause(ctx, docker.Exec, id)
+	}
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// renameCmd cambia el nombre de un contenedor.
+func renameCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("rename: falta --id")
+	}
+	_, nombre, _ := extraerValor(resto, "--name")
+	if nombre == "" {
+		return errorSimple("rename: falta --name")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Rename(ctx, docker.Exec, id, nombre)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// tagCmd etiqueta una imagen.
+func tagCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("tag: falta --id")
+	}
+	_, repo, _ := extraerValor(resto, "--repo")
+	if repo == "" {
+		return errorSimple("tag: falta --repo")
+	}
+	_, tag, _ := extraerValor(resto, "--tag")
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Tag(ctx, docker.Exec, id, repo, tag)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// topCmd lista los procesos de un contenedor.
+func topCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	res, err := runSimple(resto, "top")
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// historyCmd devuelve el historial de capas de una imagen.
+func historyCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	res, err := runSimple(resto, "history")
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// errorSimple imprime un error por stderr y devuelve 1.
+func errorSimple(msg string) int {
+	fmt.Fprintln(os.Stderr, msg)
+	return 1
 }
