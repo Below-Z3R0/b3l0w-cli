@@ -41,6 +41,15 @@ uso: b3l0w docker <comando> [opciones]
   tag --id ID --repo R [--tag T]     etiqueta una imagen
   top <id> [--json]                 procesos del contenedor
   history <id> [--json]             historial de capas de una imagen
+
+  pull <imagen>                   descarga una imagen del registro
+  push <imagen>                   sube una imagen al registro
+  volume-create <nombre>          crea un volumen
+  network-create <nombre>         crea una red
+  save --image I --out F          exporta una imagen a un tar
+  load --in F                     importa una imagen desde un tar
+  export --id C --out F           exporta el filesystem de un contenedor
+  diff --id C                     muestra los cambios del filesystem
 `
 
 // Run despacha un subcomando de `b3l0w docker` y devuelve el código de salida:
@@ -96,6 +105,22 @@ func Run(args []string) int {
 		return historyCmd(args[1:])
 	case "prune":
 		return pruneCmd(args[1:])
+	case "pull":
+		return pullCmd(args[1:])
+	case "push":
+		return pushCmd(args[1:])
+	case "volume-create":
+		return createCmd(args[1:], "volume")
+	case "network-create":
+		return createCmd(args[1:], "network")
+	case "save":
+		return saveCmd(args[1:])
+	case "load":
+		return loadCmd(args[1:])
+	case "export":
+		return exportCmd(args[1:])
+	case "diff":
+		return diffCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconocido: %s\n\n", args[0])
 		fmt.Print(usage)
@@ -506,8 +531,6 @@ func (l *listaFlag) Set(v string) error {
 	return nil
 }
 
-
-
 // ── funciones de Docker Desktop ──────────────────────────────────────────
 
 // jsonFlag de un comando: el flag puede venir en cualquier posición.
@@ -714,4 +737,100 @@ func historyCmd(args []string) int {
 func errorSimple(msg string) int {
 	fmt.Fprintln(os.Stderr, msg)
 	return 1
+}
+
+// pullCmd descarga una imagen del registro.
+func pullCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("pull: falta el nombre de la imagen")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Pull(ctx, docker.Exec, resto[0])
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// pushCmd sube una imagen al registro.
+func pushCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("push: falta el nombre de la imagen")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Push(ctx, docker.Exec, resto[0])
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// createCmd crea un volumen o una red nueva.
+func createCmd(args []string, clase string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple(clase + "-create: falta el nombre")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	var res docker.Action
+	var err error
+	if clase == "volume" {
+		res, err = docker.CreateVolume(ctx, docker.Exec, resto[0])
+	} else {
+		res, err = docker.CreateNetwork(ctx, docker.Exec, resto[0])
+	}
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// saveCmd exporta una imagen a un tar.
+func saveCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, imagen, okImagen := extraerValor(resto, "--image")
+	_, destino, okDestino := extraerValor(resto, "--out")
+	if !okImagen || !okDestino || imagen == "" || destino == "" {
+		return errorSimple("save: falta --image o --out")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.SaveImage(ctx, docker.Exec, imagen, destino)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// loadCmd importa una imagen desde un tar.
+func loadCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, origen, ok := extraerValor(resto, "--in")
+	if !ok || origen == "" {
+		return errorSimple("load: falta --in")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.LoadImage(ctx, docker.Exec, origen)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// exportCmd exporta el sistema de archivos de un contenedor a un tar.
+func exportCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, okID := extraerValor(resto, "--id")
+	_, destino, okDestino := extraerValor(resto, "--out")
+	if !okID || !okDestino || id == "" || destino == "" {
+		return errorSimple("export: falta --id o --out")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.ExportContainer(ctx, docker.Exec, id, destino)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// diffCmd muestra los cambios del sistema de archivos del contenedor.
+func diffCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	_, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("diff: falta --id")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Diff(ctx, docker.Exec, id)
+	return salidaJSON(res, err, jsonFlag)
 }

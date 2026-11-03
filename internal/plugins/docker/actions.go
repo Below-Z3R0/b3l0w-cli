@@ -28,6 +28,9 @@ func ejecutar(ctx context.Context, run Runner, args ...string) (Action, error) {
 var AllowedActions = map[string]bool{
 	"start": true, "stop": true, "restart": true, "remove": true,
 	"rmi": true, "volume-rm": true, "network-rm": true, "run": true,
+	"pause": true, "unpause": true, "pull": true, "push": true,
+	"volume-create": true, "network-create": true,
+	"save": true, "load": true, "export": true, "diff": true,
 }
 
 // Start arranca un contenedor detenido y devuelve la salida de docker.
@@ -71,6 +74,46 @@ func RemoveNetwork(ctx context.Context, run Runner, name string) (Action, error)
 }
 
 // RunOptions son los datos del formulario "correr imagen".
+// Pull descarga una imagen del registro.
+func Pull(ctx context.Context, run Runner, imagen string) (Action, error) {
+	return ejecutar(ctx, run, "pull", imagen)
+}
+
+// Push sube una imagen al registro.
+func Push(ctx context.Context, run Runner, imagen string) (Action, error) {
+	return ejecutar(ctx, run, "push", imagen)
+}
+
+// CreateVolume crea un volumen nuevo.
+func CreateVolume(ctx context.Context, run Runner, nombre string) (Action, error) {
+	return ejecutar(ctx, run, "volume", "create", nombre)
+}
+
+// CreateNetwork crea una red nueva.
+func CreateNetwork(ctx context.Context, run Runner, nombre string) (Action, error) {
+	return ejecutar(ctx, run, "network", "create", nombre)
+}
+
+// SaveImage exporta una imagen a un tar.
+func SaveImage(ctx context.Context, run Runner, imagen string, destino string) (Action, error) {
+	return ejecutar(ctx, run, "save", "-o", destino, imagen)
+}
+
+// LoadImage importa una imagen desde un tar.
+func LoadImage(ctx context.Context, run Runner, origen string) (Action, error) {
+	return ejecutar(ctx, run, "load", "-i", origen)
+}
+
+// ExportContainer exporta el sistema de archivos de un contenedor a un tar.
+func ExportContainer(ctx context.Context, run Runner, id string, destino string) (Action, error) {
+	return ejecutar(ctx, run, "export", "-o", destino, id)
+}
+
+// Diff muestra qué cambió en el sistema de archivos del contenedor.
+func Diff(ctx context.Context, run Runner, id string) (Action, error) {
+	return ejecutar(ctx, run, "diff", id)
+}
+
 type RunOptions struct {
 	Image   string   `json:"image"`
 	Name    string   `json:"name"`

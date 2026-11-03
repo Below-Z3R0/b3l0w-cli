@@ -149,17 +149,17 @@ type SystemInfo struct {
 
 // StatsMuestreo es una muestra de stats por contenedor.
 type StatsMuestreo struct {
-	Nombre   string  `json:"name"`
-	CPU      float64 `json:"cpu"`
-	Memoria  int64   `json:"memoria"`
-	MemLim   int64   `json:"memoriaLimite"`
-	RedRX    int64   `json:"redRx"`
-	RedTX    int64   `json:"redTx"`
-	Bloques  int64   `json:"bloques"`
-	Pids     int     `json:"pids"`
-	MemPct   float64 `json:"memoriaPct"`
-	CPUPct   float64 `json:"cpuPct"`
-	NetPct   float64 `json:"redPct"`
+	Nombre  string  `json:"name"`
+	CPU     float64 `json:"cpu"`
+	Memoria int64   `json:"memoria"`
+	MemLim  int64   `json:"memoriaLimite"`
+	RedRX   int64   `json:"redRx"`
+	RedTX   int64   `json:"redTx"`
+	Bloques int64   `json:"bloques"`
+	Pids    int     `json:"pids"`
+	MemPct  float64 `json:"memoriaPct"`
+	CPUPct  float64 `json:"cpuPct"`
+	NetPct  float64 `json:"redPct"`
 }
 
 // PrettyBytes formatea bytes como texto legible ("1.2 GB").
