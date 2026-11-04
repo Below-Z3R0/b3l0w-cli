@@ -34,7 +34,7 @@ uso: b3l0w docker <comando> [opciones]
   df [--json]                      espacio usado y recuperable
   prune <destino> [--json]         containers|images|volumes|builder|system
   exec --id ID CMD... [--json]      corre un comando en el contenedor
-  cp --from ID RUTA --to RUTA       copia archivos (RUTA con "id:" = del contenedor)
+	cp --from ID RUTA --to RUTA       copia archivos (origen o destino con "id:" = dentro del contenedor)
   commit --id ID [--repo R] [--tag T] [--message M]   crea una imagen
   pause|unpause --id ID             congela / reanuda un contenedor
   rename --id ID --name N           renombra un contenedor
@@ -591,33 +591,85 @@ func imprimirExec(res docker.ExecResult, err error, jsonFlag bool) int {
 	return 0
 }
 
+// partirRutaContenedor separa el prefijo de contenedor de una ruta de
+// docker. "61555f00de09:/etc/hostname" → ("61555f00de09", "/etc/hostname").
+// "id:/ruta" → ("id", "/ruta"): el prefijo "id" es un marcador que
+// significa "el contenedor que indica --from". Una ruta del host sin
+// prefijo → ("", ruta).
+func partirRutaContenedor(ruta string) (string, string) {
+	idx := strings.Index(ruta, ":")
+	if idx < 0 {
+		return "", ruta
+	}
+	prefijo := ruta[:idx]
+	resto := ruta[idx+1:]
+	if prefijo == "id" {
+		return "id", resto
+	}
+	return prefijo, resto
+}
+
 // copyCmd copia archivos de o hacia un contenedor.
 func copyCmd(args []string) int {
 	resto, jsonFlag := flagJSON(args)
-	_, id, ok := extraerValor(resto, "--from")
+	// IMPORTANTE: `extraerValor` devuelve el resto YA SIN el flag que
+	// saca. Hay que usar ese resto, no el original: si se conserva el
+	// original, `--from` sigue en la lista y el origen posicional acaba
+	// siendo el propio "--from" (docker responde "unknown flag: --from").
+	resto, id, ok := extraerValor(resto, "--from")
 	if !ok || id == "" {
 		return errorSimple("cp: falta --from <contenedor>")
 	}
+	resto, destino, okDestino := extraerValor(resto, "--to")
+	if !okDestino || destino == "" {
+		return errorSimple("cp: falta --to <destino>")
+	}
 	// El origen es el primer argumento posicional que sobra.
 	origen := ""
-	if len(resto) > 0 {
-		origen = resto[0]
+	for _, arg := range resto {
+		if !strings.HasPrefix(arg, "-") {
+			origen = arg
+			break
+		}
 	}
 	if origen == "" {
 		return errorSimple("cp: falta la ruta de origen")
-	}
-	_, destino, _ := extraerValor(resto, "--to")
-	if destino == "" {
-		return errorSimple("cp: falta --to <destino>")
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
 	var res docker.CopyResult
 	var err error
-	if strings.Contains(origen, ":") {
-		res, err = docker.CopyFrom(ctx, docker.Exec, id, origen, destino)
-	} else {
-		res, err = docker.Copy(ctx, docker.Exec, id, origen, destino)
+	// Normalización de las dos rutas. `docker cp` toma "host/ruta" o
+	// "contenedor:/ruta" en CADA lado:
+	//   - el origen con prefijo ("id:" o "<id>:") = dentro del contenedor
+	//   - el destino con prefijo = dentro del contenedor
+	// Si el origen está dentro del contenedor, el destino es del host; si el
+	// origen es del host, el destino es del contenedor. Prefijar el id dos
+	// veces ("61555f00de09:61555f00de09:/etc/hostname") hace que docker
+	// responda que no encuentra el archivo.
+	origenCont, origenRuta := partirRutaContenedor(origen)
+	destCont, destRuta := partirRutaContenedor(destino)
+	// "id:" significa "el contenedor que indica --from". Un id completo
+	// también vale, pero el contenedor de la operación es el de --from:
+	// si no coincidieran, el id de la ruta se ignora.
+	if origenCont == "id" || origenCont == id {
+		origenCont = id
+	}
+	if destCont == "id" || destCont == id {
+		destCont = id
+	}
+	switch {
+	case origenCont != "":
+		// Del contenedor al host.
+		if destCont != "" {
+			return errorSimple("cp: no se puede copiar entre contenedores")
+		}
+		res, err = docker.CopyFrom(ctx, docker.Exec, origenCont, origenRuta, destRuta)
+	case destCont != "":
+		// Del host al contenedor.
+		res, err = docker.Copy(ctx, docker.Exec, destCont, origen, destRuta)
+	default:
+		return errorSimple("cp: el origen o el destino debe ser una ruta dentro del contenedor (id:/ruta)")
 	}
 	if err != nil {
 		return imprimirCopy(res, err, jsonFlag)
