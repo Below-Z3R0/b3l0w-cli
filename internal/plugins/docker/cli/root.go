@@ -970,7 +970,10 @@ func searchCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	comando := append([]string{"--limit", limite}, resto...)
+	// `--format json`: una línea JSON por resultado con Name, Description,
+	// StarCount e IsOfficial. La tabla de texto obliga a parsear columnas
+	// alineadas y se rompe con las descripciones largas.
+	comando := append([]string{"--limit", limite, "--format", "{{json .}}"}, resto...)
 	res, err := docker.RunCommand(ctx, docker.Exec, "search", comando)
 	return salidaJSON(res, err, jsonFlag)
 }
