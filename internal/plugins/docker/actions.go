@@ -31,6 +31,7 @@ var AllowedActions = map[string]bool{
 	"pause": true, "unpause": true, "pull": true, "push": true,
 	"volume-create": true, "network-create": true,
 	"save": true, "load": true, "export": true, "diff": true,
+	"build": true,
 }
 
 // Start arranca un contenedor detenido y devuelve la salida de docker.
@@ -187,4 +188,37 @@ func Logs(ctx context.Context, run Runner, id string, tail int) (string, error) 
 		tail = 200
 	}
 	return run(ctx, "logs", "--tail", strconv.Itoa(tail), id)
+}
+
+// Build construye una imagen desde un Dockerfile.
+//
+// Es la única acción que escribe en disco (deja la imagen en el daemon),
+// así que valida lo que puede: la etiqueta tiene que tener forma de
+// referencia de imagen, y el contexto y el Dockerfile son rutas, no
+// argumentos sueltos que se puedan colar como opciones de docker.
+func Build(ctx context.Context, run Runner, etiqueta string, contexto string, dockerfile string) (Action, error) {
+	etiqueta = strings.TrimSpace(etiqueta)
+	if etiqueta == "" {
+		return Action{OK: false}, fmt.Errorf("build: falta la etiqueta de la imagen")
+	}
+	if strings.HasPrefix(etiqueta, "-") {
+		return Action{OK: false}, fmt.Errorf("build: la etiqueta no puede empezar con '-': %q", etiqueta)
+	}
+	contexto = strings.TrimSpace(contexto)
+	if contexto == "" {
+		contexto = "."
+	}
+	if strings.HasPrefix(contexto, "-") {
+		return Action{OK: false}, fmt.Errorf("build: el contexto no puede empezar con '-': %q", contexto)
+	}
+	args := []string{"build", "-t", etiqueta}
+	dockerfile = strings.TrimSpace(dockerfile)
+	if dockerfile != "" {
+		if strings.HasPrefix(dockerfile, "-") {
+			return Action{OK: false}, fmt.Errorf("build: el Dockerfile no puede empezar con '-': %q", dockerfile)
+		}
+		args = append(args, "-f", dockerfile)
+	}
+	args = append(args, contexto)
+	return ejecutar(ctx, run, args...)
 }

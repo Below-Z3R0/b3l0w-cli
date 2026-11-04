@@ -34,7 +34,7 @@ uso: b3l0w docker <comando> [opciones]
   df [--json]                      espacio usado y recuperable
   prune <destino> [--json]         containers|images|volumes|builder|system
   exec --id ID CMD... [--json]      corre un comando en el contenedor
-	cp --from ID RUTA --to RUTA       copia archivos (origen o destino con "id:" = dentro del contenedor)
+  cp --from ID RUTA --to RUTA       copia archivos ("id:" = dentro del contenedor)
   commit --id ID [--repo R] [--tag T] [--message M]   crea una imagen
   pause|unpause --id ID             congela / reanuda un contenedor
   rename --id ID --name N           renombra un contenedor
@@ -50,6 +50,7 @@ uso: b3l0w docker <comando> [opciones]
   load --in F                     importa una imagen desde un tar
   export --id C --out F           exporta el filesystem de un contenedor
   diff --id C                     muestra los cambios del filesystem
+  build --tag IMG [--file F] [--context DIR]  construye una imagen
 `
 
 // Run despacha un subcomando de `b3l0w docker` y devuelve el código de salida:
@@ -121,6 +122,8 @@ func Run(args []string) int {
 		return exportCmd(args[1:])
 	case "diff":
 		return diffCmd(args[1:])
+	case "build":
+		return buildCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconocido: %s\n\n", args[0])
 		fmt.Print(usage)
@@ -884,5 +887,29 @@ func diffCmd(args []string) int {
 	ctx, cancel := ctxDe()
 	defer cancel()
 	res, err := docker.Diff(ctx, docker.Exec, id)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// buildCmd construye una imagen desde un Dockerfile.
+func buildCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	resto, etiqueta, ok := extraerValor(resto, "--tag")
+	if !ok || etiqueta == "" {
+		return errorSimple("build: falta --tag <imagen>")
+	}
+	resto, dockerfile, _ := extraerValor(resto, "--file")
+	resto, contexto, _ := extraerValor(resto, "--context")
+	// El contexto es el único posicional que puede quedar.
+	if contexto == "" {
+		for _, arg := range resto {
+			if !strings.HasPrefix(arg, "-") {
+				contexto = arg
+				break
+			}
+		}
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.Build(ctx, docker.Exec, etiqueta, contexto, dockerfile)
 	return salidaJSON(res, err, jsonFlag)
 }
