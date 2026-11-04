@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +45,16 @@ uso: b3l0w docker <comando> [opciones]
 
   pull <imagen>                   descarga una imagen del registro
   push <imagen>                   sube una imagen al registro
+  search <término> [--limit N]    busca imágenes en Docker Hub
   volume-create <nombre>          crea un volumen
+  volume-inspect <nombre>         detalle de un volumen (json de docker)
+  volume-export --name V --out F  respalda un volumen a un tar.gz
+  volume-import --name V --in F   restaura un tar.gz en un volumen
   network-create <nombre>         crea una red
+  network-inspect <nombre>        detalle de una red (json de docker)
+  port <id>                       puertos publicados (0.0.0.0:8080->80/tcp)
+  update --id ID [--cpus N] [--memory M]   límites de CPU y memoria
+  logs-follow <id> [--tail N]     sigue los logs en vivo (Ctrl-C para salir)
   save --image I --out F          exporta una imagen a un tar
   load --in F                     importa una imagen desde un tar
   export --id C --out F           exporta el filesystem de un contenedor
@@ -124,6 +133,22 @@ func Run(args []string) int {
 		return diffCmd(args[1:])
 	case "build":
 		return buildCmd(args[1:])
+	case "port":
+		return portCmd(args[1:])
+	case "search":
+		return searchCmd(args[1:])
+	case "update":
+		return updateCmd(args[1:])
+	case "volume-inspect":
+		return volumeInspectCmd(args[1:])
+	case "network-inspect":
+		return networkInspectCmd(args[1:])
+	case "volume-export":
+		return volumeExportCmd(args[1:])
+	case "volume-import":
+		return volumeImportCmd(args[1:])
+	case "logs-follow":
+		return logsFollowCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconocido: %s\n\n", args[0])
 		fmt.Print(usage)
@@ -912,4 +937,191 @@ func buildCmd(args []string) int {
 	defer cancel()
 	res, err := docker.Build(ctx, docker.Exec, etiqueta, contexto, dockerfile)
 	return salidaJSON(res, err, jsonFlag)
+}
+
+// ── puertos, búsqueda y límites ─────────────────────────────────────────
+
+// portCmd: el mapeo de puertos publicado por un contenedor
+// (`0.0.0.0:8080->80/tcp`). Es lo que el panel necesita para ofrecer
+// "abrir en el navegador".
+func portCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("port: falta el id o nombre del contenedor")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.RunCommand(ctx, docker.Exec, "port", resto)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// searchCmd: busca imágenes en Docker Hub.
+func searchCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	resto, limite, hayLimite := extraerValor(resto, "--limit")
+	if !hayLimite || limite == "" {
+		limite = "25"
+	}
+	if len(resto) == 0 {
+		return errorSimple("search: falta el término de búsqueda")
+	}
+	if strings.HasPrefix(resto[0], "-") {
+		return errorSimple("search: el término no puede empezar con -")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	comando := append([]string{"--limit", limite}, resto...)
+	res, err := docker.RunCommand(ctx, docker.Exec, "search", comando)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// updateCmd: cambia los límites de CPU y memoria de un contenedor vivo.
+func updateCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	resto, id, ok := extraerValor(resto, "--id")
+	if !ok || id == "" {
+		return errorSimple("update: falta --id <contenedor>")
+	}
+	resto, cpus, hayCpus := extraerValor(resto, "--cpus")
+	resto, memoria, hayMemoria := extraerValor(resto, "--memory")
+	var flags []string
+	if hayCpus && cpus != "" {
+		flags = append(flags, "--cpus", cpus)
+	}
+	if hayMemoria && memoria != "" {
+		flags = append(flags, "--memory", memoria)
+	}
+	if len(flags) == 0 {
+		return errorSimple("update: falta --cpus <n> o --memory <tamaño>")
+	}
+	if strings.HasPrefix(id, "-") {
+		return errorSimple("update: el id no puede empezar con -")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.RunCommand(ctx, docker.Exec, "update", append(flags, id))
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// ── inspect de volúmenes y redes ────────────────────────────────────────
+
+func volumeInspectCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("volume-inspect: falta el nombre del volumen")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.RunCommand(ctx, docker.Exec, "volume", append([]string{"inspect"}, resto...))
+	return salidaJSON(res, err, jsonFlag)
+}
+
+func networkInspectCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("network-inspect: falta el nombre de la red")
+	}
+	ctx, cancel := ctxDe()
+	defer cancel()
+	res, err := docker.RunCommand(ctx, docker.Exec, "network", append([]string{"inspect"}, resto...))
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// ── respaldo de volúmenes ───────────────────────────────────────────────
+
+// volumeExportCmd empaqueta un volumen en un tar.gz. Docker no tiene un
+// comando propio para esto: el camino oficial es un contenedor efímero que
+// monta el volumen como origen y la carpeta destino como punto de escritura.
+func volumeExportCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	resto, nombre, ok := extraerValor(resto, "--name")
+	if !ok || nombre == "" {
+		return errorSimple("volume-export: falta --name <volumen>")
+	}
+	resto, destino, ok := extraerValor(resto, "--out")
+	if !ok || destino == "" {
+		return errorSimple("volume-export: falta --out <archivo.tar.gz>")
+	}
+	if strings.HasPrefix(nombre, "-") || strings.HasPrefix(destino, "-") {
+		return errorSimple("volume-export: ni el nombre ni la salida pueden empezar con -")
+	}
+	carpeta, archivo := splitPath(destino)
+	ctx, cancel := ctxDe()
+	defer cancel()
+	comando := []string{
+		"--rm",
+		"-v", nombre + ":/origen:ro",
+		"-v", carpeta + ":/respaldo",
+		"alpine", "tar", "czf", "/respaldo/" + archivo, "-C", "/origen", ".",
+	}
+	res, err := docker.RunCommand(ctx, docker.Exec, "run", comando)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// volumeImportCmd restaura un tar.gz en un volumen (lo crea si no existe).
+func volumeImportCmd(args []string) int {
+	resto, jsonFlag := flagJSON(args)
+	resto, nombre, ok := extraerValor(resto, "--name")
+	if !ok || nombre == "" {
+		return errorSimple("volume-import: falta --name <volumen>")
+	}
+	resto, origen, ok := extraerValor(resto, "--in")
+	if !ok || origen == "" {
+		return errorSimple("volume-import: falta --in <archivo.tar.gz>")
+	}
+	if strings.HasPrefix(nombre, "-") || strings.HasPrefix(origen, "-") {
+		return errorSimple("volume-import: ni el nombre ni el origen pueden empezar con -")
+	}
+	carpeta, archivo := splitPath(origen)
+	ctx, cancel := ctxDe()
+	defer cancel()
+	comando := []string{
+		"--rm",
+		"-v", nombre + ":/destino",
+		"-v", carpeta + ":/respaldo:ro",
+		"alpine", "tar", "xzf", "/respaldo/" + archivo, "-C", "/destino",
+	}
+	res, err := docker.RunCommand(ctx, docker.Exec, "run", comando)
+	return salidaJSON(res, err, jsonFlag)
+}
+
+// splitPath separa una ruta absoluta en carpeta y nombre de archivo.
+func splitPath(ruta string) (string, string) {
+	i := strings.LastIndex(ruta, "/")
+	if i <= 0 {
+		return "/", ruta
+	}
+	return ruta[:i], ruta[i+1:]
+}
+
+// ── logs en vivo ────────────────────────────────────────────────────────
+
+// logsFollowCmd sigue los logs de un contenedor hasta que se corta. Escribe
+// directo a stdout: acumular en memoria no tendría sentido con --follow.
+func logsFollowCmd(args []string) int {
+	resto, _ := flagJSON(args)
+	if len(resto) == 0 {
+		return errorSimple("logs-follow: falta el id del contenedor")
+	}
+	resto, cola, hayCola := extraerValor(resto, "--tail")
+	if !hayCola || cola == "" {
+		cola = "200"
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	comando := append([]string{"logs", "--follow", "--tail", cola}, resto...)
+	return correrEnVivo(ctx, "logs", comando)
+}
+
+// correrEnVivo corre docker con la salida conectada a la terminal: es para
+// los comandos que no terminan (--follow).
+func correrEnVivo(ctx context.Context, comando string, args []string) int {
+	cmd := exec.CommandContext(ctx, "docker", append([]string{comando}, args...)...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	return 0
 }
