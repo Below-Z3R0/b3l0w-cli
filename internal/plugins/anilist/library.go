@@ -14,18 +14,19 @@ const ChunkSize = 50
 // Entry es una entrada de la lista ya normalizada. Los nombres cortos son a
 // propósito: el panel la consume como JSON y cada byte viaja al runtime de Luau.
 type Entry struct {
-	MediaID   int     `json:"mediaId"`
-	Title     string  `json:"title"`
-	Status    string  `json:"status"`
-	Progress  int     `json:"progress"`
-	Volumes   int     `json:"volumes,omitempty"`
-	Score     float64 `json:"score"`
-	Total     int     `json:"total"`
-	CoverURL  string  `json:"coverUrl"`
-	CoverClr  string  `json:"coverColor"`
-	UpdatedAt int64   `json:"updatedAt"`
-	AiringAt  int64   `json:"airingAt,omitempty"`
-	AiringEp  int     `json:"airingEpisode,omitempty"`
+	MediaID   int      `json:"mediaId"`
+	Title     string   `json:"title"`
+	Status    string   `json:"status"`
+	Progress  int      `json:"progress"`
+	Volumes   int      `json:"volumes,omitempty"`
+	Score     float64  `json:"score"`
+	Total     int      `json:"total"`
+	CoverURL  string   `json:"coverUrl"`
+	CoverClr  string   `json:"coverColor"`
+	UpdatedAt int64    `json:"updatedAt"`
+	AiringAt  int64    `json:"airingAt,omitempty"`
+	AiringEp  int      `json:"airingEpisode,omitempty"`
+	Genres    []string `json:"genres,omitempty"`
 }
 
 // Library es el resultado completo de una sincronización.
@@ -55,6 +56,7 @@ const listQuery = `query ($userId: Int, $type: MediaType, $chunk: Int, $perChunk
           id type episodes chapters volumes
           coverImage { color extraLarge large medium }
           title { userPreferred }
+          genres
           nextAiringEpisode { airingAt episode }
         }
       }
@@ -100,6 +102,7 @@ type rawEntry struct {
 		Title struct {
 			Preferred string `json:"userPreferred"`
 		} `json:"title"`
+		Genres []string `json:"genres"`
 		Airing *struct {
 			AiringAt int64 `json:"airingAt"`
 			Episode  int   `json:"episode"`
@@ -118,6 +121,10 @@ func (r rawEntry) normalize(kind string) Entry {
 		UpdatedAt: r.Updated,
 		CoverURL:  firstNonEmpty(r.Media.Cover.ExtraLarge, r.Media.Cover.Large, r.Media.Cover.Medium),
 		CoverClr:  r.Media.Cover.Color,
+		Genres:    r.Media.Genres,
+	}
+	if entry.Genres == nil {
+		entry.Genres = []string{}
 	}
 	if kind == "MANGA" {
 		entry.Total = r.Media.Chapters

@@ -26,6 +26,8 @@ uso: b3l0w anilist <comando> [opciones]
   mutate   guarda progreso/estado de una entrada
   stats    totales y géneros del usuario (anime/manga)
   status   estado del token y del caché
+  media    ficha de una serie (sinopsis, géneros, próximo capítulo)
+  schedule agenda de emisión: los capítulos que vienen
 
 Opciones comunes:
   --json             salida JSON (la que usa el plugin)
@@ -40,6 +42,9 @@ sync/covers:
 
 mutate:
   --media-id N --progress N [--status CURRENT|COMPLETED|PLANNING|...]
+
+media:
+  --media-id N       id de la serie (obligatorio)
 
 stats:
   --user NOMBRE      usuario a consultar (default: el dueño del token)
@@ -72,6 +77,10 @@ func Run(args []string) int {
 		return runStats(rest)
 	case "status":
 		return runStatus(rest)
+	case "media":
+		return runMedia(rest)
+	case "schedule":
+		return runSchedule(rest)
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconocido: %s\n\n", command)
 		fmt.Print(usage)
@@ -315,6 +324,74 @@ func runStats(args []string) int {
 func statsFail(err error) int {
 	fmt.Fprintln(os.Stderr, "error:", err)
 	return 1
+}
+
+// runMedia trae la ficha de una serie: sinopsis, géneros, capítulos y el
+// próximo airing. El panel la pide al abrir el detalle.
+func runMedia(args []string) int {
+	fs := flag.NewFlagSet("media", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "salida JSON")
+	dataDirFlag := fs.String("data-dir", "", "directorio de datos del plugin")
+	token := fs.String("token", "", "token de AniList")
+	mediaID := fs.Int("media-id", 0, "id de la media")
+	fs.Parse(args)
+	if *mediaID <= 0 {
+		return fail(fmt.Errorf("falta --media-id"), *asJSON)
+	}
+	c, _, err := client(*token, *dataDirFlag)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	detail, err := anilist.FetchMedia(ctx, c, *mediaID)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	return emit(detail, *asJSON, func() {
+		fmt.Printf("%s (%d)\n", detail.Title, detail.ID)
+		if detail.Format != "" {
+			fmt.Printf("formato: %s · estado: %s\n", detail.Format, detail.Status)
+		}
+		if len(detail.Genres) > 0 {
+			fmt.Printf("géneros: %s\n", strings.Join(detail.Genres, ", "))
+		}
+		if detail.NextAiring != nil {
+			fmt.Printf("próximo: ep %d el %s\n", detail.NextAiring.Episode,
+				time.Unix(detail.NextAiring.AiringAt, 0).Format("2006-01-02 15:04"))
+		}
+		if detail.Description != "" {
+			fmt.Printf("sinopsis: %s\n", detail.Description)
+		}
+	})
+}
+
+// runSchedule trae la agenda de emisión: los capítulos que todavía no se
+// emitieron de las series que el usuario está viendo.
+func runSchedule(args []string) int {
+	fs := flag.NewFlagSet("schedule", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "salida JSON")
+	dataDirFlag := fs.String("data-dir", "", "directorio de datos del plugin")
+	token := fs.String("token", "", "token de AniList")
+	user := fs.Int("user", 0, "user id (0 = el del token)")
+	fs.Parse(args)
+	c, _, err := client(*token, *dataDirFlag)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	schedule, err := anilist.FetchSchedule(ctx, c, *user)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	return emit(schedule, *asJSON, func() {
+		fmt.Printf("agenda: %d capítulos\n", len(schedule.Items))
+		for _, item := range schedule.Items {
+			fmt.Printf("  %s ep %d — %s\n", item.Title, item.Episode,
+				time.Unix(item.AiringAt, 0).Format("2006-01-02 15:04"))
+		}
+	})
 }
 
 func runStatus(args []string) int {
