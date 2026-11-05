@@ -13,6 +13,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
@@ -34,6 +35,7 @@ type Options struct {
 	DotfilesDir string
 	Desktop     bool
 	Keep        int
+	Plugins     bool
 }
 
 // Run ejecuta el update y devuelve el código de salida.
@@ -56,12 +58,14 @@ func Run(m *config.Manifest, opts Options) int {
 	// usa alternate screen y deja el cursor oculto.
 	defer cli.RestoreTTY()
 
-	// Sin banderas se hacen las dos mitades; con una sola, esa.
-	systemWanted := opts.System || !opts.Programs
-	programsWanted := opts.Programs || !opts.System
+	// Sin banderas se hacen las tres capas; con una sola, esa.
+	anySelector := opts.System || opts.Programs || opts.Plugins
+	systemWanted := opts.System || !anySelector
+	programsWanted := opts.Programs || !anySelector
+	pluginsWanted := opts.Plugins || !anySelector
 
 	if !opts.Yes {
-		if !cli.Confirm(confirmPrompt(systemWanted, programsWanted), false, true) {
+		if !cli.Confirm(confirmPrompt(systemWanted, programsWanted, pluginsWanted), false, true) {
 			cli.Warn("cancelled")
 			return 0
 		}
@@ -88,7 +92,47 @@ func Run(m *config.Manifest, opts Options) int {
 			return code
 		}
 	}
+	if pluginsWanted {
+		if code := updatePlugins(); code != 0 {
+			return code
+		}
+	}
 	return snapshots.Report(opts.Keep, opts.Yes)
+}
+
+// updatePlugins actualiza los scripts embebidos y, según el caso, el
+// source de Noctalia o los plugins locales del registry.
+func updatePlugins() int {
+	cli.Step("Actualizando plugins")
+
+	names, err := plugins.InstallScripts("")
+	if err != nil {
+		cli.Warn("scripts: " + err.Error())
+	} else {
+		for _, name := range names {
+			cli.Ok("script " + name)
+		}
+	}
+
+	if plugins.HasSource(plugins.SourceName) {
+		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
+			cli.Warn("source: " + err.Error())
+			return 1
+		}
+		cli.Ok("source " + plugins.SourceName + " actualizado")
+		return 0
+	}
+
+	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
+	if err != nil {
+		cli.Warn("plugins: " + err.Error())
+		return 1
+	}
+	if err := plugins.Update(m, "", plugins.DefaultPluginsDir(), false); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return 0
 }
 
 func selfUpdate() int {
@@ -223,12 +267,18 @@ func fileExists(path string) bool {
 
 // confirmPrompt arma la pregunta según lo que se va a tocar. Formato
 // pacman: [Y/n] con Y por defecto.
-func confirmPrompt(system, programs bool) string {
+func confirmPrompt(system, programs, pluginsWanted bool) string {
 	switch {
+	case system && programs && pluginsWanted:
+		return "Update system, programs and plugins? [Y/n] "
 	case system && programs:
 		return "Update system and programs? [Y/n] "
 	case system:
 		return "Update system? [Y/n] "
+	case programs && pluginsWanted:
+		return "Update programs and plugins? [Y/n] "
+	case pluginsWanted:
+		return "Update plugins? [Y/n] "
 	default:
 		return "Update programs? [Y/n] "
 	}
@@ -294,7 +344,36 @@ func check(m *config.Manifest) int {
 	}
 
 	checkDesktop()
+	checkPlugins()
 	return 0
+}
+
+// checkPlugins compara el registry con lo instalado y avisa si falta
+// un script de backend.
+func checkPlugins() {
+	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
+	if err != nil {
+		cli.Warn("plugins: " + err.Error())
+		return
+	}
+	for _, entry := range m.Plugins {
+		local := plugins.InstalledVersion(plugins.DefaultPluginsDir(), entry)
+		switch {
+		case local == "":
+			cli.Warn(fmt.Sprintf("%s: no instalado", entry.ID))
+		case local == entry.Version:
+			cli.Ok(fmt.Sprintf("%s: %s", entry.ID, local))
+		default:
+			cli.Warn(fmt.Sprintf("%s: %s -> %s", entry.ID, local, entry.Version))
+		}
+	}
+	if names, err := plugins.Scripts(); err == nil {
+		for _, name := range names {
+			if _, err := os.Stat(filepath.Join(plugins.DefaultScriptsDest, name)); err != nil {
+				cli.Warn(fmt.Sprintf("script %s: falta", name))
+			}
+		}
+	}
 }
 
 // checkDesktop compara lo instalado con AUR. Sin red es un warning.
