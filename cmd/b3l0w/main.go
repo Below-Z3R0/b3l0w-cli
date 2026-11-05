@@ -85,6 +85,10 @@ func withManifest(fn func(*config.Manifest) int) int {
 func updateCommand(args []string) int {
 	opts := update.Options{}
 	for _, arg := range args {
+		if strings.HasPrefix(arg, "--dotfiles-dir=") {
+			opts.DotfilesDir = strings.TrimPrefix(arg, "--dotfiles-dir=")
+			continue
+		}
 		switch arg {
 		case "--system":
 			opts.System = true
@@ -94,10 +98,16 @@ func updateCommand(args []string) int {
 			opts.Check = true
 		case "--yes", "-y":
 			opts.Yes = true
+		case "--dotfiles":
+			opts.Dotfiles = true
+		case "--dry-run":
+			opts.DryRun = true
+		case "--force":
+			opts.Force = true
 		case "--self":
 			opts.Self = true
 		case "-h", "--help":
-			fmt.Println("uso: b3l0w update [--self] [--system|--programs] [--check] [--yes]")
+			fmt.Println("uso: b3l0w update [--self] [--system|--programs|--dotfiles] [--check] [--yes] [--dry-run] [--force]")
 			return 0
 		default:
 			cli.Fail(fmt.Sprintf("opción desconocida: %s", arg))
@@ -515,6 +525,7 @@ uso: b3l0w <comando> [opciones]
   update --system        solo el sistema base (cachy-update / arch-update)
   update --programs      solo los programas propios
   update --check         reporta, no toca nada
+  update --dotfiles      aplica los TOML del repo sin pisar cambios locales
   update --yes           no pregunta (para scripts o cuando ya decidiste)
   update --self          actualiza el propio b3l0w
   install <nombre>       baja el programa del release a ~/.local/bin

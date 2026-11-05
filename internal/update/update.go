@@ -4,27 +4,40 @@ package update
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 )
 
 // Options son las banderas de `b3l0w update`.
 type Options struct {
-	System   bool
-	Programs bool
-	Check    bool
-	Self     bool
-	Yes      bool
+	System      bool
+	Programs    bool
+	Check       bool
+	Self        bool
+	Yes         bool
+	Dotfiles    bool
+	DryRun      bool
+	Force       bool
+	DotfilesDir string
 }
 
 // Run ejecuta el update y devuelve el código de salida.
 func Run(m *config.Manifest, opts Options) int {
 	if opts.Check {
 		return check(m)
+	}
+
+	// Dotfiles: no pisa cambios locales, así que no pide confirmación.
+	if opts.Dotfiles {
+		return updateDotfiles(opts)
 	}
 
 	// Pase lo que pase, la terminal tiene que quedar usable: cachy-update
@@ -109,6 +122,89 @@ func updateSystem(opts Options) int {
 	// permite leer el resto del update sin arrastrar el estado.
 	cli.RestoreTTY()
 	return 0
+}
+
+// updateDotfiles aplica los TOML del repo sin pisar cambios locales.
+func updateDotfiles(opts Options) int {
+	dir := opts.DotfilesDir
+	if dir == "" {
+		dir = defaultDotfilesDir()
+	}
+	if dir == "" {
+		cli.Fail("no encontré dotfiles/; pasá --dotfiles-dir=<ruta>")
+		return 1
+	}
+
+	// Validar el TOML de Noctalia antes de tocar nada.
+	if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
+		if out, err := cli.RunCombined("noctalia", "config", "validate", path); err != nil {
+			cli.Fail("el TOML del repo no valida: " + out)
+			return 1
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	state := filepath.Join(home, ".local", "state", "b3l0w", "dotfiles.json")
+
+	// Snapshot antes de tocar el home. Si snapper no tiene config `home`,
+	// el 3-way sigue protegiendo: no se pisa ningún cambio local.
+	if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
+		cli.Warn("sin snapshot de home: " + err.Error())
+	}
+
+	cli.Step("Aplicando dotfiles")
+	res, err := dotfiles.Pull(dir, home, state, opts.Force, opts.DryRun)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+
+	for _, f := range res.Updated {
+		cli.Ok(fmt.Sprintf("%s: actualizado", f))
+	}
+	for _, f := range res.Kept {
+		fmt.Printf("  %s %s: conservado (cambio local)\n", cli.Dim("·"), f)
+	}
+	for _, f := range res.Missing {
+		cli.Ok(fmt.Sprintf("%s: instalado", f))
+	}
+	for _, f := range res.Conflicts {
+		cli.Warn(fmt.Sprintf("%s: conflicto, revisá %s.new", f, f))
+	}
+
+	if opts.DryRun {
+		fmt.Printf("\n  %s\n", cli.Dim("dry-run: no se escribió nada"))
+	}
+	if len(res.Conflicts) > 0 {
+		fmt.Printf("\n  %s\n", cli.Dim("los conflictos no se pisaron; fusioná a mano y volvé a correr"))
+	}
+	return 0
+}
+
+func defaultDotfilesDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidates := []string{
+		filepath.Join(home, "Documents", "Github", "b3l0w", "dotfiles"),
+		filepath.Join(home, ".local", "share", "b3l0w", "dotfiles"),
+	}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // confirmPrompt arma la pregunta según lo que se va a tocar. Formato
