@@ -31,7 +31,7 @@ check() {
 echo "▸ smoke test: $BIN"
 
 check "version sale 0"            "$BIN version" 0
-check "version tiene formato"     "$BIN version | grep -qE '^b3l0w (v[0-9]+\.[0-9]+\.[0-9]+|dev)$'" 0
+check "version tiene formato"     "$BIN version | grep -qE '^b3l0w (v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+)?|dev)$'" 0
 check "help sale 0"               "$BIN --help" 0
 check "help menciona update"      "$BIN --help | grep -q 'update --programs'" 0
 check "list sale 0"               "$BIN list" 0
