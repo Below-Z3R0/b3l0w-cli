@@ -108,15 +108,6 @@ func Run(m *config.Manifest, opts Options) int {
 func updatePlugins() int {
 	cli.Step("Actualizando plugins")
 
-	names, err := plugins.InstallScripts("")
-	if err != nil {
-		cli.Warn("scripts: " + err.Error())
-	} else {
-		for _, name := range names {
-			cli.Ok("script " + name)
-		}
-	}
-
 	if plugins.HasSource(plugins.SourceName) {
 		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
 			cli.Warn("source: " + err.Error())
@@ -409,9 +400,7 @@ func checkPlugins() {
 	}
 	if names, err := plugins.Scripts(); err == nil {
 		for _, name := range names {
-			if _, err := os.Stat(filepath.Join(plugins.DefaultScriptsDest, name)); err != nil {
-				cli.Warn(fmt.Sprintf("script %s: falta", name))
-			}
+			_ = name // los backends viven en el binario
 		}
 	}
 }

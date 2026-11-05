@@ -11,13 +11,10 @@
         "android-tools",
         "arch-audit",
         "ark",
-        "arp-scan",
         "awesome-terminal-fonts",
         "base",
         "base-devel",
         "bash-completion",
-        "bettercap",
-        "bettercap-caplets",
         "bind",
         "bluedevil",
         "blueman",
@@ -56,7 +53,6 @@
         "catdoc",
         "chafa",
         "char-white",
-        "chntpw",
         "chromium",
         "chwd",
         "cmake",
@@ -113,7 +109,6 @@
         "gst-plugins-ugly",
         "gwenview",
         "hdparm",
-        "hivex",
         "hplip",
         "hwdetect",
         "hwinfo",
@@ -174,7 +169,6 @@
         "networkmanager-openvpn",
         "nfs-utils",
         "nilfs-utils",
-        "nmap",
         "noto-fonts",
         "noto-fonts-cjk",
         "noto-fonts-emoji",
@@ -182,7 +176,6 @@
         "ntfs-3g",
         "obs-studio",
         "obsidian",
-        "openbsd-netcat",
         "opencl-mesa",
         "openssh",
         "os-prober",
@@ -330,8 +323,7 @@
         "audio",
         "seat",
         "rfkill",
-        "network",
-        "kismet"
+        "network"
       ],
       "files": [
         {
@@ -417,15 +409,15 @@
     },
     "tools": {
       "repo": [
-        "nmap",
+        "android-tools",
+        "arp-scan",
+        "bedrock-on-linux-bin",
         "bettercap",
         "bettercap-caplets",
-        "arp-scan",
         "chntpw",
         "hivex",
-        "openbsd-netcat",
-        "bedrock-on-linux-bin",
-        "android-tools"
+        "nmap",
+        "openbsd-netcat"
       ]
     },
     "docs": {

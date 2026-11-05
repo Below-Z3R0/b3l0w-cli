@@ -58,6 +58,8 @@ func Remove(manifestPath, id, pluginsDir string, dryRun bool) error {
 	}
 	if !removed {
 		fmt.Printf("  · %s: no estaba instalado\n", id)
+	} else {
+		fmt.Printf("  · %s: borrado\n", id)
 	}
 	return nil
 }

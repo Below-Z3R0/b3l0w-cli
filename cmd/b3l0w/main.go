@@ -55,6 +55,8 @@ func run(args []string) int {
 		return updateCommand(rest)
 	case "install":
 		return installCommand(rest)
+	case "uninstall":
+		return uninstallCommand(rest)
 	case "program":
 		return programCommand(rest)
 	case "plugins":
@@ -171,6 +173,34 @@ func list() int {
 	}
 	pluginsList(nil)
 	return 0
+}
+
+func uninstallCommand(args []string) int {
+	if len(args) == 0 {
+		cli.Fail("falta el programa: b3l0w uninstall <nombre>")
+		return 1
+	}
+	name := args[0]
+	dryRun := false
+	for _, arg := range args[1:] {
+		if arg == "--dry-run" {
+			dryRun = true
+		}
+	}
+	return withManifest(func(m *config.Manifest) int {
+		if dryRun {
+			path, _ := programs.InstallPath(name)
+			fmt.Printf("  → borrar %s y quitarlo del manifiesto\n", path)
+			return 0
+		}
+		path, err := programs.Uninstall(name, m)
+		if err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		cli.Ok(fmt.Sprintf("%s desinstalado (%s)", name, path))
+		return 0
+	})
 }
 
 // installCommand baja el programa del último release y lo deja en
@@ -515,8 +545,6 @@ func pluginsCommand(args []string) int {
 		return pluginsUpdate(args[1:])
 	case "list":
 		return pluginsList(args[1:])
-	case "scripts":
-		return pluginsScripts(args[1:])
 	case "remove":
 		return pluginsRemove(args[1:])
 	case "info":
@@ -720,32 +748,14 @@ func pluginsSearch(args []string) int {
 }
 
 func pluginsRemove(args []string) int {
-	_, _, _, noctalia, rest, dryRun := pluginPaths(args)
+	_, _, manifest, noctalia, rest, dryRun := pluginPaths(args)
 	if len(rest) == 0 {
 		cli.Fail("falta el id: b3l0w plugins remove <autor/nombre>")
 		return 1
 	}
-	if err := plugins.Remove(plugins.DefaultManifestPath(), rest[0], noctalia, dryRun); err != nil {
+	if err := plugins.Remove(manifest, rest[0], noctalia, dryRun); err != nil {
 		cli.Fail(err.Error())
 		return 1
-	}
-	return 0
-}
-
-func pluginsScripts(args []string) int {
-	dest := ""
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--dest=") {
-			dest = strings.TrimPrefix(arg, "--dest=")
-		}
-	}
-	names, err := plugins.InstallScripts(dest)
-	if err != nil {
-		cli.Fail(err.Error())
-		return 1
-	}
-	for _, name := range names {
-		cli.Ok(name)
 	}
 	return 0
 }
@@ -793,6 +803,7 @@ uso: b3l0w <comando> [opciones]
   channel [stable|edge]  canal del escritorio
   install <nombre>       baja el programa del release a ~/.local/bin
                          (--source=… --asset=… lo registra en un paso)
+  uninstall <nombre>     borra el binario y lo saca del manifiesto
   install system         compara la definición y aplica lo que falta
                          (--profile=… --file=… --dotfiles=… --apply --yes)
   system diff            compara el system.json embebido con el remoto
@@ -807,7 +818,6 @@ uso: b3l0w <comando> [opciones]
   plugins remove <id>    borra local o deshabilita si viene del source
   plugins info <id>      muestra versión, API, repo y si está instalado
   plugins search <texto> busca en el registry
-  plugins scripts        instala backends en /usr/local/bin (legacy)
   plugin-exec <script>   ejecuta un backend embebido
   setup                  source + plugins + backends + doctor
   version                imprime la versión
