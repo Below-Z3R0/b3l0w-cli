@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -53,7 +54,7 @@ func run(args []string) int {
 	case "program":
 		return programCommand(rest)
 	case "plugins":
-		return pluginsCommand()
+		return pluginsCommand(rest)
 	}
 
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
@@ -349,7 +350,28 @@ func programCommand(args []string) int {
 	})
 }
 
-func pluginsCommand() int {
+func pluginsCommand(args []string) int {
+	if len(args) == 0 {
+		return pluginsExtensions()
+	}
+	switch args[0] {
+	case "sync":
+		return pluginsSync(args[1:])
+	case "build":
+		return pluginsBuild(args[1:])
+	case "install":
+		return pluginsInstall(args[1:])
+	case "update":
+		return pluginsUpdate(args[1:])
+	case "list":
+		return pluginsList(args[1:])
+	}
+	cli.Fail("uso: b3l0w plugins [sync|build|install|update|list]")
+	return 1
+}
+
+// pluginsExtensions lista los binarios b3l0w-* del directorio privado.
+func pluginsExtensions() int {
 	names := plugins.Discover()
 	cli.Step("Extensiones")
 	if len(names) == 0 {
@@ -359,6 +381,125 @@ func pluginsCommand() int {
 	sort.Strings(names)
 	for _, name := range names {
 		fmt.Printf("  b3l0w-%s\n", name)
+	}
+	return 0
+}
+
+// pluginPaths resuelve las rutas y separa las banderas de los argumentos.
+func pluginPaths(args []string) (src, registry, manifest, noctalia string, rest []string, dryRun bool) {
+	home, _ := os.UserHomeDir()
+	src = filepath.Join(home, "Documents/Github")
+	registry = filepath.Join(src, "b3l0w-plugins")
+	manifest = filepath.Join(src, "b3l0w", "plugins", "plugins.json")
+	noctalia = filepath.Join(home, ".local", "share", "noctalia", "plugins")
+
+	for _, arg := range args {
+		switch {
+		case arg == "--dry-run":
+			dryRun = true
+		case strings.HasPrefix(arg, "--src="):
+			src = strings.TrimPrefix(arg, "--src=")
+		case strings.HasPrefix(arg, "--registry="):
+			registry = strings.TrimPrefix(arg, "--registry=")
+		case strings.HasPrefix(arg, "--manifest="):
+			manifest = strings.TrimPrefix(arg, "--manifest=")
+		case strings.HasPrefix(arg, "--plugins-dir="):
+			noctalia = strings.TrimPrefix(arg, "--plugins-dir=")
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return
+}
+
+func loadPluginManifest(path string) (*plugins.Manifest, int) {
+	m, err := plugins.LoadManifest(path)
+	if err != nil {
+		cli.Fail(fmt.Sprintf("no se pudo leer %s: %v", path, err))
+		return nil, 1
+	}
+	return m, 0
+}
+
+func pluginsSync(args []string) int {
+	src, registry, manifest, _, _, _ := pluginPaths(args)
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	if err := plugins.Sync(src, registry, manifest, m); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%d plugins sincronizados en %s", len(m.Plugins), registry))
+	return 0
+}
+
+func pluginsBuild(args []string) int {
+	_, registry, manifest, _, _, _ := pluginPaths(args)
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	if err := plugins.Build(registry, m); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("catalog.toml generado en %s", registry))
+	return 0
+}
+
+func pluginsInstall(args []string) int {
+	_, _, manifest, noctalia, rest, dryRun := pluginPaths(args)
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	id := ""
+	if len(rest) > 0 {
+		id = rest[0]
+	}
+	if err := plugins.Install(m, id, noctalia, dryRun); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return 0
+}
+
+func pluginsUpdate(args []string) int {
+	_, _, manifest, noctalia, rest, dryRun := pluginPaths(args)
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	id := ""
+	if len(rest) > 0 {
+		id = rest[0]
+	}
+	if err := plugins.Update(m, id, noctalia, dryRun); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return 0
+}
+
+func pluginsList(args []string) int {
+	_, _, manifest, noctalia, _, _ := pluginPaths(args)
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	cli.Step("Plugins del registry")
+	for _, entry := range m.Plugins {
+		local := plugins.InstalledVersion(noctalia, entry.Path)
+		switch {
+		case local == "":
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("no instalado"))
+		case local != entry.Version:
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("instalado "+local))
+		default:
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("ok"))
+		}
 	}
 	return 0
 }
