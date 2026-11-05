@@ -425,6 +425,8 @@ func pluginsCommand(args []string) int {
 		return pluginsUpdate(args[1:])
 	case "list":
 		return pluginsList(args[1:])
+	case "scripts":
+		return pluginsScripts(args[1:])
 	}
 	cli.Fail("uso: b3l0w plugins [sync|build|install|update|list]")
 	return 1
@@ -539,6 +541,24 @@ func pluginsUpdate(args []string) int {
 	if err := plugins.Update(m, id, noctalia, dryRun); err != nil {
 		cli.Fail(err.Error())
 		return 1
+	}
+	return 0
+}
+
+func pluginsScripts(args []string) int {
+	dest := ""
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--dest=") {
+			dest = strings.TrimPrefix(arg, "--dest=")
+		}
+	}
+	names, err := plugins.InstallScripts(dest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	for _, name := range names {
+		cli.Ok(name)
 	}
 	return 0
 }
