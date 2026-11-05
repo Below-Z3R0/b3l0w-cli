@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w/internal/plugins/docker"
@@ -27,6 +29,9 @@ uso: b3l0w docker <comando> [opciones]
   network-rm <nombre>              borra una red (no las nativas)
   run --image IMG [--name N] [--network NET] [--port P] [--env K=V]
   logs <id> [--tail N]             últimas líneas
+  logs-stream <id>                 sigue el log en 2º plano a un archivo
+  logs-stop <id>                   corta el seguimiento
+  compose-file <proyecto>          el YAML del stack
   stats [--json]                   CPU/RAM/IO por contenedor (una muestra)
   inspect <id> [--json]            env, labels, montajes, redes, health
   events [--since 6h] [--json]       últimos eventos de contenedor
@@ -149,6 +154,12 @@ func Run(args []string) int {
 		return volumeImportCmd(args[1:])
 	case "logs-follow":
 		return logsFollowCmd(args[1:])
+	case "logs-stream":
+		return logsStreamCmd(args[1:])
+	case "logs-stop":
+		return logsStopCmd(args[1:])
+	case "compose-file":
+		return composeFileCmd(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "comando desconocido: %s\n\n", args[0])
 		fmt.Print(usage)
@@ -162,6 +173,169 @@ func Run(args []string) int {
 // extraerValor saca `--flag valor` de cualquier posición: Go deja de parsear
 // flags en el primer posicional, así que `logs <id> --tail 120` perdía el tail
 // y devolvía el log entero (el panel publicaba 200 líneas y no llegaban).
+// ── logs en vivo ───────────────────────────────────────────────────────
+//
+// Noctalia NO tiene timers ni exec asíncrono en Lua, así que un `--follow`
+// no se puede mantener desde el plugin. El seguimiento lo hace este
+// proceso: arranca `docker logs -f` desacoplado (setsid) y lo va escribiendo
+// a un archivo; el panel lee ese archivo y se refresca con `watch`.
+
+func dirLogs() string {
+	base := os.Getenv("XDG_CACHE_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "/tmp"
+		}
+		base = filepath.Join(home, ".cache")
+	}
+	dir := filepath.Join(base, "noctalia", "docker-logs")
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}
+
+// rutaLog devuelve el archivo y el pid de un contenedor.
+func rutaLog(id string) (string, string) {
+	seguro := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '_'
+	}, strings.ToLower(id))
+	if len(seguro) > 40 {
+		seguro = seguro[:40]
+	}
+	dir := dirLogs()
+	return filepath.Join(dir, seguro+".log"), filepath.Join(dir, seguro+".pid")
+}
+
+func logsStreamCmd(args []string) int {
+	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "uso: logs-stream <contenedor>")
+		return 2
+	}
+	id := args[0]
+	archivo, pidFile := rutaLog(id)
+	// Si ya hay un seguimiento vivo no se duplica.
+	if pid := leerPid(pidFile); pid > 0 && procesoVivo(pid) {
+		// Ya está corriendo: se devuelve la ruta para que el panel la lea.
+		fmt.Println(archivo)
+		return 0
+	}
+	if err := os.WriteFile(archivo, nil, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "no pude crear %s: %v\n", archivo, err)
+		return 1
+	}
+	// `sh -c` con setsid: el proceso sobrevive a la salida del CLI.
+	// `exec` hace que el pid del shell SEA el de docker: sin esto se
+	// guardaba el pid del `sh -c` y `logs-stop` mataba al shell, dejando el
+	// `docker logs -f` huérfano para siempre.
+	cmd := exec.Command("sh", "-c",
+		fmt.Sprintf("exec docker logs -f --tail 200 %q >> %q 2>&1", id, archivo))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "no pude seguir el log: %v\n", err)
+		return 1
+	}
+	pid := cmd.Process.Pid
+	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0o644)
+	// El padre no espera al hijo: queda huérfano a propósito. El pid se
+	// guarda ANTES del Release — después ya no es legible.
+	_ = cmd.Process.Release()
+	// Sólo la ruta: el service la publica y el panel la lee con readFile.
+	fmt.Println(archivo)
+	return 0
+}
+
+func logsStopCmd(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "uso: logs-stop <contenedor>")
+		return 2
+	}
+	_, pidFile := rutaLog(args[0])
+	pid := leerPid(pidFile)
+	if pid <= 0 {
+		fmt.Println("sin seguimiento")
+		return 0
+	}
+	// Es líder de sesión (setsid), así que el pid es también el grupo:
+	// se manda la señal al grupo entero para no dejar hijos sueltos.
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	if proc, err := os.FindProcess(pid); err == nil {
+		_ = proc.Signal(syscall.SIGTERM)
+	}
+	_ = os.Remove(pidFile)
+	fmt.Println("detenido")
+	return 0
+}
+
+func leerPid(archivo string) int {
+	datos, err := os.ReadFile(archivo)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(datos)))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func procesoVivo(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
+}
+
+// ── compose ────────────────────────────────────────────────────────────
+
+// composeFileCmd devuelve el YAML de un stack. `docker compose ls` da los
+// archivos de configuración; de ahí se lee el principal.
+func composeFileCmd(args []string) int {
+	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "uso: compose-file <proyecto>")
+		return 2
+	}
+	nombre := args[0]
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	res, err := docker.RunCommand(ctx, docker.Exec, "compose", []string{"ls", "--all", "--format", "json"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "docker compose ls: %v\n", err)
+		return 1
+	}
+	if !res.OK {
+		fmt.Fprint(os.Stderr, res.Output)
+		return 1
+	}
+	var proyectos []struct {
+		Name        string `json:"Name"`
+		Status      string `json:"Status"`
+		ConfigFiles string `json:"ConfigFiles"`
+	}
+	if err := json.Unmarshal([]byte(res.Output), &proyectos); err != nil {
+		fmt.Fprintf(os.Stderr, "salida inesperada: %v\n", err)
+		return 1
+	}
+	for _, proyecto := range proyectos {
+		if !strings.EqualFold(proyecto.Name, nombre) {
+			continue
+		}
+		archivos := strings.Split(proyecto.ConfigFiles, ",")
+		ruta := strings.TrimSpace(archivos[0])
+		contenido, err := os.ReadFile(ruta)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "no pude leer %s: %v\n", ruta, err)
+			return 1
+		}
+		fmt.Printf("# %s\n%s", ruta, string(contenido))
+		return 0
+	}
+	fmt.Fprintf(os.Stderr, "no encontré el stack %q\n", nombre)
+	return 1
+}
+
 func extraerValor(args []string, nombre string) ([]string, string, bool) {
 	resto := make([]string, 0, len(args))
 	valor := ""
