@@ -47,6 +47,8 @@ func parseAnswer(s string, def bool) (answer, ok bool) {
 		return true, true
 	case "n", "no":
 		return false, true
+	case "c", "cancel", "cancelar":
+		return false, true
 	}
 	return false, false
 }
@@ -64,6 +66,10 @@ func AskInt(prompt string, def int) int {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return def
+	}
+	switch strings.ToLower(line) {
+	case "c", "cancel", "cancelar":
+		return -1
 	}
 	n, err := strconv.Atoi(line)
 	if err != nil || n < 1 {

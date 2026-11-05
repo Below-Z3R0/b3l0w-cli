@@ -22,10 +22,15 @@ func Report(keep int, yes bool) int {
 	}
 
 	if !yes {
-		if !cli.Confirm(fmt.Sprintf("¿Reducir de %d a %d? [Y/n] ", total, keep), false, true) {
+		if !cli.Confirm(fmt.Sprintf("¿Reducir de %d a %d? [Y/n] (c cancela) ", total, keep), false, true) {
+			cli.Warn("cancelled")
 			return 0
 		}
-		keep = cli.AskInt(fmt.Sprintf("¿Cuántas conservar? [%d] ", keep), keep)
+		keep = cli.AskInt(fmt.Sprintf("¿Cuántas conservar? [%d] (c cancela) ", keep), keep)
+		if keep <= 0 {
+			cli.Warn("cancelled")
+			return 0
+		}
 	}
 
 	removed, err := Prune(keep)
