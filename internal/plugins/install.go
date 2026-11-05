@@ -19,6 +19,9 @@ const registryTarball = "https://codeload.github.com/Below-Z3R0/b3l0w-plugins/ta
 
 // Install baja e instala uno o todos los plugins del manifiesto.
 func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
+	if err := EnsureSource(); err != nil {
+		fmt.Printf("  ! source: %v\n", err)
+	}
 	targets, err := selectPlugins(m, id)
 	if err != nil {
 		return err
@@ -28,16 +31,14 @@ func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
 			return fmt.Errorf("%s: %w", entry.ID, err)
 		}
 	}
-	if !dryRun {
-		if _, err := InstallScripts(""); err != nil {
-			fmt.Printf("  ! scripts: %v (corré b3l0w plugins scripts)\n", err)
-		}
-	}
 	return nil
 }
 
 // Update compara la versión instalada con la del manifiesto.
 func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
+	if err := EnsureSource(); err != nil {
+		fmt.Printf("  ! source: %v\n", err)
+	}
 	targets, err := selectPlugins(m, id)
 	if err != nil {
 		return err
@@ -55,11 +56,6 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 		fmt.Printf("  ▸ %s: %s -> %s\n", entry.ID, local, entry.Version)
 		if err := installOne(entry, pluginsDir, dryRun); err != nil {
 			return fmt.Errorf("%s: %w", entry.ID, err)
-		}
-	}
-	if !dryRun {
-		if _, err := InstallScripts(""); err != nil {
-			fmt.Printf("  ! scripts: %v (corré b3l0w plugins scripts)\n", err)
 		}
 	}
 	return nil

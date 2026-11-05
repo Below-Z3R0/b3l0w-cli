@@ -2,6 +2,8 @@ package plugins
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
@@ -45,11 +47,36 @@ func HasSource(name string) bool {
 	return false
 }
 
-// UpdateSource pide a Noctalia que refresque el source.
+// UpdateSource repara el clon si quedó con archivos borrados y pide a
+// Noctalia que refresque el source.
 func UpdateSource(name string) error {
+	repairSourceRepo(name)
 	out, err := cli.RunCombined("noctalia", "msg", "plugins", "update", name)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)
 	}
 	return nil
+}
+
+// repairSourceRepo detecta un working tree vacío (nos pasó: todo el
+// índice como "D") y lo restaura desde HEAD.
+func repairSourceRepo(name string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	repo := filepath.Join(home, ".local", "state", "noctalia", "plugins", "sources", name, "repo")
+	if _, err := os.Stat(repo); err != nil {
+		return
+	}
+	out, err := cli.RunCombined("git", "-C", repo, "status", "--porcelain")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "D ") || strings.HasPrefix(line, " D ") {
+			cli.RunCombined("git", "-C", repo, "reset", "--hard", "HEAD")
+			return
+		}
+	}
 }

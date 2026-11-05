@@ -22,6 +22,7 @@ type FileStatus struct {
 // Plan es lo que falta para que la máquina cumpla la definición.
 type Plan struct {
 	Packages []string
+	AUR      []string
 	Flatpak  []string
 	Own      []string
 	Services []string
@@ -31,8 +32,9 @@ type Plan struct {
 
 // Empty dice si no hay nada para hacer.
 func (p *Plan) Empty() bool {
-	return len(p.Packages) == 0 && len(p.Flatpak) == 0 && len(p.Own) == 0 &&
-		len(p.Services) == 0 && len(p.Groups) == 0 && !p.filesMissing()
+	return len(p.Packages) == 0 && len(p.AUR) == 0 && len(p.Flatpak) == 0 &&
+		len(p.Own) == 0 && len(p.Services) == 0 && len(p.Groups) == 0 &&
+		!p.filesMissing()
 }
 
 func (p *Plan) filesMissing() bool {
@@ -53,6 +55,12 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 	for _, pkg := range profile.Repo {
 		if !installed[pkg] {
 			plan.Packages = append(plan.Packages, pkg)
+		}
+	}
+
+	for _, pkg := range profile.AUR {
+		if !installed[pkg] {
+			plan.AUR = append(plan.AUR, pkg)
 		}
 	}
 

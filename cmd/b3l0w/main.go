@@ -3,6 +3,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,10 +59,14 @@ func run(args []string) int {
 		return programCommand(rest)
 	case "plugins":
 		return pluginsCommand(rest)
+	case "plugin-exec":
+		return pluginExecCommand(rest)
 	case "channel":
 		return channelCommand(rest)
 	case "check":
 		return checkCommand(rest)
+	case "system":
+		return systemCommand(rest)
 	}
 
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
@@ -173,11 +178,29 @@ func installCommand(args []string) int {
 		return installSystemCommand(args[1:])
 	}
 	name := args[0]
+	source, asset := "", ""
+	for _, arg := range args[1:] {
+		switch {
+		case strings.HasPrefix(arg, "--source="):
+			source = strings.TrimPrefix(arg, "--source=")
+		case strings.HasPrefix(arg, "--asset="):
+			asset = strings.TrimPrefix(arg, "--asset=")
+		}
+	}
 	return withManifest(func(m *config.Manifest) int {
 		program := m.Get(name)
 		if program == nil {
-			cli.Fail(fmt.Sprintf("%s no está registrado (b3l0w program add %s --source=github:owner/repo --asset=archivo)", name, name))
-			return 1
+			if source == "" {
+				cli.Fail(fmt.Sprintf("%s no está registrado (b3l0w install %s --source=github:owner/repo --asset=archivo)", name, name))
+				return 1
+			}
+			m.AddProgram(config.Program{Name: name, Source: source, Asset: asset})
+			if err := m.Save(cli.ManifestPath()); err != nil {
+				cli.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
+				return 1
+			}
+			program = m.Get(name)
+			cli.Ok(fmt.Sprintf("%s registrado", name))
 		}
 		cli.Step(fmt.Sprintf("Instalando %s", name))
 		version, err := programs.Install(*program)
@@ -304,6 +327,7 @@ func printPlan(profiles []string, plan *systeminstall.Plan) {
 	}
 
 	list("paquetes", plan.Packages)
+	list("AUR", plan.AUR)
 	list("flatpak", plan.Flatpak)
 	list("propios", plan.Own)
 	list("servicios", plan.Services)
@@ -379,6 +403,49 @@ func programCommand(args []string) int {
 	})
 }
 
+func systemCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Println("uso: b3l0w system diff|pull")
+		return 0
+	}
+	switch args[0] {
+	case "diff":
+		remote, err := systemdef.RemoteBytes()
+		if err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		local := systemdef.BuiltinBytes()
+		if sha256.Sum256(remote) == sha256.Sum256(local) {
+			cli.Ok("system.json: embed y remoto iguales")
+			return 0
+		}
+		cli.Warn(fmt.Sprintf("system.json: embed %d bytes, remoto %d bytes (distintos)", len(local), len(remote)))
+		cli.Warn("corré `b3l0w system pull` en el repo y reconstruí el binario")
+		return 1
+	case "pull":
+		remote, err := systemdef.RemoteBytes()
+		if err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		path := filepath.Join("internal", "systemdef", "system.json")
+		if _, err := os.Stat(filepath.Dir(path)); err != nil {
+			cli.Fail("system pull solo funciona dentro del repo b3l0w-cli")
+			return 1
+		}
+		if err := os.WriteFile(path, remote, 0o644); err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		cli.Ok("system.json actualizado; reconstruí el binario")
+		return 0
+	default:
+		cli.Fail("uso: b3l0w system diff|pull")
+		return 1
+	}
+}
+
 func checkCommand(args []string) int {
 	keep := 20
 	yes := false
@@ -411,6 +478,18 @@ func channelCommand(args []string) int {
 		return 1
 	}
 	cli.Ok("canal: " + args[0])
+	return 0
+}
+
+func pluginExecCommand(args []string) int {
+	if len(args) == 0 {
+		cli.Fail("falta el script: b3l0w plugin-exec <script> [args...]")
+		return 1
+	}
+	if err := plugins.ExecScript(args[0], args[1:]); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
 	return 0
 }
 
@@ -608,26 +687,37 @@ func usage() {
 
 uso: b3l0w <comando> [opciones]
 
-  status                 sistema base (novedades) + versión de cada programa
+  status                 sistema base (novedades) + programas + plugins
   list                   programas registrados, versión y binario
-  update                 actualiza el sistema (interactivo) y los programas
+  update                 CLI, sistema, programas, plugins y snapshots
   update --system        solo el sistema base (cachy-update / arch-update)
   update --programs      solo los programas propios
   update --plugins       solo plugins y backends
-  update --check         reporta, no toca nada
   update --dotfiles      aplica los TOML del repo sin pisar cambios locales
   update --adopt         registra los TOML actuales como base (primera vez)
-  update --yes           no pregunta (para scripts o cuando ya decidiste)
+  update --desktop       muestra el comando de pacman sugerido
+  update --check         reporta, no toca nada
+  update --yes           no pregunta
   update --keep=N        snapshots de Limine a conservar (default 20)
-  check                  estado + snapshots de Limine (pregunta si limpiar)
   update --self          actualiza el propio b3l0w
+  check                  estado + snapshots de Limine (pregunta si limpiar)
+  channel [stable|edge]  canal del escritorio
   install <nombre>       baja el programa del release a ~/.local/bin
-  install system         compara la definición del sistema y aplica lo que falta
-                         (--profile=desktop,dev · --apply · --yes · --dotfiles=dir)
-  doctor                 dependencias, manifiesto y directorio de plugins
+                         (--source=… --asset=… lo registra en un paso)
+  install system         compara la definición y aplica lo que falta
+                         (--profile=… --file=… --dotfiles=… --apply --yes)
+  system diff            compara el system.json embebido con el remoto
+  system pull            actualiza el system.json del repo (dev)
+  doctor                 dependencias, programas, scripts y plugins
   program add <nombre>   registra un programa (--source=… --asset=…)
   program remove <nom>   lo saca del manifiesto
-  plugins                lista las extensiones instaladas
+  plugins                lista las extensiones binarias instaladas
+  plugins list           lista los plugins de Noctalia vs registry
+  plugins sync|build     herramientas de publicación del registry
+  plugins install|update [id]  instala/actualiza plugins
+  plugins remove <id>    borra local o deshabilita si viene del source
+  plugins scripts        instala backends en /usr/local/bin (legacy)
+  plugin-exec <script>   ejecuta un backend embebido
   version                imprime la versión
 
 Las extensiones son b3l0w-<nombre> en %s

@@ -23,6 +23,9 @@ type aurResponse struct {
 	} `json:"results"`
 }
 
+// aurEndpoint es variable para apuntar a un httptest en los tests.
+var aurEndpoint = "https://aur.archlinux.org/rpc/v5/info?"
+
 // AUR consulta el RPC público de AUR. Sin red devuelve error: el
 // llamador decide si es warning o no.
 func AUR(names []string) ([]Package, error) {
@@ -33,7 +36,7 @@ func AUR(names []string) ([]Package, error) {
 	for _, name := range names {
 		args = append(args, "arg[]="+url.QueryEscape(name))
 	}
-	endpoint := "https://aur.archlinux.org/rpc/v5/info?" + strings.Join(args, "&")
+	endpoint := aurEndpoint + strings.Join(args, "&")
 
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Get(endpoint)

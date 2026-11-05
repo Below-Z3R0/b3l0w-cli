@@ -1,6 +1,7 @@
 package systemdef
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -52,6 +53,23 @@ func LoadRemote() (*Definition, error) {
 	}
 	return Builtin()
 }
+
+// RemoteBytes baja el system.json sin cache.
+func RemoteBytes() ([]byte, error) {
+	client := &http.Client{Timeout: remoteTimeout}
+	resp, err := client.Get(remoteURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("system.json remoto: HTTP %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxRemoteSize))
+}
+
+// BuiltinBytes devuelve el system.json embebido.
+func BuiltinBytes() []byte { return builtin }
 
 func cachePath() string {
 	dir, err := os.UserCacheDir()

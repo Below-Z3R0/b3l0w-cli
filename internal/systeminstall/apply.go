@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 )
 
 // Options controla cómo se aplica el plan.
@@ -29,6 +30,27 @@ func Apply(plan *Plan, opts Options) error {
 		args = append(args, plan.Packages...)
 		if err := cli.Interactive("sudo", args...); err != nil {
 			return fmt.Errorf("pacman falló: %w", err)
+		}
+	}
+
+	if len(plan.AUR) > 0 {
+		helper := ""
+		for _, h := range []string{"paru", "yay"} {
+			if cli.CommandPath(h) != "" {
+				helper = h
+				break
+			}
+		}
+		if helper == "" {
+			return fmt.Errorf("hay %d paquetes AUR y no está paru ni yay; usá el repo [b3l0w]", len(plan.AUR))
+		}
+		args := []string{"-S", "--needed"}
+		if opts.Yes {
+			args = append(args, "--noconfirm")
+		}
+		args = append(args, plan.AUR...)
+		if err := cli.Interactive(helper, args...); err != nil {
+			return fmt.Errorf("%s falló: %w", helper, err)
 		}
 	}
 
@@ -76,6 +98,17 @@ func Apply(plan *Plan, opts Options) error {
 		}
 		if err := installDotfile(file); err != nil {
 			return err
+		}
+	}
+
+	// Dejar los plugins de Noctalia listos: source y backends.
+	if err := plugins.EnsureSource(); err != nil {
+		cli.Warn("plugins: " + err.Error())
+	} else if plugins.HasSource(plugins.SourceName) {
+		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
+			cli.Warn("plugins: " + err.Error())
+		} else {
+			cli.Ok("source de plugins actualizado")
 		}
 	}
 	return nil
