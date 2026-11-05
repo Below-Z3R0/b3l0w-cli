@@ -1,0 +1,103 @@
+name: desktop-packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build in Arch
+        run: |
+          set -euo pipefail
+          tag="desktop-$(date -u +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -e TAG="$tag" \
+            archlinux:base-devel bash -euxo pipefail -c '
+              pacman -Syu --noconfirm --needed git sudo namcap devtools
+              useradd -m builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+              chown -R builder:builder /work
+              for pkg in xdg-desktop-portal-umbriel-b3l0w umbriel-b3l0w noctalia-b3l0w; do
+                su builder -c "cd /work/packaging/$pkg && makepkg -s --noconfirm --needed"
+                namcap /work/packaging/$pkg/*.pkg.tar.zst || true
+                if [ "$pkg" = "xdg-desktop-portal-umbriel-b3l0w" ]; then
+                  pacman -U --noconfirm /work/packaging/$pkg/*.pkg.tar.zst
+                fi
+              done
+              mkdir -p /work/dist
+              find /work/packaging -name "*.pkg.tar.zst" -exec cp {} /work/dist/ \;
+              chmod -R a+r /work/dist
+            '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-packages
+          path: dist/*.pkg.tar.zst
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-packages
+          path: dist
+
+      - name: Manifest
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libarchive-tools
+          python3 - <<'PY'
+          import glob, hashlib, json, os, re, subprocess
+          tag = os.environ["TAG"]
+          repo = os.environ["GH_REPO"]
+          packages = {}
+          for path in sorted(glob.glob("dist/*.pkg.tar.zst")):
+              info = subprocess.check_output(["bsdtar", "-xOf", path, ".PKGINFO"], text=True)
+              fields = {}
+              for line in info.splitlines():
+                  if "=" in line:
+                      k, v = line.split("=", 1)
+                      fields[k.strip()] = v.strip()
+              name = fields.get("pkgname") or os.path.basename(path).split("-")[0]
+              version = f'{fields.get("pkgver", "0")}-{fields.get("pkgrel", "1")}'
+              commit = ""
+              m = re.search(r"\.(?:g|r)([0-9a-f]{7,9})$", fields.get("pkgver", ""))
+              if m:
+                  commit = m.group(1)
+              sha = hashlib.sha256(open(path, "rb").read()).hexdigest()
+              packages[name] = {
+                  "version": version,
+                  "commit": commit,
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{os.path.basename(path)}",
+                  "sha256": sha,
+              }
+          with open("dist/manifest.json", "w") as fh:
+              json.dump({"release": tag, "packages": packages}, fh, indent=2, sort_keys=True)
+          PY
+          cat dist/manifest.json
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" dist/*.pkg.tar.zst dist/manifest.json \
+            --title "Desktop packages $TAG" \
+            --notes "Noctalia, Umbriel and the Umbriel portal, built from upstream main. No pacman repo: download and install with pacman -U."

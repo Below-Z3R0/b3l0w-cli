@@ -1,0 +1,68 @@
+# Maintainer: b3l0w <b3l0w@users.noreply.github.com>
+# Vendored from AUR umbriel-git. The portal dependency is patched to our
+# package name, not the AUR one.
+pkgname=umbriel-b3l0w
+pkgver=0.1.0.r1225.2339fc3
+pkgrel=2
+epoch=1
+pkgdesc='A Wayland compositor designed for daily use (b3l0w build)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/noctalia-dev/umbriel'
+license=('MIT')
+depends=(
+  'cairo'
+  'gcc-libs'
+  'glibc'
+  'jemalloc'
+  'lcms2'
+  'libdrm'
+  'libdisplay-info'
+  'libei>=1.3'
+  'libglvnd'
+  'libinput'
+  'libxcb'
+  'libxkbcommon'
+  'mesa'
+  'pango'
+  'pixman'
+  'systemd-libs'
+  'tomlplusplus'
+  'wayland'
+  'xcb-util-wm'
+  'xorg-xwayland'
+  'xdg-desktop-portal-umbriel-b3l0w'
+  'wlroots0.20>=0.20.1'
+)
+makedepends=(
+  'git'
+  'meson'
+  'ninja'
+  'nlohmann-json'
+  'pkgconf'
+  'wayland-protocols'
+)
+provides=('umbriel')
+conflicts=('umbriel' 'umbriel-git')
+source=('git+https://github.com/noctalia-dev/umbriel.git#branch=main')
+b2sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/umbriel"
+  local version
+  version=$(tr -d '[:space:]' < VERSION)
+  printf '%s.r%s.%s' "${version:-0.0.0}" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+  arch-meson "$srcdir/umbriel" "$srcdir/umbriel/build" \
+    -Db_ndebug=true \
+    -Dtests=disabled \
+    -Dharness=disabled
+  meson compile -C "$srcdir/umbriel/build"
+}
+
+package() {
+  DESTDIR="$pkgdir" meson install -C "$srcdir/umbriel/build" --no-rebuild
+  install -Dm644 "$srcdir/umbriel/LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
