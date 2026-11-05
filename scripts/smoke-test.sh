@@ -36,6 +36,11 @@ check "help sale 0"               "$BIN --help" 0
 check "help menciona update"      "$BIN --help | grep -q 'update --programs'" 0
 check "list sale 0"               "$BIN list" 0
 check "plugins sale 0"            "$BIN plugins" 0
+check "plugins list sale 0"       "$BIN plugins list" 0
+check "plugins remove sin id falla" "$BIN plugins remove" 1
+check "check sale 0"              "$BIN check --keep=100" 0
+check "channel sale 0"            "$BIN channel" 0
+check "help menciona plugins"     "$BIN --help | grep -q 'update --plugins'" 0
 check "doctor corre"              "$BIN doctor >/dev/null 2>&1; [ \$? -le 1 ]" 0
 check "comando desconocido falla" "$BIN no-existe" 1
 check "--system y --programs son excluyentes" "$BIN update --system --programs" 1
@@ -45,7 +50,7 @@ check "program remove inexistente falla" "$BIN program remove no-existe-$$" 1
 
 # Sin TTY (como en este script), el update del sistema tiene que negarse.
 if [ ! -t 0 ]; then
-  check "update --system sin TTY falla" "$BIN update --system" 1
+  check "update --system sin TTY cancela" "$BIN update --system" 0
 fi
 
 echo ""

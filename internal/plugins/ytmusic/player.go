@@ -242,15 +242,15 @@ func Status(dataDir string) (PlayerState, error) {
 		return PlayerState{Playing: false}, nil
 	}
 	out := PlayerState{
-		PID:     state.PID,
-		VideoID: state.VideoID,
-		Title:   state.Title,
-		Artist:  state.Artist,
+		PID:      state.PID,
+		VideoID:  state.VideoID,
+		Title:    state.Title,
+		Artist:   state.Artist,
 		Duration: state.Seconds,
-		Session: state.Session,
-		Socket:  state.Socket,
-		Started: state.Started,
-		Playing: alive(state.PID),
+		Session:  state.Session,
+		Socket:   state.Socket,
+		Started:  state.Started,
+		Playing:  alive(state.PID),
 	}
 	if !out.Playing {
 		_ = os.Remove(playerPath(dataDir))

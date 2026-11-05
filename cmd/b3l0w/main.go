@@ -121,6 +121,8 @@ func updateCommand(args []string) int {
 			opts.DryRun = true
 		case "--force":
 			opts.Force = true
+		case "--adopt":
+			opts.Adopt = true
 		case "--self":
 			opts.Self = true
 		case "-h", "--help":
@@ -429,6 +431,8 @@ func pluginsCommand(args []string) int {
 		return pluginsList(args[1:])
 	case "scripts":
 		return pluginsScripts(args[1:])
+	case "remove":
+		return pluginsRemove(args[1:])
 	}
 	cli.Fail("uso: b3l0w plugins [sync|build|install|update|list]")
 	return 1
@@ -547,6 +551,19 @@ func pluginsUpdate(args []string) int {
 	return 0
 }
 
+func pluginsRemove(args []string) int {
+	_, _, _, noctalia, rest, dryRun := pluginPaths(args)
+	if len(rest) == 0 {
+		cli.Fail("falta el id: b3l0w plugins remove <autor/nombre>")
+		return 1
+	}
+	if err := plugins.Remove(plugins.DefaultManifestPath(), rest[0], noctalia, dryRun); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return 0
+}
+
 func pluginsScripts(args []string) int {
 	dest := ""
 	for _, arg := range args {
@@ -599,6 +616,7 @@ uso: b3l0w <comando> [opciones]
   update --plugins       solo plugins y backends
   update --check         reporta, no toca nada
   update --dotfiles      aplica los TOML del repo sin pisar cambios locales
+  update --adopt         registra los TOML actuales como base (primera vez)
   update --yes           no pregunta (para scripts o cuando ya decidiste)
   update --keep=N        snapshots de Limine a conservar (default 20)
   check                  estado + snapshots de Limine (pregunta si limpiar)

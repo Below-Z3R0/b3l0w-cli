@@ -64,8 +64,8 @@ const mediaQuery = `query ($id: Int) {
 
 type mediaResponse struct {
 	Media struct {
-		ID          int    `json:"id"`
-		Title       struct {
+		ID    int `json:"id"`
+		Title struct {
 			Preferred string `json:"userPreferred"`
 		} `json:"title"`
 		Description string   `json:"description"`

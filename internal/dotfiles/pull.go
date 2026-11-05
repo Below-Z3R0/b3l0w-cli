@@ -152,6 +152,46 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	return res, nil
 }
 
+// Adopt registra el hash actual de cada archivo local como base, sin
+// tocar nada. Sirve para la primera corrida: evita que todo sea conflicto.
+func Adopt(srcDir, homeDir, statePath string) (int, error) {
+	st, err := loadState(statePath)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		if skip(rel) {
+			return nil
+		}
+		dest := filepath.Join(homeDir, ".config", rel)
+		data, err := os.ReadFile(dest)
+		if err != nil {
+			return nil // no existe: se instalará en el próximo pull
+		}
+		st[rel] = hash(data)
+		count++
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := saveState(statePath, st); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // skip deja fuera lo que no es configuración de usuario.
 func skip(rel string) bool {
 	base := filepath.Base(rel)

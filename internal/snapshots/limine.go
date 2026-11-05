@@ -20,6 +20,10 @@ func Entries() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return parseEntries(out)
+}
+
+func parseEntries(out string) (int, error) {
 	for _, line := range strings.Split(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if !strings.HasPrefix(trimmed, "Snapshot entries") {
@@ -47,6 +51,10 @@ func IDs() ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseIDs(out), nil
+}
+
+func parseIDs(out string) []int {
 	var ids []int
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
@@ -60,7 +68,7 @@ func IDs() ([]int, error) {
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	return ids, nil
+	return ids
 }
 
 // Prune borra las entradas más viejas y conserva las `keep` últimas.

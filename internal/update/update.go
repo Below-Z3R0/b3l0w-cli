@@ -36,6 +36,7 @@ type Options struct {
 	Desktop     bool
 	Keep        int
 	Plugins     bool
+	Adopt       bool
 }
 
 // Run ejecuta el update y devuelve el código de salida.
@@ -45,7 +46,7 @@ func Run(m *config.Manifest, opts Options) int {
 	}
 
 	// Dotfiles: no pisa cambios locales, así que no pide confirmación.
-	if opts.Dotfiles {
+	if opts.Dotfiles || opts.Adopt {
 		return updateDotfiles(opts)
 	}
 
@@ -58,26 +59,27 @@ func Run(m *config.Manifest, opts Options) int {
 	// usa alternate screen y deja el cursor oculto.
 	defer cli.RestoreTTY()
 
-	// Sin banderas se hacen las tres capas; con una sola, esa.
+	// Sin banderas se hacen las tres capas y el CLI; con una sola, esa.
 	anySelector := opts.System || opts.Programs || opts.Plugins
+	selfWanted := opts.Self || !anySelector
 	systemWanted := opts.System || !anySelector
 	programsWanted := opts.Programs || !anySelector
 	pluginsWanted := opts.Plugins || !anySelector
 
 	if !opts.Yes {
-		if !cli.Confirm(confirmPrompt(systemWanted, programsWanted, pluginsWanted), false, true) {
+		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted), false, true) {
 			cli.Warn("cancelled")
 			return 0
 		}
 	}
 
 	// El CLI primero: así el resto corre con la versión nueva.
-	if opts.Self {
+	if selfWanted {
 		if code := selfUpdate(); code != 0 {
 			return code
 		}
 		// `update --self` a secas es solo eso.
-		if !opts.System && !opts.Programs {
+		if opts.Self && !anySelector {
 			return 0
 		}
 	}
@@ -123,6 +125,17 @@ func updatePlugins() int {
 		return 0
 	}
 
+	if err := plugins.EnsureSource(); err != nil {
+		cli.Warn("source: " + err.Error())
+	} else if plugins.HasSource(plugins.SourceName) {
+		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
+			cli.Warn("source: " + err.Error())
+			return 1
+		}
+		cli.Ok("source " + plugins.SourceName + " agregado y actualizado")
+		return 0
+	}
+
 	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
 	if err != nil {
 		cli.Warn("plugins: " + err.Error())
@@ -139,6 +152,11 @@ func selfUpdate() int {
 	cli.Step("Actualizando b3l0w")
 	result, err := selfupdate.Run()
 	if err != nil {
+		// Si el binario es de un paquete, pacman manda: no es fatal.
+		if strings.Contains(err.Error(), "es del paquete") {
+			cli.Warn(err.Error())
+			return 0
+		}
 		cli.Fail(err.Error())
 		return 1
 	}
@@ -208,6 +226,16 @@ func updateDotfiles(opts Options) int {
 	}
 	state := filepath.Join(home, ".local", "state", "b3l0w", "dotfiles.json")
 
+	if opts.Adopt {
+		n, err := dotfiles.Adopt(dir, home, state)
+		if err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		cli.Ok(fmt.Sprintf("%d archivos adoptados (sin tocarlos)", n))
+		return 0
+	}
+
 	// Snapshot antes de tocar el home. Si snapper no tiene config `home`,
 	// el 3-way sigue protegiendo: no se pisa ningún cambio local.
 	if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
@@ -267,21 +295,24 @@ func fileExists(path string) bool {
 
 // confirmPrompt arma la pregunta según lo que se va a tocar. Formato
 // pacman: [Y/n] con Y por defecto.
-func confirmPrompt(system, programs, pluginsWanted bool) string {
-	switch {
-	case system && programs && pluginsWanted:
-		return "Update system, programs and plugins? [Y/n] "
-	case system && programs:
-		return "Update system and programs? [Y/n] "
-	case system:
-		return "Update system? [Y/n] "
-	case programs && pluginsWanted:
-		return "Update programs and plugins? [Y/n] "
-	case pluginsWanted:
-		return "Update plugins? [Y/n] "
-	default:
-		return "Update programs? [Y/n] "
+func confirmPrompt(self, system, programs, pluginsWanted bool) string {
+	var parts []string
+	if self {
+		parts = append(parts, "b3l0w")
 	}
+	if system {
+		parts = append(parts, "system")
+	}
+	if programs {
+		parts = append(parts, "programs")
+	}
+	if pluginsWanted {
+		parts = append(parts, "plugins")
+	}
+	if len(parts) == 0 {
+		return "Update? [Y/n] "
+	}
+	return "Update " + strings.Join(parts, ", ") + "? [Y/n] "
 }
 
 // updatePrograms corre el update de cada programa y NO se detiene en el

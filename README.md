@@ -6,13 +6,19 @@ propios** desde un solo comando, y muestra qué versión tiene cada cosa.
 ```
 b3l0w status                 # sistema base (novedades) + versión de cada programa
 b3l0w list                   # programas registrados, versión y binario
-b3l0w update                 # sistema (interactivo) y después los programas
+b3l0w update                 # CLI, sistema, programas y plugins
 b3l0w update --system        # solo cachy-update / arch-update
 b3l0w update --programs      # solo los programas propios
+b3l0w update --plugins       # solo plugins y backends
+b3l0w update --dotfiles      # TOML del repo sin pisar cambios locales
+b3l0w update --adopt         # registra los TOML actuales como base
 b3l0w update --check         # reporta, no toca nada
 b3l0w update --self          # actualiza el propio b3l0w
+b3l0w check [--keep=N]       # estado + snapshots de Limine
+b3l0w channel [stable|edge]  # canal del escritorio
+b3l0w plugins ...            # sync/build/install/update/list/remove/scripts
 b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
-b3l0w doctor                 # dependencias, programas y directorio de plugins
+b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
 
 ## Cómo está armado
@@ -146,6 +152,22 @@ Un binario `b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` (0700).
 **No se buscan en el PATH a propósito.** Cualquier cosa que pueda escribir
 un `b3l0w-update` en un directorio del PATH lo haría correr con este
 usuario, y este CLI pide sudo. `git` acepta ese riesgo; acá no.
+
+## Plugins de Noctalia
+
+El repo `b3l0w-plugins` es un source de Noctalia: una carpeta por plugin y un
+`catalog.toml` en la raíz. El CLI lo agrega solo si falta.
+
+```bash
+b3l0w update --plugins       # scripts + source/registry
+b3l0w plugins list           # versión instalada vs registry
+b3l0w plugins remove <id>    # borra local o deshabilita si viene del source
+b3l0w plugins scripts        # instala los backends en /usr/local/bin
+```
+
+Los **backends** (scripts que algunos plugins ejecutan) viven embebidos en
+`internal/plugins/scripts/` y se instalan con `plugins scripts` o con
+`update --plugins`.
 
 ## Plugins incluidos
 
