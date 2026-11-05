@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
@@ -55,6 +56,8 @@ func run(args []string) int {
 		return programCommand(rest)
 	case "plugins":
 		return pluginsCommand(rest)
+	case "channel":
+		return channelCommand(rest)
 	}
 
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
@@ -100,6 +103,8 @@ func updateCommand(args []string) int {
 			opts.Yes = true
 		case "--dotfiles":
 			opts.Dotfiles = true
+		case "--desktop":
+			opts.Desktop = true
 		case "--dry-run":
 			opts.DryRun = true
 		case "--force":
@@ -358,6 +363,19 @@ func programCommand(args []string) int {
 		cli.Ok(fmt.Sprintf("%s: %s", action, name))
 		return 0
 	})
+}
+
+func channelCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Printf("canal: %s\n", channel.Current())
+		return 0
+	}
+	if err := channel.Set(args[0]); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok("canal: " + args[0])
+	return 0
 }
 
 func pluginsCommand(args []string) int {

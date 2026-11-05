@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
+	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
@@ -14,6 +17,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
 )
 
 // Options son las banderas de `b3l0w update`.
@@ -27,6 +31,7 @@ type Options struct {
 	DryRun      bool
 	Force       bool
 	DotfilesDir string
+	Desktop     bool
 }
 
 // Run ejecuta el update y devuelve el código de salida.
@@ -38,6 +43,11 @@ func Run(m *config.Manifest, opts Options) int {
 	// Dotfiles: no pisa cambios locales, así que no pide confirmación.
 	if opts.Dotfiles {
 		return updateDotfiles(opts)
+	}
+
+	// Escritorio: por ahora solo verifica y sugiere; no ejecuta pacman.
+	if opts.Desktop {
+		return desktopUpdate()
 	}
 
 	// Pase lo que pase, la terminal tiene que quedar usable: cachy-update
@@ -278,5 +288,70 @@ func check(m *config.Manifest) int {
 			cli.Ok(fmt.Sprintf("%s: %s", status.Name, status.Version))
 		}
 	}
+
+	checkDesktop()
 	return 0
+}
+
+// checkDesktop compara lo instalado con AUR. Sin red es un warning.
+func checkDesktop() {
+	ch := channel.Current()
+	remote, err := versioncheck.AUR([]string{"umbriel-git", "noctalia-git"})
+	if err != nil {
+		cli.Warn("escritorio: no se pudo consultar AUR")
+		return
+	}
+	for _, pkg := range remote {
+		local := localVersion(pkg.Name)
+		switch {
+		case local == "":
+			cli.Warn(fmt.Sprintf("%s: no instalado (%s)", pkg.Name, ch))
+		case compareVersions(local, pkg.Version) == 0:
+			cli.Ok(fmt.Sprintf("%s: %s (%s)", pkg.Name, local, ch))
+		case compareVersions(local, pkg.Version) > 0:
+			cli.Ok(fmt.Sprintf("%s: %s (local más nuevo que AUR; %s)", pkg.Name, local, ch))
+		default:
+			cli.Warn(fmt.Sprintf("%s: %s -> %s (%s)", pkg.Name, local, pkg.Version, ch))
+		}
+	}
+}
+
+// desktopUpdate no ejecuta pacman: muestra el comando y el canal.
+func desktopUpdate() int {
+	ch := channel.Current()
+	pkgs := []string{"umbriel-git", "noctalia-git"}
+	if ch == channel.Stable {
+		pkgs = []string{"umbriel", "noctalia"}
+	}
+	cli.Step("Escritorio")
+	fmt.Printf("  canal: %s\n", ch)
+	fmt.Printf("  b3l0w todavía no ejecuta pacman.\n\n")
+	fmt.Printf("  para actualizar:\n    sudo pacman -S %s\n", strings.Join(pkgs, " "))
+	return 0
+}
+
+func localVersion(pkg string) string {
+	out, err := cli.Run("pacman", "-Q", pkg)
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(out)
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
+}
+
+// compareVersions usa vercmp (pacman): -1 local < remoto, 0 igual,
+// 1 local > remoto. Sin vercmp asume igual para no inventar updates.
+func compareVersions(local, remote string) int {
+	out, err := cli.Run("vercmp", local, remote)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0
+	}
+	return n
 }
