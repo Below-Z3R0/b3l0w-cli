@@ -28,6 +28,11 @@ func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
 			return fmt.Errorf("%s: %w", entry.ID, err)
 		}
 	}
+	if !dryRun {
+		if _, err := InstallScripts(""); err != nil {
+			fmt.Printf("  ! scripts: %v (corré b3l0w plugins scripts)\n", err)
+		}
+	}
 	return nil
 }
 
@@ -50,6 +55,11 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 		fmt.Printf("  ▸ %s: %s -> %s\n", entry.ID, local, entry.Version)
 		if err := installOne(entry, pluginsDir, dryRun); err != nil {
 			return fmt.Errorf("%s: %w", entry.ID, err)
+		}
+	}
+	if !dryRun {
+		if _, err := InstallScripts(""); err != nil {
+			fmt.Printf("  ! scripts: %v (corré b3l0w plugins scripts)\n", err)
 		}
 	}
 	return nil

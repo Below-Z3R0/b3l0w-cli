@@ -4,9 +4,11 @@ package doctor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 )
@@ -71,6 +73,18 @@ func Run(m *config.Manifest) int {
 		errors++
 	default:
 		cli.Ok(fmt.Sprintf("plugins: %s (privado)", dir))
+	}
+
+	// Scripts/backends de plugins: si falta uno, el plugin no funciona.
+	if names, err := plugins.Scripts(); err == nil {
+		for _, name := range names {
+			path := filepath.Join(plugins.DefaultScriptsDest, name)
+			if _, err := os.Stat(path); err != nil {
+				cli.Warn(fmt.Sprintf("script de plugin: falta %s (b3l0w plugins scripts)", path))
+			} else {
+				cli.Ok(fmt.Sprintf("script de plugin: %s", path))
+			}
+		}
 	}
 
 	if errors > 0 {
