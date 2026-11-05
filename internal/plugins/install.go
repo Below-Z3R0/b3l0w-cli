@@ -183,24 +183,33 @@ func extractPrefix(tarball, prefix, dest string) error {
 	}
 }
 
+// candidateDirs son los lugares donde puede vivir un plugin instalado:
+// el directorio local, la carpeta legacy y el source materializado.
+func candidateDirs(pluginsDir string, entry Entry) []string {
+	dirs := []string{
+		filepath.Join(pluginsDir, slug(entry)),
+		filepath.Join(pluginsDir, entry.Path),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		pattern := filepath.Join(home, ".local", "state", "noctalia", "plugins", "materialized", "*", slug(entry))
+		if matches, err := filepath.Glob(pattern); err == nil {
+			dirs = append(dirs, matches...)
+		}
+	}
+	return dirs
+}
+
 // InstalledVersion lee la versión del plugin instalado, o "".
-// Acepta la carpeta nueva (slug) y la vieja (b3l0w-<name>).
 func InstalledVersion(pluginsDir string, entry Entry) string {
-	for _, dir := range []string{slug(entry), entry.Path} {
-		meta, err := readPluginMeta(filepath.Join(pluginsDir, dir, "plugin.toml"))
-		if err == nil {
+	for _, dir := range candidateDirs(pluginsDir, entry) {
+		if meta, err := readPluginMeta(filepath.Join(dir, "plugin.toml")); err == nil {
 			return meta.Version
 		}
 	}
 	return ""
 }
 
-// Installed dice si el plugin está instalado.
+// Installed dice si el plugin está instalado (local o desde un source).
 func Installed(pluginsDir string, entry Entry) bool {
-	for _, dir := range []string{slug(entry), entry.Path} {
-		if _, err := os.Stat(filepath.Join(pluginsDir, dir, "plugin.toml")); err == nil {
-			return true
-		}
-	}
-	return false
+	return InstalledVersion(pluginsDir, entry) != ""
 }
