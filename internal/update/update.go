@@ -18,12 +18,28 @@ type Options struct {
 	Programs bool
 	Check    bool
 	Self     bool
+	Yes      bool
 }
 
 // Run ejecuta el update y devuelve el código de salida.
 func Run(m *config.Manifest, opts Options) int {
 	if opts.Check {
 		return check(m)
+	}
+
+	// Pase lo que pase, la terminal tiene que quedar usable: cachy-update
+	// usa alternate screen y deja el cursor oculto.
+	defer cli.RestoreTTY()
+
+	// Sin banderas se hacen las dos mitades; con una sola, esa.
+	systemWanted := opts.System || !opts.Programs
+	programsWanted := opts.Programs || !opts.System
+
+	if !opts.Yes {
+		if !cli.Confirm(confirmPrompt(systemWanted, programsWanted), false, true) {
+			cli.Warn("cancelled")
+			return 0
+		}
 	}
 
 	// El CLI primero: así el resto corre con la versión nueva.
@@ -36,10 +52,6 @@ func Run(m *config.Manifest, opts Options) int {
 			return 0
 		}
 	}
-
-	// Sin banderas: las dos mitades. Con una sola: esa.
-	systemWanted := opts.System || !opts.Programs
-	programsWanted := opts.Programs || !opts.System
 
 	if systemWanted {
 		if code := updateSystem(opts); code != 0 {
@@ -93,7 +105,23 @@ func updateSystem(opts Options) int {
 		cli.Fail(fmt.Sprintf("el actualizador del sistema falló: %v", err))
 		return 1
 	}
+	// cachy-update deja la terminal en alternate screen: restaurarla acá
+	// permite leer el resto del update sin arrastrar el estado.
+	cli.RestoreTTY()
 	return 0
+}
+
+// confirmPrompt arma la pregunta según lo que se va a tocar. Formato
+// pacman: [Y/n] con Y por defecto.
+func confirmPrompt(system, programs bool) string {
+	switch {
+	case system && programs:
+		return "Update system and programs? [Y/n] "
+	case system:
+		return "Update system? [Y/n] "
+	default:
+		return "Update programs? [Y/n] "
+	}
 }
 
 // updatePrograms corre el update de cada programa y NO se detiene en el

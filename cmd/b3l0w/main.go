@@ -91,10 +91,12 @@ func updateCommand(args []string) int {
 			opts.Programs = true
 		case "--check":
 			opts.Check = true
+		case "--yes", "-y":
+			opts.Yes = true
 		case "--self":
 			opts.Self = true
 		case "-h", "--help":
-			fmt.Println("uso: b3l0w update [--self] [--system|--programs] [--check]")
+			fmt.Println("uso: b3l0w update [--self] [--system|--programs] [--check] [--yes]")
 			return 0
 		default:
 			cli.Fail(fmt.Sprintf("opción desconocida: %s", arg))
@@ -372,6 +374,7 @@ uso: b3l0w <comando> [opciones]
   update --system        solo el sistema base (cachy-update / arch-update)
   update --programs      solo los programas propios
   update --check         reporta, no toca nada
+  update --yes           no pregunta (para scripts o cuando ya decidiste)
   update --self          actualiza el propio b3l0w
   install <nombre>       baja el programa del release a ~/.local/bin
   install system         compara la definición del sistema y aplica lo que falta
