@@ -6,10 +6,13 @@
 package selfupdate
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/fetch"
@@ -20,7 +23,33 @@ import (
 const (
 	repo  = "Below-Z3R0/b3l0w-cli"
 	asset = "b3l0w-linux-amd64"
+	api   = "https://api.github.com/repos/" + repo + "/releases/latest"
 )
+
+// Check devuelve el tag del último release, o "" si no hay red.
+func Check() (string, error) {
+	req, err := http.NewRequest(http.MethodGet, api, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "b3l0w")
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub: HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	return body.TagName, nil
+}
 
 // Result cuenta qué pasó.
 type Result struct {

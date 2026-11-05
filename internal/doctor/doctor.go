@@ -83,6 +83,17 @@ func Run(m *config.Manifest) int {
 		}
 	}
 
+	// Noctalia y su source de plugins.
+	if cli.HaveCommand("noctalia") {
+		if plugins.HasSource(plugins.SourceName) {
+			cli.Ok("noctalia: source " + plugins.SourceName + " presente")
+		} else {
+			cli.Warn("noctalia: falta el source " + plugins.SourceName + " (b3l0w update --plugins)")
+		}
+	} else {
+		cli.Warn("noctalia no está en PATH: los plugins no se actualizan")
+	}
+
 	// Dependencias declaradas por los plugins (gh, mpv, etc.).
 	if deps, err := plugins.Dependencies(); err == nil {
 		var ids []string

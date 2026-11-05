@@ -19,6 +19,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
 )
 
@@ -345,6 +346,14 @@ func updatePrograms(m *config.Manifest) int {
 
 // check reporta qué hay pendiente sin tocar nada.
 func check(m *config.Manifest) int {
+	cli.Step("b3l0w")
+	cli.Ok(fmt.Sprintf("versión: %s", version.Version))
+	if !strings.Contains(version.Version, "dev") {
+		if latest, err := selfupdate.Check(); err == nil && latest != "" && latest != version.Version {
+			cli.Warn(fmt.Sprintf("b3l0w: %s -> %s", version.Version, latest))
+		}
+	}
+
 	cli.Step("Estado de las actualizaciones")
 
 	if system.Available() {

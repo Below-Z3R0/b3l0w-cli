@@ -67,6 +67,8 @@ func run(args []string) int {
 		return checkCommand(rest)
 	case "system":
 		return systemCommand(rest)
+	case "setup":
+		return setupCommand()
 	}
 
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
@@ -517,6 +519,10 @@ func pluginsCommand(args []string) int {
 		return pluginsScripts(args[1:])
 	case "remove":
 		return pluginsRemove(args[1:])
+	case "info":
+		return pluginsInfo(args[1:])
+	case "search":
+		return pluginsSearch(args[1:])
 	}
 	cli.Fail("uso: b3l0w plugins [sync|build|install|update|list]")
 	return 1
@@ -588,12 +594,12 @@ func pluginsSync(args []string) int {
 }
 
 func pluginsBuild(args []string) int {
-	_, registry, manifest, _, _, _ := pluginPaths(args)
+	src, registry, manifest, _, _, _ := pluginPaths(args)
 	m, code := loadPluginManifest(manifest)
 	if m == nil {
 		return code
 	}
-	if err := plugins.Build(registry, m); err != nil {
+	if err := plugins.Build(registry, src, m); err != nil {
 		cli.Fail(err.Error())
 		return 1
 	}
@@ -631,6 +637,84 @@ func pluginsUpdate(args []string) int {
 	if err := plugins.Update(m, id, noctalia, dryRun); err != nil {
 		cli.Fail(err.Error())
 		return 1
+	}
+	return 0
+}
+
+func setupCommand() int {
+	cli.Step("Setup de b3l0w")
+	if err := plugins.EnsureSource(); err != nil {
+		cli.Warn("source: " + err.Error())
+	} else {
+		cli.Ok("source " + plugins.SourceName)
+	}
+	if plugins.HasSource(plugins.SourceName) {
+		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
+			cli.Warn("plugins: " + err.Error())
+		} else {
+			cli.Ok("plugins actualizados")
+		}
+	}
+	if _, err := plugins.InstallScripts(""); err != nil {
+		cli.Warn("backends: " + err.Error())
+	} else {
+		cli.Ok("backends instalados")
+	}
+	return withManifest(doctor.Run)
+}
+
+func pluginsInfo(args []string) int {
+	_, _, manifest, noctalia, rest, _ := pluginPaths(args)
+	if len(rest) == 0 {
+		cli.Fail("falta el id: b3l0w plugins info <autor/nombre>")
+		return 1
+	}
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	for _, entry := range m.Plugins {
+		if entry.ID != rest[0] {
+			continue
+		}
+		cli.Step(entry.ID)
+		fmt.Printf("  nombre:     %s\n", entry.Name)
+		fmt.Printf("  versión:    %s\n", entry.Version)
+		fmt.Printf("  plugin_api: %d\n", entry.PluginAPI)
+		fmt.Printf("  repo:       %s\n", entry.Repo)
+		fmt.Printf("  path:       %s\n", entry.Path)
+		local := plugins.InstalledVersion(noctalia, entry)
+		if local == "" {
+			fmt.Println("  instalado:  no")
+		} else {
+			fmt.Printf("  instalado:  %s\n", local)
+		}
+		return 0
+	}
+	cli.Fail("plugin no encontrado: " + rest[0])
+	return 1
+}
+
+func pluginsSearch(args []string) int {
+	_, _, manifest, _, rest, _ := pluginPaths(args)
+	q := strings.ToLower(strings.Join(rest, " "))
+	if q == "" {
+		cli.Fail("falta la búsqueda: b3l0w plugins search <texto>")
+		return 1
+	}
+	m, code := loadPluginManifest(manifest)
+	if m == nil {
+		return code
+	}
+	found := 0
+	for _, entry := range m.Plugins {
+		if strings.Contains(strings.ToLower(entry.ID+" "+entry.Name), q) {
+			fmt.Printf("  %-24s %s\n", entry.ID, entry.Version)
+			found++
+		}
+	}
+	if found == 0 {
+		cli.Warn("sin resultados")
 	}
 	return 0
 }
@@ -721,8 +805,11 @@ uso: b3l0w <comando> [opciones]
   plugins sync|build     herramientas de publicación del registry
   plugins install|update [id]  instala/actualiza plugins
   plugins remove <id>    borra local o deshabilita si viene del source
+  plugins info <id>      muestra versión, API, repo y si está instalado
+  plugins search <texto> busca en el registry
   plugins scripts        instala backends en /usr/local/bin (legacy)
   plugin-exec <script>   ejecuta un backend embebido
+  setup                  source + plugins + backends + doctor
   version                imprime la versión
 
 Las extensiones son b3l0w-<nombre> en %s

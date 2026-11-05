@@ -49,7 +49,7 @@ dependencies = ["mpvpaper"]
 		Repo: "Below-Z3R0/b3l0w-wallpaper", Path: "b3l0w-wallpaper",
 		Version: "0.4.1", PluginAPI: 43,
 	}}}
-	if err := Build(registry, m); err != nil {
+	if err := Build(registry, registry, m); err != nil {
 		t.Fatal(err)
 	}
 
