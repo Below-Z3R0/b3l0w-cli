@@ -146,7 +146,7 @@ func updateCommand(args []string) int {
 }
 
 func list() int {
-	return withManifest(func(m *config.Manifest) int {
+	code := withManifest(func(m *config.Manifest) int {
 		cli.Step("Programas registrados")
 		if len(m.Programs) == 0 {
 			fmt.Println("  (ninguno)")
@@ -164,6 +164,11 @@ func list() int {
 		}
 		return 0
 	})
+	if code != 0 {
+		return code
+	}
+	pluginsList(nil)
+	return 0
 }
 
 // installCommand baja el programa del último release y lo deja en

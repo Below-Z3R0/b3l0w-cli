@@ -15,9 +15,9 @@ func TestLoadRemote(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := remoteURL
-	remoteURL = srv.URL
-	defer func() { remoteURL = old }()
+	old := apiURL
+	apiURL = srv.URL
+	defer func() { apiURL = old }()
 
 	d, err := LoadRemote()
 	if err != nil {
@@ -36,9 +36,9 @@ func TestLoadRemoteFallback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := remoteURL
-	remoteURL = srv.URL
-	defer func() { remoteURL = old }()
+	old := apiURL
+	apiURL = srv.URL
+	defer func() { apiURL = old }()
 
 	d, err := LoadRemote()
 	if err != nil {

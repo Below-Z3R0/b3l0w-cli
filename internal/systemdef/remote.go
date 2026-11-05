@@ -9,8 +9,9 @@ import (
 	"time"
 )
 
-// remoteURL es variable para poder apuntar a un httptest en los tests.
-var remoteURL = "https://raw.githubusercontent.com/Below-Z3R0/b3l0w/main/system.json"
+// apiURL es la API de contenidos: raw cachea y no acepta query strings.
+// Es variable para poder apuntar a un httptest en los tests.
+var apiURL = "https://api.github.com/repos/Below-Z3R0/b3l0w/contents/system.json"
 
 const (
 	remoteTimeout = 5 * time.Second
@@ -33,15 +34,10 @@ func LoadRemote() (*Definition, error) {
 	}
 
 	client := &http.Client{Timeout: remoteTimeout}
-	if resp, err := client.Get(remoteURL); err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			if data, rerr := io.ReadAll(io.LimitReader(resp.Body, maxRemoteSize)); rerr == nil {
-				if d, perr := parse(data); perr == nil {
-					writeCache(cache, data)
-					return d, nil
-				}
-			}
+	if data, err := remoteGet(client); err == nil {
+		if d, perr := parse(data); perr == nil {
+			writeCache(cache, data)
+			return d, nil
 		}
 	}
 
@@ -57,7 +53,20 @@ func LoadRemote() (*Definition, error) {
 // RemoteBytes baja el system.json sin cache.
 func RemoteBytes() ([]byte, error) {
 	client := &http.Client{Timeout: remoteTimeout}
-	resp, err := client.Get(remoteURL)
+	return remoteGet(client)
+}
+
+// remoteGet pide el archivo a la API con Accept raw.
+func remoteGet(client *http.Client) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
+	req.Header.Set("User-Agent", "b3l0w")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
