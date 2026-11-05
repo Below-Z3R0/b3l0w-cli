@@ -17,10 +17,10 @@ order = [ "bar", "bottom", "top", "right" ]
 
     [bar.bar]
     auto_hide = false
-    border = "outline"
+    border = "outline_variant"
     border_width = 0.0
     capsule = true
-    capsule_fill = "surface_variant"
+    capsule_fill = "surface_container"
     capsule_group = []
     capsule_opacity = 0.95
     capsule_padding = 8.0
@@ -122,7 +122,7 @@ active_opacity = 1.0
 active_scale = 1.0
 auto_hide = false
 background_opacity = 0.87999999523162842
-border = "outline"
+border = "outline_variant"
 border_width = 0.0
 concave_edge_corners = true
 cross_axis_padding = 8
@@ -272,7 +272,7 @@ widget_order = [ "lockscreen-login-box@eDP-1" ]
     type = "login_box"
 
         [lockscreen_widgets.widget."lockscreen-login-box@eDP-1".settings]
-        background_color = "surface_variant"
+        background_color = "surface_container"
         background_opacity = 0.88
         background_radius = 14.0
         center_password_text = false
@@ -355,7 +355,6 @@ enabled = []
     name = "community"
 
 [shell]
-app_icon_colorize = false
 avatar_path = ""
 button_borders = false
 card_borders = false
@@ -376,7 +375,7 @@ launch_apps_custom_command = ""
 niri_overview_type_to_launch_enabled = false
 offline_mode = false
 password_style = "default"
-polkit_agent = false
+polkit_agent = true
 popup_borders = false
 popup_shadows = true
 screen_time_enabled = false
@@ -406,6 +405,12 @@ time_format = "{:%H:%M}"
     provider_prefix = "/"
     show_icons = true
     sort_by_usage = true
+
+
+    [shell.launcher.panels]
+    # El plugin declara una entrada por escalon de ancho (la misma vista a
+    # distintos anchos). En el launcher solo tiene sentido la de 1500.
+    ignored = ["b3low/wallpaper:panel_w800", "b3low/wallpaper:panel_w900", "b3low/wallpaper:panel_w1000", "b3low/wallpaper:panel_w1100", "b3low/wallpaper:panel_w1200", "b3low/wallpaper:panel_w1300", "b3low/wallpaper:panel_w1400", "b3low/wallpaper:panel_w1600", "b3low/wallpaper:panel_w1700", "b3low/wallpaper:panel_w1800", "b3low/wallpaper:panel_w1900"]
 
         [shell.launcher.dmenu]
 
@@ -561,27 +566,45 @@ swap_pct_activity_threshold = 20.0
 swap_pct_critical_threshold = 80.0
 
 [theme]
-builtin = "Catppuccin"
-community_palette = "Catppuccin Frappe Pink"
+builtin = "Rosé Pine"
+community_palette = "ADW"
 custom_palette = ""
-mode = "dark"
+mode = "light"
 pure_black_dark = false
-source = "community"
+source = "builtin"
 wallpaper_scheme = "m3-content"
 
     [theme.templates]
     builtin_ids = [
+      "btop",
       "gtk3",
       "gtk4",
-      "qt",
-      "kde",
+      "kcolorscheme",
       "kitty",
-      "walker",
-      "btop",
+      "qt",
+      "umbriel",
     ]
-    community_ids = []
+    community_ids = [
+      "chromium-based",
+      "zen-browser",
+      "discord",
+      "libreoffice",
+      "micro",
+      "neovim",
+      "obsidian",
+      "vscode",
+      "heroiclauncher",
+      "prismlauncher",
+      "steam",
+      "fuzzel",
+      "fastfetch",
+      "obs",
+      "konsole",
+      "lazygit",
+    ]
     enable_builtin_templates = true
     enable_community_templates = true
+
 
 [wallpaper]
 directory = "~/.local/share/Steam/steamapps/workshop/content/431960"
@@ -679,3 +702,12 @@ tooltip = "iGPU Power Profile"
 type = "custom_button"
 interval_seconds = 30
 
+[theme.templates.user.hermes]
+input_path = "$XDG_CONFIG_HOME/noctalia/templates/hermes-skin.yaml"
+output_path = "$XDG_STATE_HOME/noctalia/hermes/hermes-skin.yaml"
+post_hook = "bash '~/.config/noctalia/templates/apply.sh'"
+hook_async = false
+
+[theme.templates.user.seanime]
+input_path = "$XDG_CONFIG_HOME/noctalia/templates/palette.css"
+output_path = "$XDG_STATE_HOME/noctalia/seanime/palette.css"

@@ -12,7 +12,6 @@ show_cheatsheet = false
 
 autostart = [
     "noctalia -d",
-    "/usr/lib/polkit-kde-authentication-agent-1"
 ]
 
 # Keymap
@@ -109,28 +108,28 @@ name = "music"
 [keybinds]
 
 # APPS
-"Mod+T"           = { action = "spawn:kitty", repeat = false }
-"Mod+Space"       = "spawn:noctalia msg panel-toggle launcher"
-"Mod+Shift+B"     = "spawn:noctalia msg bar-toggle"
-"Mod+Shift+S"     = { action = "spawn:satty-wrap gui", repeat = false }
-"Mod+Shift+O"     = "spawn:ocr-region.sh"
+"Mod+T"           = { action = "spawn kitty", repeat = false }
+"Mod+Space"       = "spawn noctalia msg panel-toggle launcher"
+"Mod+Shift+B"     = "spawn noctalia msg bar-toggle"
+"Mod+Shift+S"     = { action = "spawn satty-wrap gui", repeat = false }
+"Mod+Shift+O"     = "spawn ocr-region.sh"
 
 # LOCK + ORCA
-"Mod+Alt+L"     = "spawn:noctalia-greeter-session"
-"Control+Alt+L" = "spawn:noctalia-greeter-session"
-"Mod+Alt+S"     = "spawn:pkill orca || exec orca"
+"Mod+Alt+L"     = "spawn noctalia msg session lock"
+"Control+Alt+L" = "spawn noctalia msg session lock"
+"Mod+Alt+S"     = "spawn pkill orca || exec orca"
 
 # MULTIMEDIA
-"XF86AudioRaiseVolume" = { action = "spawn:wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+ -l 1.0", allow_when_locked = true }
-"XF86AudioLowerVolume" = { action = "spawn:wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-", allow_when_locked = true }
-"XF86AudioMute"        = { action = "spawn:wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", allow_when_locked = true }
-"XF86AudioMicMute"     = { action = "spawn:wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle", allow_when_locked = true }
-"XF86AudioPlay"        = { action = "spawn:playerctl play-pause", allow_when_locked = true }
-"XF86AudioStop"        = { action = "spawn:playerctl stop", allow_when_locked = true }
-"XF86AudioPrev"        = { action = "spawn:playerctl previous", allow_when_locked = true }
-"XF86AudioNext"        = { action = "spawn:playerctl next", allow_when_locked = true }
-"XF86MonBrightnessUp"   = { action = "spawn:brightnessctl --class=backlight set +10%", allow_when_locked = true }
-"XF86MonBrightnessDown" = { action = "spawn:brightnessctl --class=backlight set 10%-", allow_when_locked = true }
+"XF86AudioRaiseVolume" = { action = "spawn wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1+ -l 1.0", allow_when_locked = true }
+"XF86AudioLowerVolume" = { action = "spawn wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.1-", allow_when_locked = true }
+"XF86AudioMute"        = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", allow_when_locked = true }
+"XF86AudioMicMute"     = { action = "spawn wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle", allow_when_locked = true }
+"XF86AudioPlay"        = { action = "spawn playerctl play-pause", allow_when_locked = true }
+"XF86AudioStop"        = { action = "spawn playerctl stop", allow_when_locked = true }
+"XF86AudioPrev"        = { action = "spawn playerctl previous", allow_when_locked = true }
+"XF86AudioNext"        = { action = "spawn playerctl next", allow_when_locked = true }
+"XF86MonBrightnessUp"   = { action = "spawn brightnessctl --class=backlight set +10%", allow_when_locked = true }
+"XF86MonBrightnessDown" = { action = "spawn brightnessctl --class=backlight set 10%-", allow_when_locked = true }
 
 # OVERVIEW / CLOSE / CHEATSHEET
 "Mod+O"           = { action = "overview-toggle", repeat = false }
@@ -138,8 +137,8 @@ name = "music"
 "Mod+Q"           = { action = "window-close", repeat = false }
 "Mod+W"           = { action = "window-close", repeat = false }
 "Mod+Ctrl+Alt+K"  = "cheatsheet-toggle"
-"Mod+Shift+E"     = "session-quit:skip-confirmation"
-"Control+Alt+Delete" = "session-quit:skip-confirmation"
+"Mod+Shift+E"     = "session-quit skip-confirmation"
+"Control+Alt+Delete" = "session-quit skip-confirmation"
 "Mod+Shift+P"     = "dpms-off"
 "Mod+Escape"      = { action = "shortcuts-inhibit-toggle", allow_when_inhibited = true, repeat = false }
 
@@ -188,12 +187,12 @@ name = "music"
 "Mod+R"           = "window-cycle-primary-extent"
 "Mod+Shift+R"     = "window-cycle-primary-extent-back"
 "Mod+Ctrl+Shift+R" = "window-cycle-secondary-extent"
-"Mod+Minus"       = "window-modify-primary-extent:-0.1"
-"Mod+Equal"       = "window-modify-primary-extent:0.1"
-"Mod+Shift+Minus" = "window-modify-secondary-extent:-0.1"
-"Mod+Shift+Equal" = "window-modify-secondary-extent:0.1"
-"Mod+Alt+R" = "window-set-primary-extent:0.5"      # Reset width a 50% (equivalente a Mod+Ctrl+R de Niri)
-"Mod+Alt+Shift+R" = "window-set-secondary-extent:0.5"  # Reset height a 50%
+"Mod+Minus"       = "window-modify-primary-extent -0.1"
+"Mod+Equal"       = "window-modify-primary-extent 0.1"
+"Mod+Shift+Minus" = "window-modify-secondary-extent -0.1"
+"Mod+Shift+Equal" = "window-modify-secondary-extent 0.1"
+"Mod+Alt+R" = "window-set-primary-extent 0.5"      # Reset width a 50% (equivalente a Mod+Ctrl+R de Niri)
+"Mod+Alt+Shift+R" = "window-set-secondary-extent 0.5"  # Reset height a 50%
 
 # FOCUS MONITOR
 "Mod+Shift+Left"  = "output-focus-left"
@@ -230,33 +229,33 @@ name = "music"
 "Mod+Ctrl+Page_Down" = "column-move-to-workspace-next"
 
 # SWITCH WORKSPACE BY NUMBER
-"Mod+1" = "workspace-switch:1"
-"Mod+2" = "workspace-switch:2"
-"Mod+3" = "workspace-switch:3"
-"Mod+4" = "workspace-switch:4"
-"Mod+5" = "workspace-switch:5"
-"Mod+6" = "workspace-switch:6"
-"Mod+7" = "workspace-switch:7"
-"Mod+8" = "workspace-switch:8"
-"Mod+9" = "workspace-switch:9"
-"Mod+0" = "workspace-switch:10"
+"Mod+1" = "workspace-switch 1"
+"Mod+2" = "workspace-switch 2"
+"Mod+3" = "workspace-switch 3"
+"Mod+4" = "workspace-switch 4"
+"Mod+5" = "workspace-switch 5"
+"Mod+6" = "workspace-switch 6"
+"Mod+7" = "workspace-switch 7"
+"Mod+8" = "workspace-switch 8"
+"Mod+9" = "workspace-switch 9"
+"Mod+0" = "workspace-switch 10"
 
 # MOVE WINDOW TO WORKSPACE BY NUMBER
-"Mod+Shift+1" = "window-move-to-workspace:1"
-"Mod+Shift+2" = "window-move-to-workspace:2"
-"Mod+Shift+3" = "window-move-to-workspace:3"
-"Mod+Shift+4" = "window-move-to-workspace:4"
-"Mod+Shift+5" = "window-move-to-workspace:5"
-"Mod+Shift+6" = "window-move-to-workspace:6"
-"Mod+Shift+7" = "window-move-to-workspace:7"
-"Mod+Shift+8" = "window-move-to-workspace:8"
-"Mod+Shift+9" = "window-move-to-workspace:9"
-"Mod+Shift+0" = "window-move-to-workspace:10"
+"Mod+Shift+1" = "window-move-to-workspace 1"
+"Mod+Shift+2" = "window-move-to-workspace 2"
+"Mod+Shift+3" = "window-move-to-workspace 3"
+"Mod+Shift+4" = "window-move-to-workspace 4"
+"Mod+Shift+5" = "window-move-to-workspace 5"
+"Mod+Shift+6" = "window-move-to-workspace 6"
+"Mod+Shift+7" = "window-move-to-workspace 7"
+"Mod+Shift+8" = "window-move-to-workspace 8"
+"Mod+Shift+9" = "window-move-to-workspace 9"
+"Mod+Shift+0" = "window-move-to-workspace 10"
 
 # SCRATCHPADS
-"Mod+Shift+Space" = { action = "window-move-to-scratchpad:terminal", repeat = false }
-"Mod+Ctrl+Space"  = { action = "window-restore-from-scratchpad:terminal", repeat = false }
-"Mod+Tab"         = "scratchpad-toggle:terminal"
+"Mod+Shift+Space" = { action = "window-move-to-scratchpad terminal", repeat = false }
+"Mod+Ctrl+Space"  = { action = "window-restore-from-scratchpad terminal", repeat = false }
+"Mod+Tab"         = "scratchpad-toggle terminal"
 
 # WHEEL NAVIGATION (Niri: Mod+WheelScrollDown/Up = focus-workspace)
 "Mod+WheelDown" = "workspace-next"
@@ -264,3 +263,10 @@ name = "music"
 "Mod+Shift+WheelDown" = "window-focus-down"
 "Mod+Shift+WheelUp"   = "window-focus-up"
 
+
+
+[output.eDP-1]
+position = [9600, -1080]
+
+[output.HDMI-A-1]
+position = [7680, -1080]

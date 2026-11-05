@@ -1,0 +1,10 @@
+# Una forma por línea. Las líneas vacías y las que empiezan por # se ignoran.
+# Para añadir o quitar una figura, edita este fichero. No hay que tocar código.
+cookie12
+hexagon
+octagon
+pentagon
+gem
+sunny
+arch
+semiCircle
