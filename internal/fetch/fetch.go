@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
 
 // ToTemp baja url a un temporal ejecutable y devuelve su ruta.

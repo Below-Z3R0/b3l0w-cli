@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	dockercli "github.com/Below-Z3R0/b3l0w/internal/plugins/docker/cli"
+	dockercli "github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli"
 )
 
 func main() { os.Exit(dockercli.Run(os.Args[1:])) }

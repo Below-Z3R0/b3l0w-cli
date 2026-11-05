@@ -33,7 +33,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/we"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we"
 )
 
 const usage = `b3l0w we — wallpapers de Wallpaper Engine

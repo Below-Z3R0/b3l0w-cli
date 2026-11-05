@@ -5,11 +5,11 @@ package update
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/config"
-	"github.com/Below-Z3R0/b3l0w/internal/programs"
-	"github.com/Below-Z3R0/b3l0w/internal/selfupdate"
-	"github.com/Below-Z3R0/b3l0w/internal/system"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 )
 
 // Options son las banderas de `b3l0w update`.

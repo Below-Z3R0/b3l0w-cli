@@ -13,7 +13,7 @@ bash scripts/smoke-test.sh ./b3l0w
 La versión se inyecta al compilar:
 
 ```bash
-go build -ldflags "-X github.com/Below-Z3R0/b3l0w/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
+go build -ldflags "-X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
 ```
 
 ## Reglas del proyecto

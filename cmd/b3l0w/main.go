@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/config"
-	"github.com/Below-Z3R0/b3l0w/internal/doctor"
-	"github.com/Below-Z3R0/b3l0w/internal/plugins"
-	"github.com/Below-Z3R0/b3l0w/internal/programs"
-	"github.com/Below-Z3R0/b3l0w/internal/systemdef"
-	"github.com/Below-Z3R0/b3l0w/internal/systeminstall"
-	"github.com/Below-Z3R0/b3l0w/internal/update"
-	"github.com/Below-Z3R0/b3l0w/internal/version"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 )
 
 func main() {

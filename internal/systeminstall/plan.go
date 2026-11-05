@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/systemdef"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
 )
 
 // FileStatus es un dotfile: si existe el origen (en el repo) y el destino.

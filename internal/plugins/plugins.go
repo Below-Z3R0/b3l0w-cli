@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
 
 // Prefix es el prefijo de los binarios de extensión.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/we"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we"
 )
 
 func cmdList(args []string) int {

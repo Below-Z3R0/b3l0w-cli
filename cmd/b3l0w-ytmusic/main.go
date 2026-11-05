@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	ytmusiccli "github.com/Below-Z3R0/b3l0w/internal/plugins/ytmusic/cli"
+	ytmusiccli "github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli"
 )
 
 func main() { os.Exit(ytmusiccli.Run(os.Args[1:])) }

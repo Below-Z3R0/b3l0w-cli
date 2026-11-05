@@ -11,14 +11,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/fetch"
-	"github.com/Below-Z3R0/b3l0w/internal/programs"
-	"github.com/Below-Z3R0/b3l0w/internal/version"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/fetch"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 )
 
 const (
-	repo  = "Below-Z3R0/b3l0w"
+	repo  = "Below-Z3R0/b3l0w-cli"
 	asset = "b3l0w-linux-amd64"
 )
 

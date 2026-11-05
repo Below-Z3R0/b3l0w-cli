@@ -5,7 +5,7 @@ package main
 import (
 	"os"
 
-	anilistcli "github.com/Below-Z3R0/b3l0w/internal/plugins/anilist/cli"
+	anilistcli "github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist/cli"
 )
 
 func main() { os.Exit(anilistcli.Run(os.Args[1:])) }

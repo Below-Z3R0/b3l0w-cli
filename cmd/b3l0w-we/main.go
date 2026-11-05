@@ -9,7 +9,7 @@ package main
 import (
 	"os"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/we/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we/cli"
 )
 
 func main() { os.Exit(wecli.Run(os.Args[1:])) }

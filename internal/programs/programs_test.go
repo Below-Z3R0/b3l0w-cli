@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Below-Z3R0/b3l0w/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 )
 
 func TestParseVersion(t *testing.T) {

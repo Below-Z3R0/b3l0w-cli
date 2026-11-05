@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/docker"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker"
 )
 
 const usage = `b3l0w docker — contenedores, imágenes, volúmenes y redes

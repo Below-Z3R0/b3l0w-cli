@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/we"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we"
 )
 
 // thumbName reproduce el nombre que arma el plugin en Luau

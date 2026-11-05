@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/anilist"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist"
 )
 
 const usage = `b3l0w anilist — biblioteca y carátulas de AniList

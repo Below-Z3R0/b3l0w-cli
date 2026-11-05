@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/config"
-	"github.com/Below-Z3R0/b3l0w/internal/fetch"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/fetch"
 )
 
 // AssetURL arma la URL del asset del último release a partir de la

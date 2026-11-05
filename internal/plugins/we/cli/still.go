@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/we"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we"
 )
 
 // cmdStill saca un cuadro de un video cualquiera y lo guarda como JPEG.

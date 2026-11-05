@@ -216,7 +216,7 @@ b3l0w anilist status                token y caché
 ## Compilar
 
 ```bash
-go build -ldflags "-X github.com/Below-Z3R0/b3l0w/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
+go build -ldflags "-X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
 go build -o ~/.local/lib/b3l0w/plugins/b3l0w-we ./cmd/b3l0w-we
 go build -o ~/.local/lib/b3l0w/plugins/b3l0w-docker ./cmd/b3l0w-docker
 go build -o ~/.local/lib/b3l0w/plugins/b3l0w-anilist ./cmd/b3l0w-anilist

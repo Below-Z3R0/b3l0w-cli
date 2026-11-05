@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
 
 // Options controla cómo se aplica el plan.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w/internal/plugins/ytmusic"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic"
 )
 
 const usage = `b3l0w ytmusic — YouTube Music real (innertube + mpv)

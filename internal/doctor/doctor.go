@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Below-Z3R0/b3l0w/internal/cli"
-	"github.com/Below-Z3R0/b3l0w/internal/config"
-	"github.com/Below-Z3R0/b3l0w/internal/programs"
-	"github.com/Below-Z3R0/b3l0w/internal/system"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 )
 
 // Run devuelve 0 si no hay errores (los avisos no cuentan).
