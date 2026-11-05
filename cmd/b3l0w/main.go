@@ -655,10 +655,10 @@ func setupCommand() int {
 			cli.Ok("plugins actualizados")
 		}
 	}
-	if _, err := plugins.InstallScripts(""); err != nil {
+	if names, err := plugins.Scripts(); err != nil {
 		cli.Warn("backends: " + err.Error())
 	} else {
-		cli.Ok("backends instalados")
+		cli.Ok(fmt.Sprintf("%d backends embebidos", len(names)))
 	}
 	return withManifest(doctor.Run)
 }
