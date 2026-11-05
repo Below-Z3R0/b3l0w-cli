@@ -226,7 +226,7 @@ func installSystemCommand(args []string) int {
 	if file != "" {
 		def, err = systemdef.Load(file)
 	} else {
-		def, err = systemdef.Builtin()
+		def, err = systemdef.LoadRemote()
 	}
 	if err != nil {
 		cli.Fail(fmt.Sprintf("no se pudo leer la definición: %v", err))
