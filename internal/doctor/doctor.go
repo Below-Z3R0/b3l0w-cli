@@ -4,7 +4,9 @@ package doctor
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
@@ -87,9 +89,33 @@ func Run(m *config.Manifest) int {
 		}
 	}
 
+	// Dependencias declaradas por los plugins (gh, mpv, etc.).
+	if deps, err := plugins.Dependencies(); err == nil {
+		var ids []string
+		for id := range deps {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			for _, dep := range deps[id] {
+				if !hasDependency(dep) {
+					cli.Warn(fmt.Sprintf("%s: falta dependencia %s", id, dep))
+				}
+			}
+		}
+	}
+
 	if errors > 0 {
 		cli.Fail(fmt.Sprintf("%d chequeos fallaron", errors))
 		return 1
 	}
 	return 0
+}
+
+// hasDependency busca un comando en PATH o un paquete instalado.
+func hasDependency(name string) bool {
+	if cli.CommandPath(name) != "" {
+		return true
+	}
+	return exec.Command("pacman", "-Q", name).Run() == nil
 }

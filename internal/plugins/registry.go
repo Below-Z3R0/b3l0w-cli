@@ -144,15 +144,16 @@ func copyTree(src, dst string) error {
 }
 
 type pluginMeta struct {
-	ID          string
-	Name        string
-	Version     string
-	PluginAPI   int
-	Author      string
-	License     string
-	Icon        string
-	Description string
-	Tags        []string
+	ID           string
+	Name         string
+	Version      string
+	PluginAPI    int
+	Author       string
+	License      string
+	Icon         string
+	Description  string
+	Tags         []string
+	Dependencies []string
 }
 
 var (
@@ -163,6 +164,7 @@ var (
 		return regexp.MustCompile(`(?m)^` + key + `\s*=\s*(\d+)`)
 	}
 	reTags = regexp.MustCompile(`(?m)^tags\s*=\s*\[([^\]]*)\]`)
+	reDeps = regexp.MustCompile(`(?m)^dependencies\s*=\s*\[([^\]]*)\]`)
 )
 
 func readPluginMeta(path string) (pluginMeta, error) {
@@ -204,6 +206,14 @@ func readPluginMeta(path string) (pluginMeta, error) {
 			}
 		}
 	}
+	if mm := reDeps.FindStringSubmatch(text); mm != nil {
+		for _, dep := range strings.Split(mm[1], ",") {
+			dep = strings.Trim(strings.TrimSpace(dep), `"`)
+			if dep != "" {
+				meta.Dependencies = append(meta.Dependencies, dep)
+			}
+		}
+	}
 	if meta.ID == "" || meta.Version == "" {
 		return meta, fmt.Errorf("plugin.toml sin id o version")
 	}
@@ -241,6 +251,44 @@ func Build(registryDir string, m *Manifest) error {
 		b.WriteString("\n")
 	}
 	return os.WriteFile(filepath.Join(registryDir, "catalog.toml"), []byte(b.String()), 0o644)
+}
+
+// DefaultPluginsDir es donde Noctalia guarda los plugins locales.
+func DefaultPluginsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share", "noctalia", "plugins")
+}
+
+// DefaultManifestPath es plugins/plugins.json del repo de distribución.
+func DefaultManifestPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "Documents", "Github", "b3l0w", "plugins", "plugins.json")
+}
+
+// Dependencies devuelve las dependencias declaradas por cada plugin
+// instalado o materializado.
+func Dependencies() (map[string][]string, error) {
+	m, err := LoadManifest(DefaultManifestPath())
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string)
+	for _, entry := range m.Plugins {
+		for _, dir := range candidateDirs(DefaultPluginsDir(), entry) {
+			meta, err := readPluginMeta(filepath.Join(dir, "plugin.toml"))
+			if err == nil {
+				out[entry.ID] = meta.Dependencies
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 func quoteList(items []string) string {
