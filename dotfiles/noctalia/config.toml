@@ -652,10 +652,12 @@ enabled = [
 
     [[plugins.source]]
     kind = "git"
+    location = "https://github.com/noctalia-dev/official-plugins"
     name = "official"
 
     [[plugins.source]]
     kind = "git"
+    location = "https://github.com/noctalia-dev/community-plugins"
     name = "community"
 
 [shell]
