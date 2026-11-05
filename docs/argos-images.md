@@ -144,6 +144,65 @@ Dockerfile del repo de Argos.
 Si más adelante se publican, el flujo cambia `make image-*` por `docker compose pull`. Las imágenes de
 un registry **no caducan**; el límite de 6 h es del runner de GitHub Actions, no del almacenamiento.
 
+## Inventario, "descarga" y actualizaciones
+
+**No hay registry**: no existe una imagen que se descargue. En este esquema, "descargar" son tres cosas:
+
+1. `git clone` / `git pull` del repo **`Below-Z3R0/argos`** — **todavía no está creado en GitHub**;
+   el repo local no tiene remote.
+2. Docker baja y cachea las **imágenes base** (golang, debian, nvidia/cuda, openvino, rocm).
+3. La imagen de Argos se **construye** en la máquina y se taggea `argos:local-<variante>-<sha7>`.
+
+El inventario que ya tenés se extiende con una entrada por variante:
+
+```
+variante, source_repo, source_sha, image_tag, image_id,
+revision_label, built_at, size_bytes, previous_tag
+```
+
+La imagen lleva el label `org.opencontainers.image.revision`, que se compara con el SHA del repo para
+saber si el binario dentro corresponde al código:
+
+```sh
+docker image inspect "$tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+```
+
+### Primera instalación
+
+1. Detectar hardware y recomendar variante.
+2. Verificar `docker` y espacio (15 GB; AMD 25 GB).
+3. Clonar el repo si falta; si existe, avisar por cambios locales.
+4. Confirmar variante, tiempo estimado y tamaño.
+5. Construir: `make image-<variante> IMAGE=argos:local-<variante>-<sha7>`.
+6. Verificar el label de revisión contra el SHA.
+7. Escribir `ARGOS_IMAGE` en `~/Documents/Docker/argos/.env`.
+8. `compose up -d` con el override (`compose.gpu.yml` o `compose.dri.yml`).
+9. Esperar `/readyz`; instalar modelos si faltan; reportar provider.
+
+### Actualizaciones
+
+1. `git -C <repo> fetch origin`.
+2. Comparar `HEAD` con `origin/main` y el hash del Dockerfile.
+3. Si hay cambios: mostrar `git log --oneline HEAD..origin/main` y preguntar
+   **actualizar ahora / más tarde**.
+4. Aceptar: `git pull` → build con el SHA nuevo → verificar label → `up -d`. Guardar el tag anterior
+   como `previous_tag`.
+5. Rechazar: registrar el SHA omitido para no volver a preguntar en cada arranque.
+
+### Rollback
+
+`b3l0w argos rollback` toma `previous_tag`, escribe `ARGOS_IMAGE` y hace `up -d`. Las imágenes viejas
+se conservan; no se poda automáticamente.
+
+Si más adelante se publica en un registry, el paso 5 cambia por `docker compose pull` y el inventario
+guarda el **digest** en lugar de construirlo.
+
+### Falta del lado de Argos
+
+- **Crear y pushear `Below-Z3R0/argos`** (hoy no existe en GitHub).
+- Validar los builds Intel/AMD una vez (en curso).
+- Ya hecho: labels de revisión, tags con SHA en el Makefile, overrides de GPU/DRI, `readyz`.
+
 ## Contrato con Argos
 
 - Imagen parametrizable: el compose ya usa `image: ${ARGOS_IMAGE:-argos:local}`.
