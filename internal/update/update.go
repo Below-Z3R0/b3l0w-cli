@@ -16,6 +16,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
 )
@@ -32,6 +33,7 @@ type Options struct {
 	Force       bool
 	DotfilesDir string
 	Desktop     bool
+	Keep        int
 }
 
 // Run ejecuta el update y devuelve el código de salida.
@@ -82,9 +84,11 @@ func Run(m *config.Manifest, opts Options) int {
 		}
 	}
 	if programsWanted {
-		return updatePrograms(m)
+		if code := updatePrograms(m); code != 0 {
+			return code
+		}
 	}
-	return 0
+	return snapshots.Report(opts.Keep, opts.Yes)
 }
 
 func selfUpdate() int {

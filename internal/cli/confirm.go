@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
+
+// stdinReader se comparte para no perder líneas entre preguntas.
+var stdinReader = bufio.NewReader(os.Stdin)
 
 // Confirm pregunta como pacman: [Y/n] o [y/N], en inglés.
 //
@@ -19,7 +23,7 @@ func Confirm(prompt string, yes bool, def bool) bool {
 		return false
 	}
 
-	reader := bufio.NewReader(os.Stdin)
+	reader := stdinReader
 	for {
 		fmt.Print(prompt)
 		line, err := reader.ReadString('\n')
@@ -45,4 +49,25 @@ func parseAnswer(s string, def bool) (answer, ok bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// AskInt pide un número; vacío o inválido usa el default.
+func AskInt(prompt string, def int) int {
+	if !IsTTY() {
+		return def
+	}
+	fmt.Print(prompt)
+	line, err := stdinReader.ReadString('\n')
+	if err != nil && line == "" {
+		return def
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return def
+	}
+	n, err := strconv.Atoi(line)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }

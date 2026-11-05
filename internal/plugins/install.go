@@ -38,7 +38,7 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 		return err
 	}
 	for _, entry := range targets {
-		local := InstalledVersion(pluginsDir, entry.Path)
+		local := InstalledVersion(pluginsDir, entry)
 		if local == "" {
 			fmt.Printf("  ! %s: no instalado\n", entry.ID)
 			continue
@@ -68,13 +68,19 @@ func selectPlugins(m *Manifest, id string) ([]Entry, error) {
 }
 
 func installOne(entry Entry, pluginsDir string, dryRun bool) error {
-	dest := filepath.Join(pluginsDir, entry.Path)
+	dest := filepath.Join(pluginsDir, slug(entry))
 	if dryRun {
 		fmt.Printf("  → %s %s en %s\n", entry.ID, entry.Version, dest)
 		return nil
 	}
+	// Borrar la carpeta nueva y la vieja (b3l0w-<name>) si existen.
 	if err := os.RemoveAll(dest); err != nil {
 		return err
+	}
+	if entry.Path != slug(entry) {
+		if err := os.RemoveAll(filepath.Join(pluginsDir, entry.Path)); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
@@ -86,7 +92,7 @@ func installOne(entry Entry, pluginsDir string, dryRun bool) error {
 	}
 	defer os.Remove(tmp)
 
-	prefix := "b3l0w-plugins-main/" + entry.Path + "/"
+	prefix := "b3l0w-plugins-main/" + slug(entry) + "/"
 	if err := extractPrefix(tmp, prefix, dest); err != nil {
 		return err
 	}
@@ -178,16 +184,23 @@ func extractPrefix(tarball, prefix, dest string) error {
 }
 
 // InstalledVersion lee la versión del plugin instalado, o "".
-func InstalledVersion(pluginsDir, path string) string {
-	meta, err := readPluginMeta(filepath.Join(pluginsDir, path, "plugin.toml"))
-	if err != nil {
-		return ""
+// Acepta la carpeta nueva (slug) y la vieja (b3l0w-<name>).
+func InstalledVersion(pluginsDir string, entry Entry) string {
+	for _, dir := range []string{slug(entry), entry.Path} {
+		meta, err := readPluginMeta(filepath.Join(pluginsDir, dir, "plugin.toml"))
+		if err == nil {
+			return meta.Version
+		}
 	}
-	return meta.Version
+	return ""
 }
 
 // Installed dice si el plugin está instalado.
-func Installed(pluginsDir, path string) bool {
-	_, err := os.Stat(filepath.Join(pluginsDir, path, "plugin.toml"))
-	return err == nil
+func Installed(pluginsDir string, entry Entry) bool {
+	for _, dir := range []string{slug(entry), entry.Path} {
+		if _, err := os.Stat(filepath.Join(pluginsDir, dir, "plugin.toml")); err == nil {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
@@ -15,6 +16,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
@@ -58,6 +60,8 @@ func run(args []string) int {
 		return pluginsCommand(rest)
 	case "channel":
 		return channelCommand(rest)
+	case "check":
+		return checkCommand(rest)
 	}
 
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
@@ -90,6 +94,12 @@ func updateCommand(args []string) int {
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "--dotfiles-dir=") {
 			opts.DotfilesDir = strings.TrimPrefix(arg, "--dotfiles-dir=")
+			continue
+		}
+		if strings.HasPrefix(arg, "--keep=") {
+			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--keep=")); err == nil && n > 0 {
+				opts.Keep = n
+			}
 			continue
 		}
 		switch arg {
@@ -365,6 +375,28 @@ func programCommand(args []string) int {
 	})
 }
 
+func checkCommand(args []string) int {
+	keep := 20
+	yes := false
+	for _, arg := range args {
+		switch {
+		case strings.HasPrefix(arg, "--keep="):
+			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--keep=")); err == nil && n > 0 {
+				keep = n
+			}
+		case arg == "--yes" || arg == "-y":
+			yes = true
+		}
+	}
+	code := withManifest(func(m *config.Manifest) int {
+		return update.Run(m, update.Options{Check: true})
+	})
+	if code != 0 {
+		return code
+	}
+	return snapshots.Report(keep, yes)
+}
+
 func channelCommand(args []string) int {
 	if len(args) == 0 {
 		fmt.Printf("canal: %s\n", channel.Current())
@@ -519,7 +551,7 @@ func pluginsList(args []string) int {
 	}
 	cli.Step("Plugins del registry")
 	for _, entry := range m.Plugins {
-		local := plugins.InstalledVersion(noctalia, entry.Path)
+		local := plugins.InstalledVersion(noctalia, entry)
 		switch {
 		case local == "":
 			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("no instalado"))
@@ -545,6 +577,8 @@ uso: b3l0w <comando> [opciones]
   update --check         reporta, no toca nada
   update --dotfiles      aplica los TOML del repo sin pisar cambios locales
   update --yes           no pregunta (para scripts o cuando ya decidiste)
+  update --keep=N        snapshots de Limine a conservar (default 20)
+  check                  estado + snapshots de Limine (pregunta si limpiar)
   update --self          actualiza el propio b3l0w
   install <nombre>       baja el programa del release a ~/.local/bin
   install system         compara la definición del sistema y aplica lo que falta

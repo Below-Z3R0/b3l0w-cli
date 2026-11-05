@@ -56,6 +56,15 @@ func SaveManifest(path string, m *Manifest) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+// slug es el nombre de carpeta que espera Noctalia: la parte después
+// de la barra del id ("b3l0w/wallpaper" -> "wallpaper").
+func slug(e Entry) string {
+	if i := strings.LastIndex(e.ID, "/"); i >= 0 && i+1 < len(e.ID) {
+		return e.ID[i+1:]
+	}
+	return e.Path
+}
+
 // Sync copia cada plugin desde su clon local al repo del registry.
 //
 // El manifiesto manda: dice qué repo y qué carpeta. El sync refresca
@@ -67,12 +76,18 @@ func Sync(srcRoot, registryDir, manifestPath string, m *Manifest) error {
 	for i := range m.Plugins {
 		entry := &m.Plugins[i]
 		src := filepath.Join(srcRoot, entry.Path)
-		dst := filepath.Join(registryDir, entry.Path)
+		dst := filepath.Join(registryDir, slug(*entry))
 		if _, err := os.Stat(src); err != nil {
 			return fmt.Errorf("%s: no existe el clon local %s", entry.ID, src)
 		}
+		// Limpiar la carpeta nueva y la vieja (b3l0w-<name>).
 		if err := os.RemoveAll(dst); err != nil {
 			return err
+		}
+		if entry.Path != slug(*entry) {
+			if err := os.RemoveAll(filepath.Join(registryDir, entry.Path)); err != nil {
+				return err
+			}
 		}
 		if err := copyTree(src, dst); err != nil {
 			return fmt.Errorf("%s: %w", entry.ID, err)
@@ -203,7 +218,7 @@ func Build(registryDir string, m *Manifest) error {
 
 	now := time.Now().Unix()
 	for _, entry := range m.Plugins {
-		meta, err := readPluginMeta(filepath.Join(registryDir, entry.Path, "plugin.toml"))
+		meta, err := readPluginMeta(filepath.Join(registryDir, slug(entry), "plugin.toml"))
 		if err != nil {
 			return fmt.Errorf("%s: %w", entry.ID, err)
 		}
