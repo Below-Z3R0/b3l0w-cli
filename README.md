@@ -50,11 +50,38 @@ binario sin firma no reemplaza al que está corriendo.
 `/releases/latest`: el repo también publica los paquetes del
 escritorio, y ese release queda como "latest" sin tener el binario.
 
-Para firmar un release ya publicado:
+### Publicar un release
+
+Firmá **antes** de subir. Un release sin `SHA256SUMS.asc` está roto para
+el usuario final: `b3l0w install` y `b3l0w update --self` se niegan a
+instalar (fail-closed).
+
+```bash
+export GNUPGHOME="$HOME/.gnupg-b3l0w"
+bash scripts/maintainers/release.sh Below-Z3R0/<repo> <tag> <asset>...
+```
+
+El script calcula `SHA256SUMS`, lo firma, verifica la firma y recién
+entonces sube los tres archivos juntos. Si la firma falla, no se publica
+nada: el release nunca existe sin firma.
+
+Para firmar un release ya publicado (un forgot):
 
 ```bash
 bash scripts/maintainers/sign-release.sh Below-Z3R0/<repo> <tag>
 ```
+
+### Gate de release
+
+Ningún release se da por terminado sin firma. Antes de anunciarlo:
+
+```bash
+b3l0w doctor          # debe decir "firmado", no "SIN FIRMA"
+b3l0w update --check  # ídem
+```
+
+La clave privada nunca va a CI: la firma se hace en local y se sube el
+resultado. Fingerprint `9AE2C00AD3A9A64706A4335CC6E1D74A07833042`.
 
 ### Atajos estilo pacman
 
@@ -95,15 +122,6 @@ Clave pública: keys/b3l0w.asc
 `~/.gnupg-b3l0w` en el equipo del mantenedor; el backup va cifrado a un
 medio offline. El `.gitignore` de `keys/` bloquea `*.gpg`, `*-secret*` y
 `*-revoke*` para que un `git add -A` no los suba.
-
-### Firmar un release
-
-```bash
-export GNUPGHOME="$HOME/.gnupg-b3l0w"
-sha256sum b3l0w-linux-amd64 > SHA256SUMS
-gpg --detach-sign --armor SHA256SUMS
-gpg --verify SHA256SUMS.asc SHA256SUMS
-```
 
 ### Generar la clave (una sola vez)
 
