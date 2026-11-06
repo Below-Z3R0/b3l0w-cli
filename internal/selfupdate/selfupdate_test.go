@@ -16,13 +16,18 @@ func conInyectables(t *testing.T, fns map[string]any) {
 	t.Helper()
 	oldAPI, oldFetch, oldReplace := apiURL, fetchAsset, replaceFile
 	oldOwner, oldCurrent, oldExe := packageOwner, currentVersion, resolveExe
+	oldVerify := verifyRelease
 	oldVersion := version.Version
 
 	t.Cleanup(func() {
 		apiURL, fetchAsset, replaceFile = oldAPI, oldFetch, oldReplace
 		packageOwner, currentVersion, resolveExe = oldOwner, oldCurrent, oldExe
+		verifyRelease = oldVerify
 		version.Version = oldVersion
 	})
+
+	// Sin firma explícita, los tests no salen a la red.
+	verifyRelease = func(string, string, string) error { return nil }
 
 	for nombre, fn := range fns {
 		switch nombre {
@@ -38,6 +43,8 @@ func conInyectables(t *testing.T, fns map[string]any) {
 			currentVersion = fn.(func(string) (string, error))
 		case "exe":
 			resolveExe = fn.(func() (string, error))
+		case "verify":
+			verifyRelease = fn.(func(string, string, string) error)
 		case "version":
 			version.Version = fn.(string)
 		default:
@@ -64,7 +71,7 @@ func TestCheckLeeElTag(t *testing.T) {
 		if got := r.Header.Get("User-Agent"); got != "b3l0w" {
 			t.Errorf("User-Agent = %q, quería b3l0w", got)
 		}
-		w.Write([]byte(`{"tag_name":"v0.6.0"}`))
+		w.Write([]byte(`[{"tag_name":"desktop-2026.11.06-r1","draft":false,"prerelease":false},{"tag_name":"v0.6.0","draft":false,"prerelease":false}]`))
 	}))
 	defer srv.Close()
 	conInyectables(t, map[string]any{"apiURL": srv.URL})
@@ -195,6 +202,32 @@ func TestRunReemplazaSiLaVersionEsDistinta(t *testing.T) {
 	}
 	if origen != "/tmp/b3l0w-nuevo" || destino != "/tmp/b3l0w" {
 		t.Errorf("replace(%q, %q), quería (/tmp/b3l0w-nuevo, /tmp/b3l0w)", origen, destino)
+	}
+}
+
+func TestRunNoReemplazaSiLaFirmaFalla(t *testing.T) {
+	reemplazos := 0
+	conInyectables(t, map[string]any{
+		"version": "0.5.0",
+		"exe":     func() (string, error) { return "/tmp/b3l0w", nil },
+		"owner":   func(string) string { return "" },
+		"fetch":   func(string) (string, error) { return "/tmp/b3l0w-nuevo", nil },
+		"current": func(string) (string, error) { return "v0.6.0", nil },
+		"verify": func(string, string, string) error {
+			return errors.New("firma inválida")
+		},
+		"replace": func(string, string) error {
+			reemplazos++
+			return nil
+		},
+	})
+
+	_, err := Run()
+	if err == nil {
+		t.Fatal("esperaba error de firma")
+	}
+	if reemplazos != 0 {
+		t.Errorf("reemplazos = %d, quería 0: no se toca el binario sin firma válida", reemplazos)
 	}
 }
 

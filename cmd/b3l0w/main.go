@@ -224,12 +224,15 @@ func installCommand(args []string) int {
 	}
 	name := args[0]
 	source, asset := "", ""
+	insecure := false
 	for _, arg := range args[1:] {
 		switch {
 		case strings.HasPrefix(arg, "--source="):
 			source = strings.TrimPrefix(arg, "--source=")
 		case strings.HasPrefix(arg, "--asset="):
 			asset = strings.TrimPrefix(arg, "--asset=")
+		case arg == "--insecure":
+			insecure = true
 		}
 	}
 	return withManifest(func(m *config.Manifest) int {
@@ -248,7 +251,10 @@ func installCommand(args []string) int {
 			cli.Ok(fmt.Sprintf("%s registrado", name))
 		}
 		cli.Step(fmt.Sprintf("Instalando %s", name))
-		version, err := programs.Install(*program)
+		if insecure {
+			cli.Warn("--insecure: se salta la verificación de firma")
+		}
+		version, err := programs.InstallVerified(*program, !insecure)
 		if err != nil {
 			cli.Fail(err.Error())
 			return 1

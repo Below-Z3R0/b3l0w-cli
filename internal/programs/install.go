@@ -9,6 +9,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/fetch"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/verify"
 )
 
 // AssetURL arma la URL del asset del último release a partir de la
@@ -38,9 +39,20 @@ func InstallPath(name string) (string, error) {
 
 // Install baja el asset del último release y lo deja en ~/.local/bin.
 //
+// Exige que el release publique SHA256SUMS y su firma: un asset sin
+// firmar no se ejecuta.
+func Install(p config.Program) (string, error) {
+	return InstallVerified(p, true)
+}
+
+// InstallVerified permite saltar la firma con requireSignature=false.
+//
+// El salto es explícito (--insecure) y existe para releases viejos, no
+// para el camino normal.
+//
 // Valida el binario con `version` antes de pisar el que está: un asset
 // corrupto o de otra arquitectura no reemplaza algo que funciona.
-func Install(p config.Program) (string, error) {
+func InstallVerified(p config.Program, requireSignature bool) (string, error) {
 	url, err := AssetURL(p)
 	if err != nil {
 		return "", err
@@ -51,6 +63,12 @@ func Install(p config.Program) (string, error) {
 		return "", err
 	}
 	defer os.Remove(tmp)
+
+	if requireSignature {
+		if err := VerifyRelease(url, p.Asset, tmp); err != nil {
+			return "", err
+		}
+	}
 
 	version, err := Current(tmp)
 	if err != nil {
@@ -65,4 +83,33 @@ func Install(p config.Program) (string, error) {
 		return "", fmt.Errorf("no se pudo escribir %s: %w", dest, err)
 	}
 	return version, nil
+}
+
+// VerifyRelease baja SHA256SUMS y su firma del mismo release y valida
+// el asset.
+//
+// Los tres archivos salen del mismo release: si alguien puede cambiar
+// uno, puede cambiar los tres. Lo que no puede es producir la firma.
+func VerifyRelease(assetURL, assetName, assetPath string) error {
+	base := strings.TrimSuffix(assetURL, "/"+assetName)
+	if base == assetURL {
+		return fmt.Errorf("no pude derivar la URL del release de %s", assetURL)
+	}
+
+	sums, err := fetch.ToTemp(base + "/SHA256SUMS")
+	if err != nil {
+		return fmt.Errorf("%w (%s)", verify.ErrSinFirma, base)
+	}
+	defer os.Remove(sums)
+
+	sig, err := fetch.ToTemp(base + "/SHA256SUMS.asc")
+	if err != nil {
+		return fmt.Errorf("%w (%s)", verify.ErrSinFirma, base)
+	}
+	defer os.Remove(sig)
+
+	if err := verify.Sums(sums, sig, assetName, assetPath); err != nil {
+		return fmt.Errorf("verificación de %s: %w", assetName, err)
+	}
+	return nil
 }

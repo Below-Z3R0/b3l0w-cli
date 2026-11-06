@@ -23,7 +23,7 @@ import (
 const (
 	repo  = "Below-Z3R0/b3l0w-cli"
 	asset = "b3l0w-linux-amd64"
-	api   = "https://api.github.com/repos/" + repo + "/releases/latest"
+	api   = "https://api.github.com/repos/" + repo + "/releases?per_page=30"
 )
 
 // Inyectables. En producción son los reales; los tests los sustituyen
@@ -34,6 +34,7 @@ var (
 	replaceFile    = cli.ReplaceFile
 	packageOwner   = cli.PackageOwner
 	currentVersion = programs.Current
+	verifyRelease  = programs.VerifyRelease
 	resolveExe     = func() (string, error) {
 		exe, err := os.Executable()
 		if err != nil {
@@ -43,7 +44,12 @@ var (
 	}
 )
 
-// Check devuelve el tag del último release, o "" si no hay red.
+// Check devuelve el tag del último release del CLI.
+//
+// No usa /releases/latest a propósito: el repo también publica los
+// paquetes del escritorio, y ese release queda como "latest" aunque no
+// tenga el binario. Se busca el release más nuevo cuyo tag empiece con
+// "v", que es la convención del CLI.
 func Check() (string, error) {
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -59,13 +65,23 @@ func Check() (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GitHub: HTTP %d", resp.StatusCode)
 	}
-	var body struct {
-		TagName string `json:"tag_name"`
+	var releases []struct {
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return "", err
 	}
-	return body.TagName, nil
+	for _, release := range releases {
+		if release.Draft || release.Prerelease {
+			continue
+		}
+		if strings.HasPrefix(release.TagName, "v") {
+			return release.TagName, nil
+		}
+	}
+	return "", fmt.Errorf("no hay releases del CLI con tag v* en %s", repo)
 }
 
 // Result cuenta qué pasó.
@@ -99,12 +115,20 @@ func Run() (Result, error) {
 
 	result.Before = withV(version.Version)
 
-	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, asset)
+	tag, err := Check()
+	if err != nil {
+		return result, err
+	}
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, tag, asset)
 	tmp, err := fetchAsset(url)
 	if err != nil {
 		return result, err
 	}
 	defer os.Remove(tmp)
+
+	if err := verifyRelease(url, asset, tmp); err != nil {
+		return result, err
+	}
 
 	after, err := currentVersion(tmp)
 	if err != nil {

@@ -19,8 +19,41 @@ b3l0w channel [stable|edge]  # canal del escritorio
 b3l0w plugins ...            # build/release/install/update/list/remove/info/search
 b3l0w services ...           # list/search/hardware/images/sync/install/update/status
 b3l0w extensions             # lista las extensiones binarias del CLI
-b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
+b3l0w install <nombre>       # baja y verifica el programa del release
 b3l0w doctor                 # dependencias, programas, scripts y plugins
+```
+
+### Verificación de assets
+
+Cada release debe publicar `SHA256SUMS` y `SHA256SUMS.asc`. El
+instalador baja los tres archivos del **mismo** release, verifica la
+firma con la clave embebida y recién después compara el hash:
+
+```
+1. gpg --verify SHA256SUMS.asc SHA256SUMS   (clave embebida, keyring temporal)
+2. sha256(asset) == línea de SHA256SUMS
+3. asset version                             (que el binario responda)
+4. recién ahí se mueve a ~/.local/bin
+```
+
+Si el release no está firmado, **no se instala**. Para saltearlo en un
+release viejo, de forma explícita:
+
+```bash
+b3l0w install <nombre> --insecure
+```
+
+El self-update (`b3l0w update --self`) no tiene `--insecure`: un
+binario sin firma no reemplaza al que está corriendo.
+
+`b3l0w update --self` busca el release más nuevo con tag `v*`, no
+`/releases/latest`: el repo también publica los paquetes del
+escritorio, y ese release queda como "latest" sin tener el binario.
+
+Para firmar un release ya publicado:
+
+```bash
+bash scripts/maintainers/sign-release.sh Below-Z3R0/<repo> <tag>
 ```
 
 ### Atajos estilo pacman
