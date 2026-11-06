@@ -46,6 +46,10 @@ var (
 	}
 )
 
+// Repository es el repo GitHub del CLI, para que otros paquetes
+// (por ejemplo el chequeo de firmas) no repitan el string.
+func Repository() string { return repo }
+
 // Check devuelve el tag del último release del CLI.
 //
 // No usa /releases/latest a propósito: el repo también publica los

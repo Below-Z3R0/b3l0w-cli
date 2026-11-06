@@ -14,6 +14,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 )
 
 // Inyectables para los tests.
@@ -21,6 +22,10 @@ var (
 	apiBase      = "https://api.github.com"
 	downloadBase = "https://github.com"
 	client       = &http.Client{Timeout: 8 * time.Second}
+	// El CLI no está en el manifiesto y su release se busca con la
+	// convención v*, no con /releases/latest.
+	cliTag  = selfupdate.Check
+	cliRepo = selfupdate.Repository
 )
 
 // Status es el estado de firma del último release de un programa.
@@ -81,9 +86,13 @@ func HasSignature(repo, tag string) (bool, error) {
 	}
 }
 
-// Check revisa todos los programas del manifiesto que vengan de GitHub.
+// Check revisa los programas del manifiesto y el propio CLI.
+//
+// El CLI se chequea aparte porque no está en el manifiesto: si se
+// publica una versión sin firma, doctor tiene que verlo antes de que
+// update --self falle.
 func Check(m *config.Manifest) []Status {
-	out := make([]Status, 0, len(m.Programs))
+	out := make([]Status, 0, len(m.Programs)+1)
 	for _, p := range m.Programs {
 		repo, ok := githubRepo(p.Source)
 		if !ok {
@@ -105,7 +114,26 @@ func Check(m *config.Manifest) []Status {
 		}
 		out = append(out, st)
 	}
-	return out
+	return append(out, checkCLI())
+}
+
+// checkCLI arma el estado del release del propio b3l0w.
+func checkCLI() Status {
+	repo := cliRepo()
+	st := Status{Name: "b3l0w", Repo: repo}
+	tag, err := cliTag()
+	if err != nil {
+		st.Err = err.Error()
+		return st
+	}
+	st.Tag = tag
+	signed, err := HasSignature(repo, tag)
+	if err != nil {
+		st.Err = err.Error()
+		return st
+	}
+	st.Signed = signed
+	return st
 }
 
 // Render imprime el estado y devuelve cuántos releases están sin firma.

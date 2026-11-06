@@ -13,8 +13,14 @@ func usarServidor(t *testing.T, h http.HandlerFunc) {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	viejoAPI, viejoDown := apiBase, downloadBase
+	viejoTag, viejoRepo := cliTag, cliRepo
 	apiBase, downloadBase = srv.URL, srv.URL
-	t.Cleanup(func() { apiBase, downloadBase = viejoAPI, viejoDown })
+	cliTag = func() (string, error) { return "v1.0.0", nil }
+	cliRepo = func() string { return "owner/cli" }
+	t.Cleanup(func() {
+		apiBase, downloadBase = viejoAPI, viejoDown
+		cliTag, cliRepo = viejoTag, viejoRepo
+	})
 }
 
 func TestLatestTag(t *testing.T) {
@@ -101,8 +107,9 @@ func TestCheckSoloProgramasDeGitHub(t *testing.T) {
 	}}
 
 	got := Check(m)
-	if len(got) != 2 {
-		t.Fatalf("Check devolvió %d, quería 2 (ignora fuentes no GitHub)", len(got))
+	// 2 programas de GitHub + el propio CLI.
+	if len(got) != 3 {
+		t.Fatalf("Check devolvió %d, quería 3", len(got))
 	}
 	if !got[0].Signed {
 		t.Errorf("%s debería estar firmado", got[0].Name)
@@ -112,6 +119,9 @@ func TestCheckSoloProgramasDeGitHub(t *testing.T) {
 	}
 	if got[1].Tag != "v2.0.0" {
 		t.Errorf("tag = %q", got[1].Tag)
+	}
+	if got[2].Name != "b3l0w" || got[2].Tag != "v1.0.0" {
+		t.Errorf("CLI = %+v, quería b3l0w v1.0.0", got[2])
 	}
 }
 
