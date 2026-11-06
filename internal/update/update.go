@@ -15,6 +15,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/releases"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
@@ -78,6 +79,10 @@ func Run(m *config.Manifest, opts Options) int {
 		}
 	}
 
+	// Refrescar las DB propias antes de comparar: sin esto se
+	// actualiza contra un catálogo viejo. Es el -Sy que faltaba.
+	syncRegistry(systemWanted, servicesWanted, pluginsWanted)
+
 	// El CLI primero: así el resto corre con la versión nueva.
 	if selfWanted {
 		if code := selfUpdate(); code != 0 {
@@ -126,7 +131,7 @@ func updatePlugins() int {
 		}
 	}
 
-	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
+	m, err := plugins.LoadDefault()
 	if err != nil {
 		cli.Warn("plugins: " + err.Error())
 		return 1
@@ -147,7 +152,7 @@ func updateServices(yes bool) int {
 		return 0
 	}
 	cli.Step("Actualizando servicios")
-	m, err := services.LoadManifest(services.DefaultManifestPath())
+	m, err := services.LoadDefault()
 	if err != nil {
 		cli.Warn("services: " + err.Error())
 		return 0
@@ -172,6 +177,28 @@ func updateServices(yes bool) int {
 		}
 	}
 	return 0
+}
+
+// syncRegistry baja las DB del registry antes de aplicar cambios.
+//
+// Sin embed: si no hay red se usa el caché; si tampoco hay, se avisa y
+// se sigue con lo que haya. Un sync fallido no debe abortar el update.
+func syncRegistry(systemWanted, servicesWanted, pluginsWanted bool) {
+	var kinds []registry.Kind
+	if systemWanted {
+		kinds = append(kinds, registry.System)
+	}
+	if servicesWanted {
+		kinds = append(kinds, registry.Services)
+	}
+	if pluginsWanted {
+		kinds = append(kinds, registry.Plugins)
+	}
+	for _, kind := range kinds {
+		if _, err := registry.Sync(kind, nil); err != nil {
+			cli.Warn(err.Error())
+		}
+	}
 }
 
 func selfUpdate() int {
@@ -428,7 +455,7 @@ func check(m *config.Manifest) int {
 // checkPlugins compara el registry con lo instalado y avisa si falta
 // un script de backend.
 func checkPlugins() {
-	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
+	m, err := plugins.LoadDefault()
 	if err != nil {
 		cli.Warn("plugins: " + err.Error())
 		return

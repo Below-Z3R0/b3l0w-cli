@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "services": [
+    {
+      "id": "argos",
+      "name": "Argos",
+      "repo": "Below-Z3R0/argos",
+      "image": "ghcr.io/below-z3r0/argos",
+      "variants": [
+        "cpu",
+        "cuda",
+        "intel",
+        "amd"
+      ],
+      "available": [
+        "cpu",
+        "cuda",
+        "intel",
+        "amd"
+      ],
+      "gpu": true,
+      "ep": {
+        "amd": "MIGraphX",
+        "cpu": "CPU",
+        "cuda": "CUDA",
+        "intel": "OpenVINO"
+      },
+      "ports": [
+        6333,
+        6334,
+        7711,
+        7712
+      ],
+      "health": "http://127.0.0.1:7712/readyz",
+      "state": "ready",
+      "size_gb": 8.7,
+      "overrides": {
+        "cuda": "compose.gpu.yml",
+        "intel": "compose.dri.yml",
+        "amd": "compose.dri.yml"
+      },
+      "models": "argosctl models install --yes qwen3-embed-0.6b bge-reranker-v2-m3-int8"
+    },
+    {
+      "id": "seanime",
+      "name": "Seanime",
+      "repo": "Below-Z3R0/b3l0w-seanime",
+      "image": "ghcr.io/below-z3r0/seanime",
+      "variants": [
+        "default"
+      ],
+      "available": [
+        "default"
+      ],
+      "ports": [
+        43211
+      ],
+      "health": "http://127.0.0.1:43211/api/v1/status",
+      "state": "ready",
+      "size_gb": 0.4
+    },
+    {
+      "id": "sonus",
+      "name": "Sonus",
+      "repo": "Below-Z3R0/sonus",
+      "image": "ghcr.io/below-z3r0/sonus",
+      "variants": [
+        "cpu",
+        "cuda",
+        "intel",
+        "amd"
+      ],
+      "available": [
+        "cpu",
+        "cuda",
+        "intel",
+        "amd"
+      ],
+      "gpu": true,
+      "ep": {
+        "amd": "MIGraphX",
+        "cpu": "CPU",
+        "cuda": "CUDA",
+        "intel": "OpenVINO"
+      },
+      "ports": [
+        9101,
+        9102,
+        9103,
+        9201
+      ],
+      "health": "http://127.0.0.1:9101/healthz",
+      "state": "ready",
+      "size_gb": 6,
+      "description": "Vox (STT/TTS), Auris (ASR) y Streamd, más el sidecar misakid",
+      "components": [
+        "vox",
+        "auris",
+        "streamd",
+        "mcp",
+        "misakid"
+      ],
+      "overrides": {
+        "cuda": "compose.gpu.yml",
+        "intel": "compose.dri.yml",
+        "amd": "compose.dri.yml"
+      }
+    }
+  ]
+}

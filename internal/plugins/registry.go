@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +13,23 @@ import (
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 )
+
+//go:embed plugins.json
+var embedded []byte
+
+// Embedded devuelve el manifiesto compilado.
+func Embedded() []byte { return embedded }
+
+// LoadDefault carga el manifiesto con la jerarquía del registry.
+func LoadDefault() (*Manifest, error) {
+	data, _, err := registry.Load(registry.Plugins, embedded)
+	if err != nil {
+		return nil, err
+	}
+	return parse(data)
+}
 
 // DistributionRepo es el repo único que publica todos los plugins.
 const DistributionRepo = "Below-Z3R0/b3l0w-plugins"
@@ -40,10 +57,18 @@ type Manifest struct {
 
 // LoadManifest lee el manifiesto.
 func LoadManifest(path string) (*Manifest, error) {
+	// Sin path explícito, la fuente es el registry.
+	if path == "" {
+		return LoadDefault()
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return parse(data)
+}
+
+func parse(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
@@ -219,7 +244,7 @@ func DefaultManifestPath() string {
 // Dependencies devuelve las dependencias declaradas por cada plugin
 // instalado o materializado.
 func Dependencies() (map[string][]string, error) {
-	m, err := LoadManifest(DefaultManifestPath())
+	m, err := LoadDefault()
 	if err != nil {
 		return nil, err
 	}

@@ -7,12 +7,15 @@
 package services
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 )
 
 // Service es un servicio del manifiesto de distribución.
@@ -51,6 +54,23 @@ type Service struct {
 	SizeGB float64 `json:"size_gb,omitempty"`
 }
 
+//go:embed services.json
+var embedded []byte
+
+// Embedded devuelve el manifiesto compilado. Lo usa el sync como
+// último recurso cuando no hay red ni caché.
+func Embedded() []byte { return embedded }
+
+// LoadDefault carga el manifiesto con la jerarquía del registry:
+// caché fresco -> red -> caché viejo -> embebido.
+func LoadDefault() (*Manifest, error) {
+	data, _, err := registry.Load(registry.Services, embedded)
+	if err != nil {
+		return nil, err
+	}
+	return parseManifest(data)
+}
+
 // Manifest es services/services.json del repo de distribución.
 type Manifest struct {
 	Version  int       `json:"version"`
@@ -59,10 +79,18 @@ type Manifest struct {
 
 // LoadManifest lee el manifiesto.
 func LoadManifest(path string) (*Manifest, error) {
+	// Sin path explícito, la fuente es el registry.
+	if path == "" {
+		return LoadDefault()
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return parseManifest(data)
+}
+
+func parseManifest(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err

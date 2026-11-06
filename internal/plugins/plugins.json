@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "b3l0w/anilist",
+      "name": "b3l0w AniList",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "anilist",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/audio",
+      "name": "b3l0w Audio",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "audio",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/audit",
+      "name": "b3l0w Audit",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "audit",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/containers",
+      "name": "b3l0w Containers",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "containers",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/hover-zones",
+      "name": "Hover Zones",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "hover-zones",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/igpu-power",
+      "name": "iGPU Power",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "igpu-power",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/kanban",
+      "name": "b3l0w Kanban",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "kanban",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/net",
+      "name": "b3l0w Net",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "net",
+      "version": "1.0.0",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/wallpaper",
+      "name": "b3l0w Wallpaper",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "wallpaper",
+      "version": "0.4.1",
+      "plugin_api": 43
+    },
+    {
+      "id": "b3l0w/ytmusic",
+      "name": "b3l0w YouTube Music",
+      "repo": "Below-Z3R0/b3l0w-plugins",
+      "path": "ytmusic",
+      "version": "1.0.0",
+      "plugin_api": 43
+    }
+  ]
+}

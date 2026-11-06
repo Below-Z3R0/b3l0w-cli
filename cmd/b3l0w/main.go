@@ -18,6 +18,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
@@ -67,6 +68,8 @@ func run(args []string) int {
 		return servicesCommand(rest)
 	case "extensions":
 		return pluginsExtensions()
+	case "sync":
+		return syncCommand(rest)
 	case "plugin-exec":
 		return pluginExecCommand(rest)
 	case "channel":
@@ -567,7 +570,8 @@ func firstPositional(args []string) string {
 // como "--flag=valor" o "--flag valor".
 func servicePaths(args []string) (manifest, stateDir string, rest []string, dryRun bool) {
 	home, _ := os.UserHomeDir()
-	manifest = filepath.Join(home, "Documents/Github/b3l0w/services/services.json")
+	// Sin --manifest, la fuente es el registry (caché -> red -> embed).
+	manifest = ""
 	stateDir = filepath.Join(home, ".local/state/b3l0w/services")
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -1086,7 +1090,15 @@ func serviceDir(svc services.Service) string {
 }
 
 func servicesSync(args []string) int {
-	manifest, _, _, _ := servicePaths(args)
+	explicit, _, _, _ := servicePaths(args)
+	// Primero el "pacman -Sy": bajar la DB remota al caché.
+	if explicit == "" {
+		if _, err := registry.Sync(registry.Services, services.Embedded()); err != nil {
+			cli.Warn(err.Error())
+		}
+		explicit = registry.CachePath(registry.Services)
+	}
+	manifest := explicit
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
 		cli.Fail(err.Error())
@@ -1241,7 +1253,8 @@ func pluginPaths(args []string) (src, registry, manifest, noctalia string, rest 
 	home, _ := os.UserHomeDir()
 	src = filepath.Join(home, "Documents/Github")
 	registry = filepath.Join(src, "b3l0w-plugins")
-	manifest = filepath.Join(src, "b3l0w", "plugins", "plugins.json")
+	// Sin --manifest, el catálogo sale del registry (caché -> red -> embed).
+	manifest = ""
 	noctalia = filepath.Join(home, ".local", "share", "noctalia", "plugins")
 
 	for _, arg := range args {
@@ -1266,7 +1279,11 @@ func pluginPaths(args []string) (src, registry, manifest, noctalia string, rest 
 func loadPluginManifest(path string) (*plugins.Manifest, int) {
 	m, err := plugins.LoadManifest(path)
 	if err != nil {
-		cli.Fail(fmt.Sprintf("no se pudo leer %s: %v", path, err))
+		origen := path
+		if origen == "" {
+			origen = "el registry"
+		}
+		cli.Fail(fmt.Sprintf("no se pudo leer %s: %v", origen, err))
 		return nil, 1
 	}
 	return m, 0
@@ -1593,6 +1610,7 @@ b3l0w program, b3l0w system, b3l0w extensions.
   program add <nombre>   registra un programa (--source=… --asset=…)
   program remove <nom>   lo saca del manifiesto
   extensions             lista las extensiones binarias del CLI
+  sync [cat] [--check]   refresca las DB locales del registry
   plugins                lista los plugins de Noctalia del registry
   plugins list           lo mismo (alias explícito)
   plugins build         regenera catalog.toml y plugins.json

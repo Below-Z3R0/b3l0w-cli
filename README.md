@@ -19,6 +19,7 @@ b3l0w channel [stable|edge]  # canal del escritorio
 b3l0w plugins ...            # build/release/install/update/list/remove/info/search
 b3l0w services ...           # list/search/hardware/images/sync/install/update/status
 b3l0w extensions             # lista las extensiones binarias del CLI
+b3l0w sync [cat] [--check]   # refresca las DB del registry
 b3l0w install <nombre>       # baja y verifica el programa del release
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
@@ -105,6 +106,35 @@ b3l0w plugins -Ss anilist  # mismo que b3l0w plugins search anilist
 **No se reimplementa pacman.** `services -Syu` verifica y pregunta si
 actualizar; los servicios son Docker, no paquetes. Y `-Ss` solo existe
 donde hay catálogo que consultar.
+
+## Registry
+
+Las DB de la distro (`system.json`, `services/services.json`,
+`plugins/plugins.json`) se cargan con una sola jerarquía:
+
+```
+caché fresco (1 h) -> red -> caché viejo -> embebido
+```
+
+La red es `raw.githubusercontent.com/Below-Z3R0/b3l0w/main`. No hay
+Pages ni workflow: los archivos del repo son la fuente.
+
+```
+~/.local/state/b3l0w/registry/<categoría>.json
+```
+
+| Comando | Qué hace |
+|---|---|
+| `b3l0w sync` | baja las tres DB |
+| `b3l0w sync services` | solo una |
+| `b3l0w sync --check` | estado local, sin red |
+
+`b3l0w update` sincroniza antes de comparar. Sin eso se actualiza
+contra un catálogo viejo: es el `-Sy` que le faltaba.
+
+**El embebido es el último recurso**, no la fuente normal: en una
+instalación limpia, sin el repo clonado y sin red, el CLI igual tiene
+catálogo.
 
 ## Firmas
 
