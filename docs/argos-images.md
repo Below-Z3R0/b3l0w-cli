@@ -117,7 +117,7 @@ Dockerfile del repo de Argos.
 3. Mostrar variante, tamaño estimado y motivo; confirmar salvo `--yes`.
 4. Chequear disco libre: CPU/NVIDIA ~15 GB, AMD ~25 GB. Si no alcanza, abortar con el número exacto.
 5. Construir: `make image-gpu` / `make image-cpu` (o `docker build --target ... --build-arg ORT_FLAVOR=... -t argos:local-<variante>-<sha7> .`).
-6. Escribir `ARGOS_IMAGE=<tag>` en `~/Documents/Docker/argos/.env` **preservando** las demás claves.
+6. Escribir `ARGOS_IMAGE=<tag>` en `~/Documents/Github/argos/.env` **preservando** las demás claves.
 7. Elegir el override de dispositivos:
    - NVIDIA: `-f compose.yaml -f compose.gpu.yml`
    - Intel/AMD: `-f compose.yaml -f compose.dri.yml` (monta `/dev/dri`)
@@ -175,7 +175,7 @@ docker image inspect "$tag" --format '{{index .Config.Labels "org.opencontainers
 4. Confirmar variante, tiempo estimado y tamaño.
 5. Construir: `make image-<variante> IMAGE=argos:local-<variante>-<sha7>`.
 6. Verificar el label de revisión contra el SHA.
-7. Escribir `ARGOS_IMAGE` en `~/Documents/Docker/argos/.env`.
+7. Escribir `ARGOS_IMAGE` en `~/Documents/Github/argos/.env`.
 8. `compose up -d` con el override (`compose.gpu.yml` o `compose.dri.yml`).
 9. Esperar `/readyz`; instalar modelos si faltan; reportar provider.
 
