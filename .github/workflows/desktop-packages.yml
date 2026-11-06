@@ -44,7 +44,8 @@ jobs:
               # GitHub artifacts and release assets reject ':'; the epoch stays
               # inside .PKGINFO, only the filename changes.
               for f in /work/dist/*.pkg.tar.zst; do
-                mv "$f" "$(echo "$f" | tr ':' '_')"
+                clean="$(echo "$f" | tr ':' '_')"
+                [ "$f" = "$clean" ] || mv "$f" "$clean"
               done
               chmod -R a+r /work/dist
             '
