@@ -1,0 +1,4 @@
+# Artefactos de makepkg: se regeneran, no se versionan.
+pkg/
+src/
+*.pkg.tar.zst
