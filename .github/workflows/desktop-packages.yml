@@ -15,11 +15,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     outputs:
-      tag: ${{ steps.meta.outputs.tag }}
+      tag: ${{ steps.build.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build in Arch
+        id: build
         run: |
           set -euo pipefail
           tag="desktop-$(date -u +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
@@ -40,7 +41,7 @@ jobs:
                 fi
               done
               mkdir -p /work/dist
-              find /work/packaging -name "*.pkg.tar.zst" -exec cp {} /work/dist/ \;
+              find /work/packaging -name "*.pkg.tar.zst" ! -name "*-debug-*" -exec cp {} /work/dist/ \;
               # GitHub artifacts and release assets reject ':'; the epoch stays
               # inside .PKGINFO, only the filename changes.
               for f in /work/dist/*.pkg.tar.zst; do
@@ -85,9 +86,9 @@ jobs:
                       k, v = line.split("=", 1)
                       fields[k.strip()] = v.strip()
               name = fields.get("pkgname") or os.path.basename(path).split("-")[0]
-              version = f'{fields.get("pkgver", "0")}-{fields.get("pkgrel", "1")}'
+              version = fields.get("pkgver", "0")
               commit = ""
-              m = re.search(r"\.(?:g|r)([0-9a-f]{7,9})$", fields.get("pkgver", ""))
+              m = re.search(r"(?:g|\.)([0-9a-f]{7,9})(?:-\d+)?$", version)
               if m:
                   commit = m.group(1)
               sha = hashlib.sha256(open(path, "rb").read()).hexdigest()
