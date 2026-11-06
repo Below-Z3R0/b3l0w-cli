@@ -762,6 +762,9 @@ func servicesCommand(args []string) int {
 	if len(args) == 0 {
 		return servicesList(args)
 	}
+	if verb := aliasVerb("services", args[0]); verb != "" {
+		args = append([]string{verb}, args[1:]...)
+	}
 	switch args[0] {
 	case "list":
 		return servicesList(args[1:])
@@ -794,7 +797,8 @@ func servicesCommand(args []string) int {
 	case "prune":
 		return servicesPrune(args[1:])
 	}
-	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]")
+	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]\n" +
+		aliasHelp("services"))
 	return 1
 }
 
@@ -1159,6 +1163,9 @@ func pluginsCommand(args []string) int {
 	if len(args) == 0 {
 		return pluginsList(args)
 	}
+	if verb := aliasVerb("plugins", args[0]); verb != "" {
+		args = append([]string{verb}, args[1:]...)
+	}
 	switch args[0] {
 	case "sync":
 		cli.Fail("plugins sync fue eliminado; usá b3l0w plugins build")
@@ -1184,7 +1191,8 @@ func pluginsCommand(args []string) int {
 	case "search":
 		return pluginsSearch(args[1:])
 	}
-	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]")
+	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]\n" +
+		aliasHelp("plugins"))
 	return 1
 }
 

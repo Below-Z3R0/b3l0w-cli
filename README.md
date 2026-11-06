@@ -23,6 +23,29 @@ b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
 
+### Atajos estilo pacman
+
+Los verbos son la forma canónica. Las banderas cortas existen para que
+las categorías se sientan parecidas:
+
+| Bandera | Verbo | services | plugins |
+|---|---|---|---|
+| `-S` | `install` | sí | sí |
+| `-R` / `-Rns` | `remove` | sí | sí |
+| `-Q` / `-Qe` | `list` | sí | sí |
+| `-U` / `-Syu` | `update` | sí | sí |
+| `-Ss` / `-Qs` | `search` | — | sí |
+
+```bash
+b3l0w services -Q          # mismo que b3l0w services list
+b3l0w services -S argos    # mismo que b3l0w services install argos
+b3l0w plugins -Ss anilist  # mismo que b3l0w plugins search anilist
+```
+
+**No se reimplementa pacman.** `services -Syu` verifica y pregunta si
+actualizar; los servicios son Docker, no paquetes. Y `-Ss` solo existe
+donde hay catálogo que consultar.
+
 ## Cómo está armado
 
 Un core chico que **delega**. No sabe de GitHub, de assets ni de pacman:

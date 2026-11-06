@@ -53,6 +53,12 @@ check "extensions lista"             "$BIN extensions" 0
 check "system lista"                 "$BIN system" 0
 check "services lista"               "$BIN services" 0
 
+# Alias cortos: mismas acciones con bandera estilo pacman.
+check "plugins -Q lista"             "$BIN plugins -Q" 0
+check "services -Q lista"            "$BIN services -Q" 0
+check "plugins -Ss busca"            "$BIN plugins -Ss anilist" 0
+check "services -Ss no aplica"       "$BIN services -Ss foo" 1
+
 # Sin TTY (como en este script), el update del sistema tiene que negarse.
 if [ ! -t 0 ]; then
   check "update --system sin TTY cancela" "$BIN update --system" 0
