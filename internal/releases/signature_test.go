@@ -14,12 +14,15 @@ func usarServidor(t *testing.T, h http.HandlerFunc) {
 	t.Cleanup(srv.Close)
 	viejoAPI, viejoDown := apiBase, downloadBase
 	viejoTag, viejoRepo := cliTag, cliRepo
+	viejoDelay := retryDelay
+	retryDelay = 0
 	apiBase, downloadBase = srv.URL, srv.URL
 	cliTag = func() (string, error) { return "v1.0.0", nil }
 	cliRepo = func() string { return "owner/cli" }
 	t.Cleanup(func() {
 		apiBase, downloadBase = viejoAPI, viejoDown
 		cliTag, cliRepo = viejoTag, viejoRepo
+		retryDelay = viejoDelay
 	})
 }
 
@@ -83,6 +86,53 @@ func TestHasSignatureNo(t *testing.T) {
 	}
 	if ok {
 		t.Error("esperaba sin firma")
+	}
+}
+
+// TestHasSignatureTolera404Transitorio cubre el caso que hacía que
+// doctor marcara como sin firma un release recién publicado: el CDN
+// devuelve 404 las primeras veces y 200 después.
+func TestHasSignatureTolera404Transitorio(t *testing.T) {
+	intentos := 0
+	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
+		intentos++
+		if intentos < 3 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ok, err := HasSignature("owner/repo", "v1.0.0")
+	if err != nil {
+		t.Fatalf("HasSignature: %v", err)
+	}
+	if !ok {
+		t.Error("debería haber encontrado la firma tras los reintentos")
+	}
+	if intentos != 3 {
+		t.Errorf("intentos = %d, quería 3", intentos)
+	}
+}
+
+// TestHasSignatureFallaTrasLosReintentos: si de verdad no está, se
+// agotan los intentos y se informa sin firma.
+func TestHasSignatureFallaTrasLosReintentos(t *testing.T) {
+	intentos := 0
+	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
+		intentos++
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	ok, err := HasSignature("owner/repo", "v1.0.0")
+	if err != nil {
+		t.Fatalf("HasSignature: %v", err)
+	}
+	if ok {
+		t.Error("no debería estar firmado")
+	}
+	if intentos != 3 {
+		t.Errorf("intentos = %d, quería 3", intentos)
 	}
 }
 

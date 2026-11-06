@@ -22,6 +22,9 @@ var (
 	apiBase      = "https://api.github.com"
 	downloadBase = "https://github.com"
 	client       = &http.Client{Timeout: 8 * time.Second}
+	// Un 404 del CDN justo después de publicar es transitorio: sin
+	// reintento, doctor marca SIN FIRMA un release que sí está firmado.
+	retryDelay = 300 * time.Millisecond
 	// El CLI no está en el manifiesto y su release se busca con la
 	// convención v*, no con /releases/latest.
 	cliTag  = selfupdate.Check
@@ -69,15 +72,40 @@ func LatestTag(repo string) (string, error) {
 //
 // Usa HEAD sobre la URL de descarga en vez de la API: no gasta cuota y
 // responde lo mismo.
+//
+// Reintenta ante 404 y errores de red: el CDN de GitHub tarda unos
+// segundos en ver un asset recién subido, y un falso "sin firma" en
+// doctor es peor que esperar un segundo.
 func HasSignature(repo, tag string) (bool, error) {
 	url := fmt.Sprintf("%s/%s/releases/download/%s/SHA256SUMS.asc", downloadBase, repo, tag)
+	var ultimo error
+	for intento := 0; intento < 3; intento++ {
+		if intento > 0 {
+			time.Sleep(time.Duration(intento) * retryDelay)
+		}
+		presente, err := headSignature(url)
+		if err != nil {
+			ultimo = err
+			continue
+		}
+		if presente {
+			return true, nil
+		}
+		// 404: puede ser transitorio (el CDN tarda en ver el asset).
+		// Se agotan los intentos antes de decir "no está".
+	}
+	return false, ultimo
+}
+
+// headSignature hace un intento. Un 404 no es error: es "no está".
+func headSignature(url string) (bool, error) {
 	resp, err := client.Head(url)
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case http.StatusOK:
+	case http.StatusOK, http.StatusFound:
 		return true, nil
 	case http.StatusNotFound:
 		return false, nil
