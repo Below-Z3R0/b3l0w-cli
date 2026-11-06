@@ -45,8 +45,13 @@ check "doctor corre"              "$BIN doctor >/dev/null 2>&1; [ \$? -le 1 ]" 0
 check "comando desconocido falla" "$BIN no-existe" 1
 check "--system y --programs son excluyentes" "$BIN update --system --programs" 1
 check "opción desconocida falla"  "$BIN update --nada" 1
-check "program sin args falla"    "$BIN program" 1
+check "program sin args lista"       "$BIN program" 0
 check "program remove inexistente falla" "$BIN program remove no-existe-$$" 1
+
+# Cada categoría lista sin subcomando.
+check "extensions lista"             "$BIN extensions" 0
+check "system lista"                 "$BIN system" 0
+check "services lista"               "$BIN services" 0
 
 # Sin TTY (como en este script), el update del sistema tiene que negarse.
 if [ ! -t 0 ]; then
