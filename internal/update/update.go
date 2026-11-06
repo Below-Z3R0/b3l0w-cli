@@ -15,6 +15,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/releases"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
@@ -415,6 +416,12 @@ func check(m *config.Manifest) int {
 
 	checkDesktop()
 	checkPlugins()
+
+	// Un release sin firma rompe install y update --self. Este es el
+	// chequeo previo, así que se avisa acá y no al fallar la descarga.
+	if sinFirma := releases.Render(releases.Check(m)); sinFirma > 0 {
+		cli.Warn(fmt.Sprintf("%d release(s) sin firma", sinFirma))
+	}
 	return 0
 }
 

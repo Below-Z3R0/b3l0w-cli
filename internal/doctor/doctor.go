@@ -11,6 +11,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/releases"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 )
 
@@ -118,6 +119,10 @@ func Run(m *config.Manifest) int {
 			}
 		}
 	}
+
+	// Firmas de los releases: sin SHA256SUMS.asc, install y
+	// update --self se niegan a instalar.
+	errors += releases.Render(releases.Check(m))
 
 	if errors > 0 {
 		cli.Fail(fmt.Sprintf("%d chequeos fallaron", errors))
