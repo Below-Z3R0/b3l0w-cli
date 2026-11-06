@@ -65,6 +65,8 @@ func run(args []string) int {
 		return pluginsCommand(rest)
 	case "services":
 		return servicesCommand(rest)
+	case "extensions":
+		return pluginsExtensions()
 	case "plugin-exec":
 		return pluginExecCommand(rest)
 	case "channel":
@@ -394,8 +396,7 @@ func printPlan(profiles []string, plan *systeminstall.Plan) {
 
 func programCommand(args []string) int {
 	if len(args) == 0 {
-		fmt.Println("uso: b3l0w program <add|remove> <nombre> [--source github:owner/repo]")
-		return 1
+		return list()
 	}
 
 	action := args[0]
@@ -448,8 +449,7 @@ func programCommand(args []string) int {
 
 func systemCommand(args []string) int {
 	if len(args) == 0 {
-		fmt.Println("uso: b3l0w system diff|pull")
-		return 0
+		return systemList()
 	}
 	switch args[0] {
 	case "diff":
@@ -1157,7 +1157,7 @@ func servicesImages(args []string) int {
 
 func pluginsCommand(args []string) int {
 	if len(args) == 0 {
-		return pluginsExtensions()
+		return pluginsList(args)
 	}
 	switch args[0] {
 	case "sync":
@@ -1189,9 +1189,13 @@ func pluginsCommand(args []string) int {
 }
 
 // pluginsExtensions lista los binarios b3l0w-* del directorio privado.
+//
+// Son extensiones del CLI, no plugins de Noctalia: viven aparte
+// porque `b3l0w-anilist` (el binario) y `b3l0w/anilist` (el plugin
+// de Noctalia) son cosas distintas. Por eso tienen su propio comando.
 func pluginsExtensions() int {
 	names := plugins.Discover()
-	cli.Step("Extensiones")
+	cli.Step("Extensiones del CLI")
 	if len(names) == 0 {
 		fmt.Printf("  (ninguna en %s)\n", cli.PluginsDir())
 		return 0
@@ -1200,6 +1204,8 @@ func pluginsExtensions() int {
 	for _, name := range names {
 		fmt.Printf("  b3l0w-%s\n", name)
 	}
+	fmt.Println()
+	fmt.Println("  Se ejecutan con: b3l0w <nombre> <args>")
 	return 0
 }
 
@@ -1531,6 +1537,9 @@ func usage() {
 
 uso: b3l0w <comando> [opciones]
 
+Cada categoría lista sin subcomando: b3l0w plugins, b3l0w services,
+b3l0w program, b3l0w system, b3l0w extensions.
+
   status                 sistema base (novedades) + programas + plugins
   list                   programas registrados, versión y binario
   update                 CLI, sistema, programas, plugins y snapshots
@@ -1556,8 +1565,9 @@ uso: b3l0w <comando> [opciones]
   doctor                 dependencias, programas, scripts y plugins
   program add <nombre>   registra un programa (--source=… --asset=…)
   program remove <nom>   lo saca del manifiesto
-  plugins                lista las extensiones binarias instaladas
-  plugins list           lista los plugins de Noctalia vs registry
+  extensions             lista las extensiones binarias del CLI
+  plugins                lista los plugins de Noctalia del registry
+  plugins list           lo mismo (alias explícito)
   plugins build         regenera catalog.toml y plugins.json
   plugins release       copia producción de dev a main (sin tests/)
   plugins release --api=N  exige que los plugins no superen ese plugin_api
@@ -1567,6 +1577,8 @@ uso: b3l0w <comando> [opciones]
   plugins remove <id>    borra local o deshabilita si viene del source
   plugins info <id>      muestra versión, API, repo y si está instalado
   plugins search <texto> busca en el registry
+  services               lista los servicios Docker del sistema
+  services list          lo mismo (alias explícito)
   plugin-exec <script>   ejecuta un backend embebido
   setup                  source + plugins + backends + doctor
   version                imprime la versión

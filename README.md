@@ -18,6 +18,7 @@ b3l0w check [--keep=N]       # estado + snapshots de Limine
 b3l0w channel [stable|edge]  # canal del escritorio
 b3l0w plugins ...            # build/release/install/update/list/remove/info/search
 b3l0w services ...           # list/hardware/images/sync/install/update/status
+b3l0w extensions             # lista las extensiones binarias del CLI
 b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
@@ -145,10 +146,17 @@ servicios a reiniciar. No tiene `--yes`. Por eso:
 Si no existe, se usa ese default. Se edita a mano o con
 `b3l0w program add|remove`.
 
-## Extensiones
+## Extensiones del CLI
 
-Un binario `b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` (0700).
-`b3l0w <nombre> ...` lo ejecuta.
+Los binarios `b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` (0700) son
+**extensiones del CLI**, no plugins de Noctalia: `b3l0w-anilist` (el binario)
+y `b3l0w/anilist` (el plugin de Noctalia) son cosas distintas. Por eso
+tienen su propio comando:
+
+```bash
+b3l0w extensions        # lista las extensiones
+b3l0w <nombre> <args>   # ejecuta una
+```
 
 **No se buscan en el PATH a propósito.** Cualquier cosa que pueda escribir
 un `b3l0w-update` en un directorio del PATH lo haría correr con este
