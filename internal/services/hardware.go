@@ -268,28 +268,35 @@ func bestGPU(gpus []GPU) *GPU {
 }
 
 // Recommend elige la variante recomendada: la acelerada si el host la
-// soporta, si no la de CPU. Si la variante no está publicada, cae a
-// la mejor disponible que sí lo esté.
+// soporta y está publicada. Si no, la mejor publicada que el host
+// soporte. Si el host no soporta ninguna, la primera publicada.
+//
+// La variante recomendada nunca es una que no exista en el registry:
+// recomendar una imagen inexistente rompe la instalación.
 func Recommend(hw Hardware, available []string) (variant, reason string, err error) {
+	if len(available) == 0 {
+		return "", "", fmt.Errorf("no hay variantes publicadas")
+	}
 	supported := VariantsFor(hw)
 	byName := make(map[string]bool, len(available))
 	for _, v := range available {
 		byName[v] = true
 	}
+	// 1. La variante acelerada que el host soporta y está publicada.
 	for _, v := range supported {
 		if v.Supported && byName[v.Name] {
 			return v.Name, v.Reason, nil
 		}
 	}
+	// 2. La variante que el host soporta, aunque no esté publicada:
+	//    se avisa de que falta el build.
 	for _, v := range supported {
 		if v.Supported {
 			return v.Name, v.Reason + " (no publicada: falta el build)", nil
 		}
 	}
-	if len(available) == 0 {
-		return "", "", fmt.Errorf("no hay variantes publicadas")
-	}
-	return "cpu", "sin GPU utilizable; uso CPU", nil
+	// 3. Sin GPU: la primera publicada, que es la de CPU.
+	return available[0], "sin GPU utilizable; uso " + available[0], nil
 }
 
 // DescribeGPU arma una línea legible de la GPU.

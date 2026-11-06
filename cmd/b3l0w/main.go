@@ -536,12 +536,35 @@ func pluginExecCommand(args []string) int {
 	return 0
 }
 
-// servicePaths resuelve las rutas del manifiesto y del estado.
+// serviceFlags son los flags de services que llevan valor.
+var serviceFlags = map[string]bool{
+	"--manifest=":  true,
+	"--state-dir=": true,
+	"--variant=":   true,
+	"--service=":   true,
+	"--tail=":      true,
+}
+
+// firstPositional devuelve el primer argumento que no es un flag. Los
+// flags pueden ir antes o despues del nombre del servicio.
+func firstPositional(args []string) string {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+	}
+	return ""
+}
+
+// servicePaths resuelve las rutas del manifiesto y del estado, y separa
+// los flags de los argumentos. Los flags con valor se pueden escribir
+// como "--flag=valor" o "--flag valor".
 func servicePaths(args []string) (manifest, stateDir string, rest []string, dryRun bool) {
 	home, _ := os.UserHomeDir()
 	manifest = filepath.Join(home, "Documents/Github/b3l0w/services/services.json")
 	stateDir = filepath.Join(home, ".local/state/b3l0w/services")
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch {
 		case arg == "--dry-run":
 			dryRun = true
@@ -549,6 +572,12 @@ func servicePaths(args []string) (manifest, stateDir string, rest []string, dryR
 			manifest = strings.TrimPrefix(arg, "--manifest=")
 		case strings.HasPrefix(arg, "--state-dir="):
 			stateDir = strings.TrimPrefix(arg, "--state-dir=")
+		case strings.HasPrefix(arg, "--variant="):
+			rest = append(rest, arg)
+		case strings.HasPrefix(arg, "--service="), strings.HasPrefix(arg, "--tail="):
+			rest = append(rest, arg)
+		case strings.HasPrefix(arg, "--"):
+			rest = append(rest, arg)
 		default:
 			rest = append(rest, arg)
 		}
@@ -564,13 +593,14 @@ func servicesInstall(args []string) int {
 		cli.Fail(err.Error())
 		return 1
 	}
-	if len(rest) == 0 {
+	id := firstPositional(rest)
+	if id == "" {
 		cli.Fail("falta el servicio: b3l0w services install <id>")
 		return 1
 	}
-	svc := m.Find(rest[0])
+	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		cli.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	if svc.State == "planned" {
@@ -578,13 +608,13 @@ func servicesInstall(args []string) int {
 		return 1
 	}
 	variant := ""
-	for _, arg := range rest[1:] {
+	for _, arg := range rest {
 		switch {
 		case arg == "--yes" || arg == "-y":
-			// la confirmación no aplica al install: no pide nada
+			// el install no pregunta nada
 		case strings.HasPrefix(arg, "--variant="):
 			variant = strings.TrimPrefix(arg, "--variant=")
-		default:
+		case strings.HasPrefix(arg, "-"):
 			cli.Fail("flag desconocido: " + arg)
 			return 1
 		}
@@ -699,12 +729,12 @@ func servicesStatus(args []string) int {
 		if svc == nil || svc.Compose == "" {
 			continue
 		}
-		file := svc.Compose
-		dir := ""
-		if home := homeDir(); home != "" {
-			dir = home + "/Documents/Github/" + repoName(svc.Repo)
+		variant := ""
+		if state != nil {
+			variant = state.Variant
 		}
-		ps, err := docker.PS(dir, file)
+		dir := serviceDir(*svc)
+		ps, err := docker.PS(dir, services.ComposeFiles(*svc, variant))
 		if err != nil {
 			continue
 		}
@@ -776,13 +806,14 @@ func servicesRollback(args []string) int {
 		cli.Fail(err.Error())
 		return 1
 	}
-	if len(rest) == 0 {
+	id := firstPositional(rest)
+	if id == "" {
 		cli.Fail("falta el servicio: b3l0w services rollback <id>")
 		return 1
 	}
-	svc := m.Find(rest[0])
+	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		cli.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	state, err := services.LoadState(stateDir, svc.ID)
@@ -844,13 +875,14 @@ func servicesLogs(args []string) int {
 		cli.Fail(err.Error())
 		return 1
 	}
-	if len(rest) == 0 {
+	id := firstPositional(rest)
+	if id == "" {
 		cli.Fail("falta el servicio: b3l0w services logs <id>")
 		return 1
 	}
-	svc := m.Find(rest[0])
+	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		cli.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	tail := 100
@@ -872,7 +904,7 @@ func servicesLogs(args []string) int {
 		}
 	}
 	dir := serviceDir(*svc)
-	out, err := services.NewDocker().Logs(dir, services.ComposeFile(*svc), service, tail)
+	out, err := services.NewDocker().Logs(dir, services.ComposeFiles(*svc, ""), service, tail)
 	if err != nil {
 		cli.Fail(err.Error())
 		return 1
@@ -899,13 +931,13 @@ func servicesSimple(args []string, action string) int {
 		return 1
 	}
 	dir := serviceDir(*svc)
-	file := services.ComposeFile(*svc)
+	files := services.ComposeFiles(*svc, "")
 	docker := services.NewDocker()
 	var err2 error
 	if action == "restart" {
-		err2 = docker.Restart(dir, file)
+		err2 = docker.Restart(dir, files)
 	} else {
-		err2 = docker.Stop(dir, file)
+		err2 = docker.Stop(dir, files)
 	}
 	if err2 != nil {
 		cli.Fail(err2.Error())
@@ -923,13 +955,14 @@ func servicesRemove(args []string) int {
 		cli.Fail(err.Error())
 		return 1
 	}
-	if len(rest) == 0 {
+	id := firstPositional(rest)
+	if id == "" {
 		cli.Fail("falta el servicio: b3l0w services remove <id>")
 		return 1
 	}
-	svc := m.Find(rest[0])
+	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		cli.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	purge := false
@@ -946,8 +979,8 @@ func servicesRemove(args []string) int {
 		}
 	}
 	dir := serviceDir(*svc)
-	file := services.ComposeFile(*svc)
-	if err := services.NewDocker().Remove(dir, file, purge); err != nil {
+	files := services.ComposeFiles(*svc, "")
+	if err := services.NewDocker().Remove(dir, files, purge); err != nil {
 		cli.Fail(err.Error())
 		return 1
 	}
@@ -972,12 +1005,18 @@ func servicesVariant(args []string) int {
 		cli.Fail("uso: b3l0w services variant <id> <variante>")
 		return 1
 	}
-	svc := m.Find(rest[0])
+	svc := m.Find(firstPositional(rest))
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		cli.Fail("servicio desconocido: " + firstPositional(rest))
 		return 1
 	}
-	want := rest[1]
+	want := ""
+	for _, arg := range rest {
+		if !strings.HasPrefix(arg, "-") && arg != firstPositional(rest) {
+			want = arg
+			break
+		}
+	}
 	state, err := services.LoadState(stateDir, svc.ID)
 	if err != nil {
 		cli.Fail(svc.ID + " no está instalado")

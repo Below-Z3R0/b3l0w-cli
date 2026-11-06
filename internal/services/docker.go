@@ -35,6 +35,45 @@ func (d *DockerAdapter) run(args ...string) (string, error) {
 	return cli.RunCombined(args[0], args[1:]...)
 }
 
+// composeFiles devuelve los compose con path completo. El `-f` de
+// compose es relativo al directorio de trabajo, no al
+// --project-directory: sin el path absoluto, compose busca el archivo
+// en el cwd del CLI.
+func composeFiles(dir string, files []string) []string {
+	out := make([]string, 0, len(files))
+	for _, file := range files {
+		if dir != "" && !filepath.IsAbs(file) {
+			out = append(out, filepath.Join(dir, file))
+		} else {
+			out = append(out, file)
+		}
+	}
+	return out
+}
+
+// runEnv corre un comando con variables de entorno extra.
+//
+// Docker Compose no tiene un flag para pasar variables: `${IMAGE}` se
+// resuelve desde el entorno del proceso. Por eso el tag de la imagen
+// viaja así, y no con `--env` (que no existe: es `--env-file`).
+func (d *DockerAdapter) runEnv(env map[string]string, args ...string) (string, error) {
+	if len(args) == 0 {
+		return "", fmt.Errorf("comando vacío")
+	}
+	if d.Runner != nil {
+		return d.Runner(args[0], args[1:]...)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	if len(env) > 0 {
+		cmd.Env = os.Environ()
+		for k, v := range env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
 // HaveComposeV2 dice si está el plugin de compose v2 (o posterior).
 //
 // La numeración cambió: compose v2 se announces como "v2.x.x" y las
@@ -106,10 +145,14 @@ type ComposeService struct {
 }
 
 // PS lista los contenedores del stack.
-func (d *DockerAdapter) PS(dir string, file string) ([]ComposeService, error) {
-	args := []string{"compose", "-f", file, "ps", "--format", "{{.Service}}\t{{.State}}\t{{.Health}}\t{{.Image}}\t{{.Ports}}"}
+func (d *DockerAdapter) PS(dir string, files []string) ([]ComposeService, error) {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
+	}
+	args = append(args, "ps", "--format", "{{.Service}}	{{.State}}	{{.Health}}	{{.Image}}	{{.Ports}}")
 	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir, "-f", file}, args[2:]...)
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
 	}
 	out, err := d.run(args...)
 	if err != nil {
@@ -147,38 +190,53 @@ func (d *DockerAdapter) Pull(image, tag string) error {
 	return err
 }
 
-// Up levanta el stack.
-func (d *DockerAdapter) Up(dir, file string, env map[string]string) error {
-	args := []string{"compose", "-f", file}
-	for k, v := range env {
-		args = append(args, "--env", k+"="+v)
+// Up levanta el stack. files es la lista de compose a usar: el
+// principal y el override de la variante.
+func (d *DockerAdapter) Up(dir string, files []string, env map[string]string) error {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
 	}
 	args = append(args, "up", "-d", "--remove-orphans")
 	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
 	}
-	_, err := d.run(args...)
-	return err
+	out, err := d.runEnv(env, args...)
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
 }
 
 // Down baja el stack sin borrar volúmenes.
-func (d *DockerAdapter) Down(dir, file string) error {
-	args := []string{"compose", "-f", file, "down", "--remove-orphans"}
-	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+func (d *DockerAdapter) Down(dir string, files []string) error {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
 	}
-	_, err := d.run(args...)
-	return err
+	args = append(args, "down", "--remove-orphans")
+	if dir != "" {
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
+	}
+	out, err := d.run(args...)
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
 }
 
 // Logs devuelve las últimas líneas de un servicio.
-func (d *DockerAdapter) Logs(dir, file, service string, tail int) (string, error) {
-	args := []string{"compose", "-f", file, "logs", "--tail", strconv.Itoa(tail)}
+func (d *DockerAdapter) Logs(dir string, files []string, service string, tail int) (string, error) {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
+	}
+	args = append(args, "logs", "--tail", strconv.Itoa(tail))
 	if service != "" {
 		args = append(args, service)
 	}
 	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
 	}
 	return d.run(args...)
 }

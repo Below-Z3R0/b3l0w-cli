@@ -23,10 +23,10 @@ type Installer struct {
 // ResolveVariant decide la variante: la que pide el usuario, o la
 // recomendada por hardware. Si la elegida no está publicada, avisa.
 func ResolveVariant(svc Service, hw Hardware, published []string, want string) (variant, reason string, err error) {
+	if len(published) == 0 {
+		return "", "", fmt.Errorf("%s no tiene imagen publicada", svc.ID)
+	}
 	if want != "" {
-		if len(published) == 0 {
-			return "", "", fmt.Errorf("%s no tiene imagen publicada", svc.ID)
-		}
 		for _, v := range published {
 			if v == want {
 				return want, "elegida por el usuario", nil
@@ -34,15 +34,23 @@ func ResolveVariant(svc Service, hw Hardware, published []string, want string) (
 		}
 		return "", "", fmt.Errorf("%s: la variante %q no está publicada (hay: %s)", svc.ID, want, strings.Join(published, ", "))
 	}
-	return Recommend(hw, published)
+	variant, reason, err = Recommend(hw, published)
+	if err != nil {
+		return "", "", err
+	}
+	// La recomendación tiene que estar publicada: si no, se cae a la
+	// primera que sí lo esté.
+	for _, v := range published {
+		if v == variant {
+			return variant, reason, nil
+		}
+	}
+	return published[0], reason + "; uso " + published[0], nil
 }
 
 // TagFor devuelve el tag a usar para una variante.
 func TagFor(svc Service, variant string, tags []string) string {
 	if variant == "default" {
-		if svc.State == "" {
-			return "latest"
-		}
 		for _, tag := range tags {
 			if !strings.HasPrefix(tag, "arm64-") && !strings.HasPrefix(tag, "sha-") && tag != "latest" {
 				return tag
@@ -50,10 +58,22 @@ func TagFor(svc Service, variant string, tags []string) string {
 		}
 		return "latest"
 	}
-	return LatestTag(tags, variant)
+	if tag := LatestTag(tags, variant); tag != "" {
+		return tag
+	}
+	// Sin tag propio de la variante: el primero que no sea de caché.
+	for _, tag := range tags {
+		if !strings.HasPrefix(tag, "buildcache-") {
+			return tag
+		}
+	}
+	return "latest"
 }
 
 // Install instala el servicio. dryRun solo muestra el plan.
+//
+// Los modelos no se instalan: son GB de descarga y los baja el CTL del
+// servicio (argosctl models install). El CLI muestra el comando.
 func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, error) {
 	tags, err := in.Registry.Tags(svc.Image)
 	if err != nil {
@@ -74,11 +94,17 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 	cli.Step(fmt.Sprintf("%s · %s", svc.ID, chosen))
 	fmt.Printf("  %s\n", cli.Dim(reason))
 	fmt.Printf("  imagen: %s\n", image)
+	if len(published) > 1 {
+		fmt.Printf("  variantes: %s\n", strings.Join(published, ", "))
+	}
 	if svc.SizeGB > 0 {
 		fmt.Printf("  disco:  ~%.1f GiB\n", svc.SizeGB)
 	}
 	if svc.Health != "" {
 		fmt.Printf("  health: %s\n", svc.Health)
+	}
+	if files := ComposeFiles(svc, chosen); len(files) > 1 {
+		fmt.Printf("  compose: %s\n", strings.Join(files, " + "))
 	}
 	if svc.Models != "" {
 		fmt.Printf("  modelos: %s\n", cli.Dim("los instala "+svc.Models))
@@ -89,9 +115,15 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 		return nil, nil
 	}
 
-	// Puertos libres antes de levantar el stack.
+	// Puertos libres antes de levantar el stack. Si el servicio ya
+	// está instalado, los puertos los ocupa su propio stack: el
+	// install hace un recreate, no un arranque en frío.
+	already, _ := LoadState(in.StateDir, svc.ID)
 	for _, port := range svc.Ports {
 		if PortInUse(port) {
+			if already != nil {
+				continue
+			}
 			return nil, fmt.Errorf("el puerto %d está ocupado", port)
 		}
 	}
@@ -102,15 +134,9 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 	digest, _ := in.Docker.ImageDigest(image)
 
 	dir := in.repoDir(svc)
-	file := svc.Compose
-	if file == "" {
-		file = "compose.yaml"
-	}
-	env := map[string]string{}
-	if chosen != "default" {
-		env["VARIANT"] = chosen
-	}
-	if err := in.Docker.Up(dir, file, env); err != nil {
+	files := ComposeFiles(svc, chosen)
+	env := map[string]string{"IMAGE": tag}
+	if err := in.Docker.Up(dir, files, env); err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	}
 
@@ -124,7 +150,7 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 		Health:      "starting",
 		Ports:       svc.Ports,
 	}
-	if err := in.verify(state, svc, dir, file); err != nil {
+	if err := in.verify(state, svc, dir, files); err != nil {
 		return state, err
 	}
 	if err := state.Save(in.StateDir); err != nil {
@@ -134,7 +160,7 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 }
 
 // verify espera el healthcheck y lee el provider real.
-func (in *Installer) verify(state *State, svc Service, dir, file string) error {
+func (in *Installer) verify(state *State, svc Service, dir string, files []string) error {
 	if svc.Health == "" {
 		state.Health = "ok"
 		return nil
@@ -146,6 +172,11 @@ func (in *Installer) verify(state *State, svc Service, dir, file string) error {
 			state.Health = "healthy"
 			if provider := parseProvider(body); provider != "" {
 				state.Provider = provider
+			} else if looksLikeArgos(body) {
+				// El provider se llena cuando se carga un modelo. Sin
+				// modelos no se puede verificar la aceleracion.
+				state.Warnings = append(state.Warnings,
+					"sin modelos cargados: el provider real se verifica cuando se carguen")
 			}
 			return nil
 		}
@@ -155,6 +186,12 @@ func (in *Installer) verify(state *State, svc Service, dir, file string) error {
 		}
 		time.Sleep(3 * time.Second)
 	}
+}
+
+// looksLikeArgos dice si el status es el de Argos (el que trae el
+// provider junto con los embedders cargados).
+func looksLikeArgos(body string) bool {
+	return strings.Contains(body, "embedders_loaded") && strings.Contains(body, "provider")
 }
 
 // parseProvider busca el provider en un JSON de status.
@@ -206,7 +243,8 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	if err != nil {
 		return nil, fmt.Errorf("%s: no pude pedir el digest remoto: %w", svc.ID, err)
 	}
-	localDigest := state.Digest
+	localDigest := NormalizeDigest(state.Digest)
+	remoteDigest = NormalizeDigest(remoteDigest)
 	if remoteDigest == "" || remoteDigest == localDigest {
 		cli.Ok(fmt.Sprintf("%s: al día (%s)", svc.ID, tag))
 		return state, nil
@@ -237,28 +275,23 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	state.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	dir := in.repoDir(svc)
-	file := svc.Compose
-	if file == "" {
-		file = "compose.yaml"
-	}
+	files := ComposeFiles(svc, state.Variant)
 	env := map[string]string{}
-	if state.Variant != "" && state.Variant != "default" {
-		env["VARIANT"] = state.Variant
+	if state.Tag != "" {
+		env["IMAGE"] = state.Tag
 	}
-	if err := in.Docker.Up(dir, file, env); err != nil {
+	if err := in.Docker.Up(dir, files, env); err != nil {
 		return &previous, fmt.Errorf("up: %w", err)
 	}
-	if err := in.verify(state, svc, dir, file); err != nil {
+	if err := in.verify(state, svc, dir, files); err != nil {
 		// Rollback: volver a la imagen anterior.
 		cli.Warn("el servicio no arrancó: vuelvo a la imagen anterior")
 		rollbackEnv := map[string]string{}
-		if previous.Variant != "" && previous.Variant != "default" {
-			rollbackEnv["VARIANT"] = previous.Variant
-		}
 		if previous.Tag != "" {
+			rollbackEnv["IMAGE"] = previous.Tag
 			_ = in.Docker.Pull(svc.Image, previous.Tag)
 		}
-		if err := in.Docker.Up(dir, file, rollbackEnv); err != nil {
+		if err := in.Docker.Up(dir, files, rollbackEnv); err != nil {
 			return &previous, fmt.Errorf("rollback falló: %w", err)
 		}
 		*state = previous

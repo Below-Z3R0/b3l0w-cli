@@ -9,6 +9,19 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
 
+// NormalizeDigest deja solo el "sha256:..." del digest.
+//
+// Del lado local, `docker image inspect` devuelve el RepoDigest
+// ("ghcr.io/org/img@sha256:..."); del lado remoto, el header
+// "Docker-Content-Digest" devuelve solo "sha256:...". Compararlos sin
+// normalizar da "hay update" en cada corrida.
+func NormalizeDigest(d string) string {
+	if i := strings.Index(d, "@"); i >= 0 {
+		d = d[i+1:]
+	}
+	return strings.TrimSpace(d)
+}
+
 // nowRFC3339 es la hora actual en el formato del estado.
 func nowRFC3339() string { return time.Now().Format(time.RFC3339) }
 
@@ -77,18 +90,12 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	state.UpdatedAt = nowRFC3339()
 
 	dir := in.repoDir(svc)
-	file := svc.Compose
-	if file == "" {
-		file = "compose.yaml"
-	}
-	env := map[string]string{}
-	if state.Variant != "" && state.Variant != "default" {
-		env["VARIANT"] = state.Variant
-	}
-	if err := in.Docker.Up(dir, file, env); err != nil {
+	files := ComposeFiles(svc, state.Variant)
+	env := map[string]string{"IMAGE": state.PreviousTag}
+	if err := in.Docker.Up(dir, files, env); err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	}
-	if err := in.verify(state, svc, dir, file); err != nil {
+	if err := in.verify(state, svc, dir, files); err != nil {
 		return nil, fmt.Errorf("la imagen anterior tampoco arrancó: %w", err)
 	}
 	if err := state.Save(in.StateDir); err != nil {

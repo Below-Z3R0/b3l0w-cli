@@ -35,6 +35,8 @@ type Service struct {
 	Ports []int `json:"ports,omitempty"`
 	// Health es la URL que responde cuando el servicio está listo.
 	Health string `json:"health,omitempty"`
+	// Overrides son los compose extra que se aplican según la variante.
+	Overrides map[string]string `json:"overrides,omitempty"`
 	// State es la definición de un servicio del manifiesto.
 	State string `json:"state"`
 	// Models es el comando que instala los modelos, si aplica.

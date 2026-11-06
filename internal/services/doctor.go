@@ -93,7 +93,7 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 				cli.Ok(fmt.Sprintf("puerto %d: en uso (%s)", port, state.ID))
 				continue
 			}
-			cli.Warn(fmt.Sprintf("puerto %d: libre (%s no está corriendo)", port, state.ID))
+			cli.Warn(fmt.Sprintf("puerto %d: libre (lo declara %s)", port, state.ID))
 			res.Warnings++
 		}
 	}
@@ -134,36 +134,69 @@ func hasNvidia(gpus []GPU) bool {
 }
 
 // Remove baja el stack sin borrar volúmenes. purge borra los volúmenes.
-func (d *DockerAdapter) Remove(dir, file string, purge bool) error {
-	args := []string{"compose", "-f", file, "down", "--remove-orphans"}
+func (d *DockerAdapter) Remove(dir string, files []string, purge bool) error {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
+	}
+	args = append(args, "down", "--remove-orphans")
 	if purge {
 		args = append(args, "--volumes")
 	}
 	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
 	}
-	_, err := d.run(args...)
-	return err
+	out, err := d.run(args...)
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
 }
 
 // Restart reinicia el stack.
-func (d *DockerAdapter) Restart(dir, file string) error {
-	args := []string{"compose", "-f", file, "restart"}
-	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+func (d *DockerAdapter) Restart(dir string, files []string) error {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
 	}
-	_, err := d.run(args...)
-	return err
+	args = append(args, "restart")
+	if dir != "" {
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
+	}
+	out, err := d.run(args...)
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
 }
 
 // Stop baja el stack sin borrarlo.
-func (d *DockerAdapter) Stop(dir, file string) error {
-	args := []string{"compose", "-f", file, "stop"}
-	if dir != "" {
-		args = append([]string{"compose", "--project-directory", dir}, args[1:]...)
+func (d *DockerAdapter) Stop(dir string, files []string) error {
+	args := []string{"docker", "compose"}
+	for _, file := range composeFiles(dir, files) {
+		args = append(args, "-f", file)
 	}
-	_, err := d.run(args...)
-	return err
+	args = append(args, "stop")
+	if dir != "" {
+		args = append([]string{"docker", "compose", "--project-directory", dir}, args[2:]...)
+	}
+	out, err := d.run(args...)
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// ComposeFiles devuelve los compose a usar para una variante: el
+// principal y el override que le corresponde.
+func ComposeFiles(svc Service, variant string) []string {
+	files := []string{ComposeFile(svc)}
+	if svc.Overrides != nil {
+		if override, ok := svc.Overrides[variant]; ok && override != "" {
+			files = append(files, override)
+		}
+	}
+	return files
 }
 
 // ComposeFile devuelve la ruta del compose de un servicio dentro de su
