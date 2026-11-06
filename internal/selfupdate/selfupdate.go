@@ -26,9 +26,26 @@ const (
 	api   = "https://api.github.com/repos/" + repo + "/releases/latest"
 )
 
+// Inyectables. En producción son los reales; los tests los sustituyen
+// para no depender de la red ni del binario en ejecución.
+var (
+	apiURL         = api
+	fetchAsset     = fetch.ToTemp
+	replaceFile    = cli.ReplaceFile
+	packageOwner   = cli.PackageOwner
+	currentVersion = programs.Current
+	resolveExe     = func() (string, error) {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+		return filepath.EvalSymlinks(exe)
+	}
+)
+
 // Check devuelve el tag del último release, o "" si no hay red.
 func Check() (string, error) {
-	req, err := http.NewRequest(http.MethodGet, api, nil)
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -71,29 +88,25 @@ func withV(v string) string {
 func Run() (Result, error) {
 	var result Result
 
-	exe, err := os.Executable()
-	if err != nil {
-		return result, err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
+	exe, err := resolveExe()
 	if err != nil {
 		return result, err
 	}
 
-	if owner := cli.PackageOwner(exe); owner != "" {
+	if owner := packageOwner(exe); owner != "" {
 		return result, fmt.Errorf("el binario es del paquete %s: se actualiza con pacman", owner)
 	}
 
 	result.Before = withV(version.Version)
 
 	url := fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, asset)
-	tmp, err := fetch.ToTemp(url)
+	tmp, err := fetchAsset(url)
 	if err != nil {
 		return result, err
 	}
 	defer os.Remove(tmp)
 
-	after, err := programs.Current(tmp)
+	after, err := currentVersion(tmp)
 	if err != nil {
 		return result, fmt.Errorf("el binario bajado no responde: %w", err)
 	}
@@ -102,7 +115,7 @@ func Run() (Result, error) {
 	if after == result.Before {
 		return result, nil
 	}
-	if err := cli.ReplaceFile(tmp, exe); err != nil {
+	if err := replaceFile(tmp, exe); err != nil {
 		return result, fmt.Errorf("no se pudo reemplazar %s: %w", exe, err)
 	}
 	result.Changed = true

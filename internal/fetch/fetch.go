@@ -28,7 +28,7 @@ func ToTemp(url string) (string, error) {
 		"curl", "-fsSL", "--connect-timeout", "15", "--max-time", "300", full, "-o", path)
 	if err != nil {
 		os.Remove(path)
-		return "", fmt.Errorf("no se pudo bajar %s: %s", url, lastLine(out, err))
+		return "", fmt.Errorf("no se pudo bajar %s: %s", url, firstLine(out, err))
 	}
 	if err := os.Chmod(path, 0o755); err != nil {
 		os.Remove(path)
@@ -37,7 +37,11 @@ func ToTemp(url string) (string, error) {
 	return path, nil
 }
 
-func lastLine(out string, err error) string {
+// firstLine devuelve la primera línea con contenido.
+//
+// Es la que sirve para diagnosticar: curl pone el motivo en la primera
+// línea ("curl: (6) Could not resolve host") y deja el progreso abajo.
+func firstLine(out string, err error) string {
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			return line
