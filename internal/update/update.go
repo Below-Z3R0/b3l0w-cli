@@ -185,9 +185,12 @@ func selfUpdate() int {
 		cli.Fail(err.Error())
 		return 1
 	}
-	if result.Changed {
+	switch {
+	case result.Changed:
 		cli.Ok(fmt.Sprintf("b3l0w %s -> %s", result.Before, result.After))
-	} else {
+	case result.Note != "":
+		cli.Warn(result.Note)
+	default:
 		cli.Ok(fmt.Sprintf("b3l0w ya está al día (%s)", result.After))
 	}
 	return 0

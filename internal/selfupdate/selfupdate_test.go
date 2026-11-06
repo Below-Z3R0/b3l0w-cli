@@ -17,16 +17,19 @@ func conInyectables(t *testing.T, fns map[string]any) {
 	oldAPI, oldFetch, oldReplace := apiURL, fetchAsset, replaceFile
 	oldOwner, oldCurrent, oldExe := packageOwner, currentVersion, resolveExe
 	oldVerify := verifyRelease
+	oldCheck := checkRelease
 	oldVersion := version.Version
 
 	t.Cleanup(func() {
 		apiURL, fetchAsset, replaceFile = oldAPI, oldFetch, oldReplace
 		packageOwner, currentVersion, resolveExe = oldOwner, oldCurrent, oldExe
 		verifyRelease = oldVerify
+		checkRelease = oldCheck
 		version.Version = oldVersion
 	})
 
-	// Sin firma explícita, los tests no salen a la red.
+	// Sin red: un release más nuevo por defecto y verificación no-op.
+	checkRelease = func() (string, error) { return "v0.6.0", nil }
 	verifyRelease = func(string, string, string) error { return nil }
 
 	for nombre, fn := range fns {
@@ -43,6 +46,8 @@ func conInyectables(t *testing.T, fns map[string]any) {
 			currentVersion = fn.(func(string) (string, error))
 		case "exe":
 			resolveExe = fn.(func() (string, error))
+		case "check":
+			checkRelease = fn.(func() (string, error))
 		case "verify":
 			verifyRelease = fn.(func(string, string, string) error)
 		case "version":
@@ -170,6 +175,81 @@ func TestRunNoCambiaSiLaVersionEsIgual(t *testing.T) {
 	}
 	if result.Before != "v0.5.0" || result.After != "v0.5.0" {
 		t.Errorf("Before/After = %q/%q, quería v0.5.0/v0.5.0", result.Before, result.After)
+	}
+	if reemplazos != 0 {
+		t.Errorf("reemplazos = %d, quería 0", reemplazos)
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	casos := []struct {
+		a, b   string
+		quiere int
+	}{
+		{"v0.5.0", "v0.4.0", 1},
+		{"v0.4.0", "v0.5.0", -1},
+		{"v0.5.0", "v0.5.0", 0},
+		{"v0.5.0-dev", "v0.5.0", 0},
+		{"0.10.0", "0.9.0", 1},
+		{"v1.0.0", "v0.99.99", 1},
+	}
+	for _, c := range casos {
+		if got := compareVersions(c.a, c.b); got != c.quiere {
+			t.Errorf("compareVersions(%q, %q) = %d, quería %d", c.a, c.b, got, c.quiere)
+		}
+	}
+}
+
+// TestRunNoDescargaSiElTagEsViejo evita bajar 11 MB para descubrir que
+// el release es anterior al binario.
+func TestRunNoDescargaSiElTagEsViejo(t *testing.T) {
+	descargas := 0
+	conInyectables(t, map[string]any{
+		"version": "0.5.0",
+		"exe":     func() (string, error) { return "/tmp/b3l0w", nil },
+		"owner":   func(string) string { return "" },
+		"check":   func() (string, error) { return "v0.4.0", nil },
+		"fetch": func(string) (string, error) {
+			descargas++
+			return "/tmp/x", nil
+		},
+	})
+
+	result, err := Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if descargas != 0 {
+		t.Errorf("descargas = %d, quería 0", descargas)
+	}
+	if result.Note == "" {
+		t.Error("falta la nota")
+	}
+}
+
+func TestRunNoDegrada(t *testing.T) {
+	reemplazos := 0
+	conInyectables(t, map[string]any{
+		"version": "0.5.0", // binario local v0.5.0
+		"exe":     func() (string, error) { return "/tmp/b3l0w", nil },
+		"owner":   func(string) string { return "" },
+		"fetch":   func(string) (string, error) { return "/tmp/b3l0w-nuevo", nil },
+		"current": func(string) (string, error) { return "v0.4.0", nil }, // release más viejo
+		"replace": func(string, string) error {
+			reemplazos++
+			return nil
+		},
+	})
+
+	result, err := Run()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Changed {
+		t.Error("Changed = true: no debe degradar")
+	}
+	if result.Note == "" {
+		t.Error("falta la nota que explica por qué no se cambió")
 	}
 	if reemplazos != 0 {
 		t.Errorf("reemplazos = %d, quería 0", reemplazos)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ var (
 	packageOwner   = cli.PackageOwner
 	currentVersion = programs.Current
 	verifyRelease  = programs.VerifyRelease
+	checkRelease   = Check
 	resolveExe     = func() (string, error) {
 		exe, err := os.Executable()
 		if err != nil {
@@ -89,6 +91,42 @@ type Result struct {
 	Before  string
 	After   string
 	Changed bool
+	// Note explica por qué no se cambió nada cuando no fue por estar
+	// al día (por ejemplo, un release más viejo que el binario).
+	Note string
+}
+
+// compareVersions compara dos versiones numéricamente: -1, 0 o 1.
+//
+// Ignora los sufijos (-dev, +build): "v0.5.0-dev" y "v0.5.0" son la
+// misma versión a los efectos de actualizar. Un release más viejo no
+// debe degradar un binario de desarrollo.
+func compareVersions(a, b string) int {
+	na, nb := numeros(a), numeros(b)
+	for i := 0; i < 3; i++ {
+		if na[i] != nb[i] {
+			if na[i] < nb[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+func numeros(v string) [3]int {
+	var out [3]int
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	for i, parte := range strings.Split(v, ".") {
+		if i >= 3 {
+			break
+		}
+		out[i], _ = strconv.Atoi(parte)
+	}
+	return out
 }
 
 // withV deja la versión con una sola "v": el ldflags puede venir con
@@ -115,10 +153,22 @@ func Run() (Result, error) {
 
 	result.Before = withV(version.Version)
 
-	tag, err := Check()
+	tag, err := checkRelease()
 	if err != nil {
 		return result, err
 	}
+
+	// Comparar el tag antes de descargar: si el release publicado es
+	// más viejo (o el mismo), no hay nada que bajar.
+	if cmp := compareVersions(tag, result.Before); cmp <= 0 {
+		result.After = withV(tag)
+		if cmp < 0 {
+			result.Note = fmt.Sprintf("el release (%s) es más viejo que el binario (%s): no se toca",
+				result.After, result.Before)
+		}
+		return result, nil
+	}
+
 	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, tag, asset)
 	tmp, err := fetchAsset(url)
 	if err != nil {
@@ -136,7 +186,12 @@ func Run() (Result, error) {
 	}
 	result.After = after
 
-	if after == result.Before {
+	switch compareVersions(after, result.Before) {
+	case 0:
+		return result, nil
+	case -1:
+		result.Note = fmt.Sprintf("el release (%s) es más viejo que el binario (%s): no se toca",
+			after, result.Before)
 		return result, nil
 	}
 	if err := replaceFile(tmp, exe); err != nil {
