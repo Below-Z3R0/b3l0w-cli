@@ -42,6 +42,11 @@ func InstallPath(name string) (string, error) {
 // Exige que el release publique SHA256SUMS y su firma: un asset sin
 // firmar no se ejecuta.
 func Install(p config.Program) (string, error) {
+	// Si ya es paquete, pacman manda: no hay dos formas de instalar
+	// lo mismo.
+	if Packaged(p.Name) {
+		return InstallPackage(p.Name)
+	}
 	return InstallVerified(p, true)
 }
 

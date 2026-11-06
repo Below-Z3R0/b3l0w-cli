@@ -18,7 +18,24 @@ func Uninstall(name string, m *config.Manifest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Si el programa ya es un paquete de b3l0w, pacman manda.
+	if Packaged(name) {
+		if err := RemovePackage(name); err != nil {
+			return "", err
+		}
+		_ = os.Remove(path) // el binario suelto, si quedó
+		m.Remove(name)
+		if err := m.Save(cli.ManifestPath()); err != nil {
+			return "", fmt.Errorf("no se pudo guardar el manifiesto: %w", err)
+		}
+		return path, nil
+	}
 	if owner := cli.PackageOwner(path); owner != "" {
+		if ownedByB3l0w(owner) {
+			if err := RemovePackage(name); err != nil {
+				return "", err
+			}
+		}
 		return "", fmt.Errorf("%s es del paquete %s: se quita con pacman", name, owner)
 	}
 	if _, err := os.Stat(path); err == nil {
