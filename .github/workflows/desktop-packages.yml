@@ -31,7 +31,7 @@ jobs:
               pacman -Syu --noconfirm --needed git sudo namcap devtools
               useradd -m builder
               echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-              chown -R builder:builder /work
+              chown -R builder:builder /work/packaging
               for pkg in xdg-desktop-portal-umbriel-b3l0w umbriel-b3l0w noctalia-b3l0w; do
                 su builder -c "cd /work/packaging/$pkg && makepkg -s --noconfirm --needed"
                 namcap /work/packaging/$pkg/*.pkg.tar.zst || true
@@ -41,6 +41,11 @@ jobs:
               done
               mkdir -p /work/dist
               find /work/packaging -name "*.pkg.tar.zst" -exec cp {} /work/dist/ \;
+              # GitHub artifacts and release assets reject ':'; the epoch stays
+              # inside .PKGINFO, only the filename changes.
+              for f in /work/dist/*.pkg.tar.zst; do
+                mv "$f" "$(echo "$f" | tr ':' '_')"
+              done
               chmod -R a+r /work/dist
             '
 
