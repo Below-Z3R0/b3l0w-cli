@@ -46,6 +46,41 @@ b3l0w plugins -Ss anilist  # mismo que b3l0w plugins search anilist
 actualizar; los servicios son Docker, no paquetes. Y `-Ss` solo existe
 donde hay catálogo que consultar.
 
+## Firmas
+
+Los paquetes se publican en
+[`b3l0w-packages`](https://github.com/Below-Z3R0/b3l0w-packages) y se
+firman con la clave de release de b3l0w.
+
+```
+Fingerprint: 9AE2 C00A D3A9 A647 06A4  335C C6E1 D74A 0783 3042
+Vence:       2031-11-05
+Clave pública: keys/b3l0w.asc
+```
+
+**La clave privada nunca está en este repo ni en CI.** Vive en
+`~/.gnupg-b3l0w` en el equipo del mantenedor; el backup va cifrado a un
+medio offline. El `.gitignore` de `keys/` bloquea `*.gpg`, `*-secret*` y
+`*-revoke*` para que un `git add -A` no los suba.
+
+### Firmar un release
+
+```bash
+export GNUPGHOME="$HOME/.gnupg-b3l0w"
+sha256sum b3l0w-linux-amd64 > SHA256SUMS
+gpg --detach-sign --armor SHA256SUMS
+gpg --verify SHA256SUMS.asc SHA256SUMS
+```
+
+### Generar la clave (una sola vez)
+
+```bash
+bash scripts/maintainers/gen-signing-key.sh
+```
+
+Crea un `GNUPGHOME` dedicado, una clave RSA 4096 solo de firma con
+vencimiento a 5 años, el certificado de revocación y un backup cifrado.
+
 ## Cómo está armado
 
 Un core chico que **delega**. No sabe de GitHub, de assets ni de pacman:

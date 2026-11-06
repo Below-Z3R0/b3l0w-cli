@@ -1,0 +1,6 @@
+# La clave privada y el certificado de revocación no se versionan nunca.
+# El backup va cifrado a un medio offline; esto evita que un `git add -A`
+# lo suba por accidente.
+*.gpg
+*-secret*
+*-revoke*
