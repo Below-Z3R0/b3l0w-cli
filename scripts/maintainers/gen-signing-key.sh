@@ -30,8 +30,14 @@ mal()  { printf '  ✗ %s\n' "$1" >&2; exit 1; }
 
 command -v gpg >/dev/null || mal "falta gpg"
 
+# Un gpg-agent colgado de un homedir que se movió deja sockets rotos y
+# hace fallar `agent_genkey` con "No such file or directory". Se mata
+# antes de crear nada: el agente se relanza solo cuando hace falta.
+pkill -f "gpg-agent --homedir $GNUPGHOME" 2>/dev/null || true
+sleep 0.3
+
 if [ -d "$GNUPGHOME" ] && [ -n "$(ls -A "$GNUPGHOME" 2>/dev/null)" ]; then
-	mal "$GNUPGHOME ya tiene claves. Si querés rotar, movelo antes:
+	mal "$GNUPGHOME ya tiene archivos. Si querés rotar, movelo antes:
        mv $GNUPGHOME $GNUPGHOME.viejo"
 fi
 
