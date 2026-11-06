@@ -34,7 +34,7 @@ ghcr.io/below-z3r0/seanime:sha-<commit>
 ghcr.io/below-z3r0/seanime:latest
 ```
 
-Workflow: `.github/workflows/image.yml` del repo `seanime-docker`. Construye desde el tag exacto
+Workflow: `.github/workflows/image.yml` del repo `b3l0w-seanime`. Construye desde el tag exacto
 de `5rahim/seanime`, corre smoke test y publica. `compose.yaml` usa solo `image:`, sin `build:`.
 
 ### Paquetes de escritorio

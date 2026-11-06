@@ -6,7 +6,7 @@ paquetes de escritorio).
 
 ## 1. Qué pasó, run por run
 
-Workflow: `.github/workflows/image.yml` de `Below-Z3R0/seanime-docker`.
+Workflow: `.github/workflows/image.yml` de `Below-Z3R0/b3l0w-seanime`.
 
 | Run | Síntoma | Causa | Fix |
 |---|---|---|---|
