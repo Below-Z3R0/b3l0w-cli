@@ -17,7 +17,7 @@ b3l0w update --self          # actualiza el propio b3l0w
 b3l0w check [--keep=N]       # estado + snapshots de Limine
 b3l0w channel [stable|edge]  # canal del escritorio
 b3l0w plugins ...            # build/release/install/update/list/remove/info/search
-b3l0w services ...           # list/hardware/images/sync/install/update/status
+b3l0w services ...           # list/search/hardware/images/sync/install/update/status
 b3l0w extensions             # lista las extensiones binarias del CLI
 b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
 b3l0w doctor                 # dependencias, programas, scripts y plugins
@@ -34,7 +34,7 @@ las categorías se sientan parecidas:
 | `-R` / `-Rns` | `remove` | sí | sí |
 | `-Q` / `-Qe` | `list` | sí | sí |
 | `-U` / `-Syu` | `update` | sí | sí |
-| `-Ss` / `-Qs` | `search` | — | sí |
+| `-Ss` / `-Qs` | `search` | sí | sí |
 
 ```bash
 b3l0w services -Q          # mismo que b3l0w services list

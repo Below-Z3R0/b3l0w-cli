@@ -768,6 +768,8 @@ func servicesCommand(args []string) int {
 	switch args[0] {
 	case "list":
 		return servicesList(args[1:])
+	case "search":
+		return servicesSearch(args[1:])
 	case "hardware":
 		return servicesHardware(args[1:])
 	case "images":
@@ -797,7 +799,7 @@ func servicesCommand(args []string) int {
 	case "prune":
 		return servicesPrune(args[1:])
 	}
-	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]\n" +
+	cli.Fail("uso: b3l0w services [list|search|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]\n" +
 		aliasHelp("services"))
 	return 1
 }
@@ -1113,6 +1115,17 @@ func servicesList(args []string) int {
 	st := services.CheckRegistry(m, reg)
 	services.RenderList(m, byID, st, services.DetectHardware())
 	return 0
+}
+
+// servicesSearch filtra el manifiesto por texto.
+func servicesSearch(args []string) int {
+	manifest, _, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return services.RenderSearch(m, strings.Join(rest, " "))
 }
 
 func servicesHardware(args []string) int {

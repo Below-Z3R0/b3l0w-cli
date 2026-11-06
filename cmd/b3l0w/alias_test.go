@@ -25,8 +25,8 @@ func TestAliasVerb(t *testing.T) {
 		// Buscar solo existe donde hay catálogo.
 		{"plugins", "-Ss", "search"},
 		{"plugins", "-Qs", "search"},
-		{"services", "-Ss", ""},
-		{"services", "-Qs", ""},
+		{"services", "-Ss", "search"},
+		{"services", "-Qs", "search"},
 
 		// Verbos largos: la forma canónica no se toca.
 		{"services", "install", ""},
@@ -52,8 +52,8 @@ func TestAliasHelpMencionaSearchSoloEnPlugins(t *testing.T) {
 	if h := aliasHelp("plugins"); !contains(h, "-Ss search") {
 		t.Errorf("plugins: %q, quería que mencione -Ss search", h)
 	}
-	if h := aliasHelp("services"); contains(h, "-Ss") {
-		t.Errorf("services: %q, no debería mencionar -Ss", h)
+	if h := aliasHelp("services"); !contains(h, "-Ss search") {
+		t.Errorf("services: %q, quería que mencione -Ss search", h)
 	}
 }
 

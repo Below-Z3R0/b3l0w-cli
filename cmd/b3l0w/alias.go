@@ -19,20 +19,12 @@ func aliasVerb(category, arg string) string {
 	case "-U", "-Syu", "--update":
 		return "update"
 	case "-Ss", "-Qs":
-		// Buscar solo tiene sentido donde hay catálogo que consultar.
-		if category == "plugins" {
-			return "search"
-		}
-		return ""
+		return "search"
 	}
 	return ""
 }
 
 // aliasHelp lista las banderas cortas de una categoría.
 func aliasHelp(category string) string {
-	base := "  -S install   -R remove   -Q list   -U update"
-	if category == "plugins" {
-		return base + "   -Ss search"
-	}
-	return base
+	return "  -S install   -R remove   -Q list   -U update   -Ss search"
 }
