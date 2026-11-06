@@ -20,6 +20,7 @@ b3l0w plugins ...            # build/release/install/update/list/remove/info/sea
 b3l0w services ...           # list/search/hardware/images/sync/install/update/status
 b3l0w extensions             # lista las extensiones binarias del CLI
 b3l0w sync [cat] [--check]   # refresca las DB del registry
+b3l0w apps [-S|-Syu|-R|-Q]   # wrapper de pacman con freno de partial upgrade
 b3l0w install <nombre>       # baja y verifica el programa del release
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
@@ -135,6 +136,48 @@ contra un catálogo viejo: es el `-Sy` que le faltaba.
 **El embebido es el último recurso**, no la fuente normal: en una
 instalación limpia, sin el repo clonado y sin red, el CLI igual tiene
 catálogo.
+
+## Apps (pacman)
+
+`b3l0w apps` no reimplementa pacman: traduce banderas y agrega una
+regla que pacman no tiene.
+
+| Comando | Qué hace |
+|---|---|
+| `apps` | `pacman -Q` (lista instalados) |
+| `apps -Syu` | sync + upgrade — **el correcto para actualizar** |
+| `apps -S <pkg>` | instala, **solo si la DB tiene menos de 7 días** |
+| `apps -Sy` / `-Syy` | **rechazado**: partial upgrade |
+| `apps -R <pkg>` | se expande a `pacman -Rns` |
+| `apps -Ss` / `-Si` / `-Q` | consultas, sin sudo |
+| `--allow-stale` | fuerza `-S` con la DB vieja |
+
+`pacman -Sy <pkg>` mezcla paquetes nuevos con librerías viejas: es la
+forma clásica de romper Arch. El CLI lo niega y ofrece `-Syu`.
+
+## Empaquetado
+
+```
+packaging/
+  b3l0w-keyring/     clave del repo [b3l0w] + pacman-key --populate
+  b3l0w-cli/         compila Go
+  boot-preview/      compila Go
+  kitty-shapes/      instala el binario de Bun
+```
+
+```bash
+# construir uno
+cd packaging/b3l0w-cli
+rsync -a --exclude .git --exclude packaging ../../ src/
+makepkg -f
+
+# publicar en b3l0w-packages (pide la passphrase)
+bash scripts/maintainers/repo-publish.sh --push packaging/*/*.pkg.tar.zst
+```
+
+El script reemplaza los symlinks `b3l0w.db` / `b3l0w.files` por copias
+reales: `raw.githubusercontent` no sigue symlinks y pacman recibiría el
+texto del enlace.
 
 ## Firmas
 
