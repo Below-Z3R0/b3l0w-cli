@@ -24,6 +24,10 @@ import (
 //go:embed b3l0w.asc
 var publicKey []byte
 
+// PublicKey devuelve la clave pública embebida. La usa el setup para
+// importarla al keyring de pacman.
+func PublicKey() []byte { return publicKey }
+
 // Fingerprint es la huella de la clave de release. Es pública.
 //
 // Es var y no const para que los tests puedan sustituirla por una

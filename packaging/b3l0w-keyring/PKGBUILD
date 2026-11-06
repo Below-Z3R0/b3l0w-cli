@@ -1,0 +1,35 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Instala la clave de firma del repo [b3l0w] y la deja de confianza
+# local con `pacman-key --populate`.
+#
+# Es el primer paquete que se instala en una máquina nueva: sin él,
+# `SigLevel = Required` rechaza todo lo demás del repo.
+pkgname=b3l0w-keyring
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Clave de firma del repositorio [b3l0w]"
+arch=(any)
+url="https://github.com/Below-Z3R0/b3l0w-packages"
+license=(MIT)
+depends=(pacman)
+source=("b3l0w.gpg" "b3l0w-trusted")
+sha256sums=('f949f682e3c91b00c4689fa5e868206050202ab8733bc4497503c6c63305d51d'
+            '5a96f7b419a07aa0197936cf376f4982efac69deb0d835286b22cd6b491cb06d')
+
+package() {
+	install -Dm644 "$srcdir/b3l0w.gpg" \
+		"$pkgdir/usr/share/pacman/keyrings/b3l0w.gpg"
+	install -Dm644 "$srcdir/b3l0w-trusted" \
+		"$pkgdir/usr/share/pacman/keyrings/b3l0w-trusted"
+}
+
+# --populate importa la clave y la firma localmente en un solo paso:
+# es el mecanismo oficial de Arch para keyrings de repos de terceros.
+post_install() {
+	pacman-key --populate b3l0w
+}
+
+post_upgrade() {
+	post_install
+}

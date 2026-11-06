@@ -1,0 +1,30 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Binario estático de Go: no hay dependencias de runtime más allá de
+# glibc, así que el paquete solo copia el ejecutable.
+pkgname=boot-preview
+pkgver=0.2.3
+pkgrel=1
+pkgdesc="Previsualización del tema de arranque"
+arch=(x86_64)
+url="https://github.com/Below-Z3R0/boot-preview"
+license=(MIT)
+depends=(glibc)
+makedepends=(go)
+source=()
+sha256sums=()
+
+prepare() {
+	cp -r "$startdir/src/." "$srcdir"/
+}
+
+build() {
+	cd "$srcdir"
+	CGO_ENABLED=0 go build -trimpath \
+		-ldflags "-s -w -X main.version=v$pkgver" \
+		-o boot-preview ./cmd/boot-preview
+}
+
+package() {
+	install -Dm755 "$srcdir/boot-preview" "$pkgdir/usr/bin/boot-preview"
+}

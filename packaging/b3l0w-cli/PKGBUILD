@@ -1,0 +1,33 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# El código se deja en ./src (lo hace el CI o a mano) y se compila acá.
+# El binario va a /usr/bin: una sola ruta, un solo dueño.
+pkgname=b3l0w-cli
+pkgver=0.5.0
+pkgrel=1
+pkgdesc="CLI de administración de b3l0wz3r0-os"
+arch=(x86_64)
+url="https://github.com/Below-Z3R0/b3l0w-cli"
+license=(MIT)
+depends=(glibc)
+makedepends=(go)
+provides=(b3l0w)
+conflicts=(b3l0w)
+source=()
+sha256sums=()
+
+prepare() {
+	cp -r "$startdir/src/." "$srcdir"/
+}
+
+build() {
+	cd "$srcdir"
+	CGO_ENABLED=0 go build -trimpath \
+		-ldflags "-s -w -X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v$pkgver" \
+		-o b3l0w ./cmd/b3l0w
+}
+
+package() {
+	install -Dm755 "$srcdir/b3l0w" "$pkgdir/usr/bin/b3l0w"
+	install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

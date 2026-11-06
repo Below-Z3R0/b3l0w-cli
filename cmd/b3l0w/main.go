@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Below-Z3R0/b3l0w-cli/internal/apps"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
@@ -70,6 +71,8 @@ func run(args []string) int {
 		return pluginsExtensions()
 	case "sync":
 		return syncCommand(rest)
+	case "apps":
+		return apps.Run(rest)
 	case "plugin-exec":
 		return pluginExecCommand(rest)
 	case "channel":
@@ -1455,6 +1458,7 @@ func pluginsUpdate(args []string) int {
 
 func setupCommand() int {
 	cli.Step("Setup de b3l0w")
+	ensureKeyring()
 	if err := plugins.EnsureSource(); err != nil {
 		cli.Warn("source: " + err.Error())
 	} else {
@@ -1611,6 +1615,7 @@ b3l0w program, b3l0w system, b3l0w extensions.
   program remove <nom>   lo saca del manifiesto
   extensions             lista las extensiones binarias del CLI
   sync [cat] [--check]   refresca las DB locales del registry
+  apps [-S|-Syu|-R|-Q]   wrapper de pacman con freno de partial upgrade
   plugins                lista los plugins de Noctalia del registry
   plugins list           lo mismo (alias explícito)
   plugins build         regenera catalog.toml y plugins.json

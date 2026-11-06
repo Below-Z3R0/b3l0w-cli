@@ -1,0 +1,26 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# kitty-shapes se compila con Bun. El binario ya viene compilado en
+# dist/: el paquete no recompila, solo lo instala.
+#
+# OJO: el binario pesa ~165 MB porque `bun build --compile` embebe el
+# runtime. Comprimido en .pkg.tar.zst baja a ~70 MB.
+pkgname=kitty-shapes
+pkgver=1.0.1
+pkgrel=1
+pkgdesc="Formas de kitty para fastfetch"
+arch=(x86_64)
+url="https://github.com/Below-Z3R0/kitty-shapes"
+license=(MIT)
+depends=(glibc)
+source=()
+sha256sums=()
+
+prepare() {
+	cp -r "$startdir/src/." "$srcdir"/
+}
+
+package() {
+	install -Dm755 "$srcdir/dist/kitty-shapes-linux-x64" \
+		"$pkgdir/usr/bin/kitty-shapes"
+}
