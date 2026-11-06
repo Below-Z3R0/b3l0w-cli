@@ -59,17 +59,21 @@ func Release(opts ReleaseOptions) error {
 	if err != nil {
 		return err
 	}
-	api := opts.TargetAPI
-	if api == 0 {
-		api = shellPluginAPI()
-	}
-	for _, entry := range targets {
-		if entry.PluginAPI > api {
-			return fmt.Errorf("%s: plugin_api %d > shell %d; no lo liberes a main todavía", entry.ID, entry.PluginAPI, api)
+	// El gate de plugin_api es opcional y explícito: sin --api se
+	// publica lo que el plugin declara. La resolución de compatibilidad
+	// la hace Noctalia con las filas [[plugin.release]] del catálogo.
+	if opts.TargetAPI > 0 {
+		for _, entry := range targets {
+			if entry.PluginAPI > opts.TargetAPI {
+				return fmt.Errorf("%s: plugin_api %d > %d; no lo liberes a main todavía",
+					entry.ID, entry.PluginAPI, opts.TargetAPI)
+			}
 		}
 	}
 	if opts.DryRun {
-		fmt.Printf("  → target plugin_api: %d\n", api)
+		if opts.TargetAPI > 0 {
+			fmt.Printf("  → target plugin_api: %d\n", opts.TargetAPI)
+		}
 		fmt.Printf("  → copiar a main: %d plugins (sin tests/docs/dev deps)\n", len(targets))
 		for _, entry := range targets {
 			fmt.Printf("  → %s/\n", entry.Path)

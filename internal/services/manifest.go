@@ -35,10 +35,14 @@ type Service struct {
 	Ports []int `json:"ports,omitempty"`
 	// Health es la URL que responde cuando el servicio está listo.
 	Health string `json:"health,omitempty"`
-	// State: ready, wip o planned.
+	// State es la definición de un servicio del manifiesto.
 	State string `json:"state"`
 	// Models es el comando que instala los modelos, si aplica.
 	Models string `json:"models,omitempty"`
+	// Description explica qué corre el servicio.
+	Description string `json:"description,omitempty"`
+	// Components son las piezas del stack.
+	Components []string `json:"components,omitempty"`
 	// Profiles son los perfiles de compose opcionales.
 	Profiles []string `json:"profiles,omitempty"`
 	// SizeGB es el disco que ocupa la imagen.

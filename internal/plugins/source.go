@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
@@ -133,25 +132,8 @@ func UpdateSources() error {
 	if err != nil {
 		return err
 	}
-	installed, err := InstalledBySource()
-	if err != nil {
-		return err
-	}
-	api := shellPluginAPI()
 	failed := 0
 	for _, name := range sources {
-		held, blocked, err := preflightSource(name, api, installed[name])
-		if err != nil {
-			fmt.Printf("  ! %s: no se pudo verificar: %v\n", name, err)
-			failed++
-			continue
-		}
-		for _, h := range held {
-			fmt.Printf("  · %s\n", h)
-		}
-		for _, b := range blocked {
-			fmt.Printf("  ✗ %s\n", b)
-		}
 		if err := UpdateSource(name); err != nil {
 			fmt.Printf("  ! %s: %v\n", name, err)
 			failed++
@@ -163,49 +145,6 @@ func UpdateSources() error {
 		return fmt.Errorf("%d sources fallaron", failed)
 	}
 	return nil
-}
-
-// preflightSource consulta el catálogo remoto sin tocar el working tree
-// y dice qué plugins quedan atrás y cuáles no son instalables.
-//
-// No bloquea: la resolución la hace Noctalia, que instala la revisión
-// más nueva que su rango de API permite.
-func preflightSource(name string, api int, ids []string) (held, blocked []string, err error) {
-	if len(ids) == 0 {
-		return nil, nil, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, nil, err
-	}
-	repo := filepath.Join(home, ".local", "state", "noctalia", "plugins", "sources", name, "repo")
-	if _, err := os.Stat(repo); err != nil {
-		return nil, nil, fmt.Errorf("no está el clon de %s", name)
-	}
-	repairSourceRepo(name)
-	if _, err := cli.RunTimeout(30*time.Second, "git", "-C", repo, "fetch", "--quiet"); err != nil {
-		return nil, nil, err
-	}
-	sha, err := cli.Run("git", "-C", repo, "rev-parse", "FETCH_HEAD")
-	if err != nil {
-		return nil, nil, err
-	}
-	catalogText, err := cli.Run("git", "-C", repo, "show", strings.TrimSpace(sha)+":catalog.toml")
-	if err != nil {
-		return nil, nil, err
-	}
-	catalog := ParseCatalog(catalogText)
-	for _, id := range ids {
-		res := catalog.Resolve(id, api)
-		switch {
-		case !res.Installable:
-			blocked = append(blocked, fmt.Sprintf("%s: ninguna versión compatible con API %d", id, api))
-		case res.HeldBack:
-			held = append(held, fmt.Sprintf("%s: queda en v%s (la v%s pide API %d, el shell llega a %d)",
-				id, res.Version, res.TipVersion, res.TipAPI, api))
-		}
-	}
-	return held, blocked, nil
 }
 
 // UpdateSource repara el clon si quedó con archivos borrados y pide a

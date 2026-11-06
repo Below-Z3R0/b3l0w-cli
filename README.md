@@ -178,6 +178,8 @@ b3l0w services logs <id> [--tail=N]  # últimas líneas
 b3l0w services restart|stop <id>
 b3l0w services remove <id> [--purge]
 b3l0w services variant <id> <var>    # cambia de variante sin reinstalar
+b3l0w services rollback <id>       # vuelve a la imagen anterior
+b3l0w services prune               # borra imágenes colgantes
 ```
 
 ### La variante se elige por hardware, no por suposición
@@ -213,6 +215,14 @@ una base de pacman desactualizada. `b3l0w services sync` lo corrige.
 si cambió, pregunta por cada servicio. Con `--yes` aplica todo. Si el
 healthcheck falla después del recreate, vuelve a la imagen anterior y avisa.
 
+**Rollback barato:** como la imagen vieja sigue en el registry, volver
+atrás es un `pull` de otro tag. No hace falta recompilar ni guardar
+imágenes localmente.
+
+**La PC no se llena:** si el update sale bien, el CLI borra la imagen
+anterior (`docker image rm`) y deja solo la nueva. `b3l0w services prune`
+limpia las capas colgantes del registry local.
+
 Los servicios son **opcionales**: `install system` no los instala. No hay
 servicios instalados, `b3l0w update` no toca nada.
 
@@ -233,7 +243,6 @@ b3l0w plugins update [id]      # refresca el source
 b3l0w plugins remove <id>      # borra local o deshabilita si viene del source
 b3l0w plugins info <id>
 b3l0w plugins search <texto>
-b3l0w plugins api              # el plugin_api que soporta el shell
 ```
 
 ### La compatibilidad de API la resuelve Noctalia, no el CLI
@@ -244,24 +253,16 @@ revisión anterior y su `rev`. Cuando el plugin más nuevo pide más API del
 que el shell soporta, Noctalia instala la revisión compatible y la
 etiqueta "older version" en el store.
 
-El CLI **no bloquea** el update por esto: refresca el source y **informa**
-qué queda atrás:
+El CLI **no calcula el API ni bloquea el update**: refresca el source y
+compara la versión **materializada** contra la del catálogo. Si difieren,
+se ve sin abrir la GUI:
 
 ```
-· noctalia/umbriel-companion: queda en v1.2.4 (la v1.3.0 pide API 45, el shell llega a 43)
+b3l0w/umbriel-companion   1.2.4   source/enabled (catálogo 1.3.0)
 ```
 
-`b3l0w plugins api` dice cuál es el API del shell y de dónde salió el
-número:
-
-| Fuente | Cuándo |
-|---|---|
-| `noctalia plugins api` | si el shell expone el comando (todavía no upstream) |
-| `máximo materializado` | el mayor `plugin_api` que el shell ya cargó con éxito |
-| `piso por defecto` (43) | si no hay plugins materializados |
-
-El segundo es un piso **probado**, no una suposición: si el shell cargó un
-plugin con API 45, soporta 45.
+Esa diferencia *es* el held-back: Noctalia eligió la revisión que su
+rango soporta.
 
 `catalog.toml` y `plugins/plugins.json` se generan: no se editan a mano.
 `plugins build` escribe el catálogo en `b3l0w-plugins` y el manifiesto en

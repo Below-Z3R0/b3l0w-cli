@@ -267,6 +267,13 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	if err := state.Save(in.StateDir); err != nil {
 		return state, err
 	}
+	// La imagen que quedó atrás se borra: la PC no acumula una imagen
+	// por cada update.
+	if previous.Image != "" && previous.Image != state.Image {
+		if in.Docker.RemoveImage(previous.Image) {
+			fmt.Printf("  ✓ borrada la imagen anterior: %s\n", previous.Image)
+		}
+	}
 	return state, nil
 }
 

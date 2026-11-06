@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,11 +28,6 @@ func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
 	targets, err := selectPlugins(m, id)
 	if err != nil {
 		return err
-	}
-	for _, entry := range targets {
-		if err := checkAPI(entry); err != nil {
-			return err
-		}
 	}
 	if sourceReady() {
 		return installFromSource(targets, dryRun)
@@ -63,10 +57,6 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 		return updateFromSource(targets, dryRun)
 	}
 	for _, entry := range targets {
-		if err := checkAPI(entry); err != nil {
-			fmt.Printf("  ✗ %v\n", err)
-			continue
-		}
 		local := InstalledVersion(pluginsDir, entry)
 		if local == "" {
 			fmt.Printf("  ! %s: no instalado\n", entry.ID)
@@ -91,23 +81,6 @@ func installFromSource(targets []Entry, dryRun bool) error {
 		}
 		return nil
 	}
-	api := shellPluginAPI()
-	var ids []string
-	for _, entry := range targets {
-		ids = append(ids, entry.ID)
-	}
-	held, blocked, err := preflightSource(SourceName, api, ids)
-	if err != nil {
-		return fmt.Errorf("no se pudo verificar %s: %w", SourceName, err)
-	}
-	if len(held) > 0 {
-		for _, h := range held {
-			fmt.Printf("  · %s\n", h)
-		}
-	}
-	if len(blocked) > 0 {
-		return fmt.Errorf("no instalo; %s", strings.Join(blocked, ", "))
-	}
 	if err := UpdateSource(SourceName); err != nil {
 		return err
 	}
@@ -124,9 +97,6 @@ func installFromSource(targets []Entry, dryRun bool) error {
 		meta, ok := sourceMeta(entry)
 		if !ok {
 			return fmt.Errorf("%s: Noctalia no lo materializó; probá Browse Plugins", entry.ID)
-		}
-		if meta.PluginAPI > shellPluginAPI() {
-			return fmt.Errorf("%s: plugin_api %d > shell %d (actualizá el shell)", entry.ID, meta.PluginAPI, shellPluginAPI())
 		}
 		if meta.Version != entry.Version {
 			fmt.Printf("  ! %s: source %s, manifiesto %s\n", entry.ID, meta.Version, entry.Version)
@@ -186,23 +156,6 @@ func updateFromSource(targets []Entry, dryRun bool) error {
 		}
 		return nil
 	}
-	api := shellPluginAPI()
-	var installed []string
-	for _, entry := range targets {
-		if Enabled(entry.ID) {
-			installed = append(installed, entry.ID)
-		}
-	}
-	held, blocked, err := preflightSource(SourceName, api, installed)
-	if err != nil {
-		return fmt.Errorf("no se pudo verificar %s: %w", SourceName, err)
-	}
-	for _, h := range held {
-		fmt.Printf("  · %s\n", h)
-	}
-	for _, b := range blocked {
-		fmt.Printf("  ✗ %s\n", b)
-	}
 	if err := UpdateSource(SourceName); err != nil {
 		return err
 	}
@@ -219,94 +172,6 @@ func updateFromSource(targets []Entry, dryRun bool) error {
 		fmt.Printf("  ▸ %s: %s -> %s (source)\n", entry.ID, entry.Version, meta.Version)
 	}
 	return nil
-}
-
-func checkAPI(entry Entry) error {
-	api := shellPluginAPI()
-	if entry.PluginAPI > api {
-		return fmt.Errorf("%s: plugin_api %d > %d (actualizá el shell)", entry.ID, entry.PluginAPI, api)
-	}
-	return nil
-}
-
-// shellPluginAPI devuelve el plugin_api máximo que el shell soporta.
-//
-// Contrato preferido: `noctalia plugins api`. No existe todavía en el
-// build upstream, así que el fallback es el máximo plugin_api que el
-// shell YA materializó con éxito: un piso probado, no una suposición.
-// Noctalia documenta "3 through 43" para v5.4.0, pero un build de git
-// puede ir más lejos (este materializó un plugin con API 45).
-func shellPluginAPI() int {
-	if cli.HaveCommand("noctalia") {
-		if out, err := cli.Run("noctalia", "plugins", "api"); err == nil {
-			if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
-				return n
-			}
-		}
-	}
-	if n := materializedMaxAPI(); n > 0 {
-		return n
-	}
-	return DefaultPluginAPI
-}
-
-// DefaultPluginAPI es el piso documentado por Noctalia v5.4.0.
-const DefaultPluginAPI = 43
-
-// materializedMaxAPI devuelve el mayor plugin_api entre los plugins que
-// el shell ya materializó. Es la mejor prueba disponible del API que
-// soporta: si el shell cargó un plugin con API 45, soporta 45.
-func materializedMaxAPI() int {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return 0
-	}
-	root := filepath.Join(home, ".local", "state", "noctalia", "plugins", "materialized")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return 0
-	}
-	max := 0
-	for _, source := range entries {
-		if !source.IsDir() {
-			continue
-		}
-		plugins, err := os.ReadDir(filepath.Join(root, source.Name()))
-		if err != nil {
-			continue
-		}
-		for _, p := range plugins {
-			if !p.IsDir() {
-				continue
-			}
-			meta, err := readPluginMeta(filepath.Join(root, source.Name(), p.Name(), "plugin.toml"))
-			if err != nil {
-				continue
-			}
-			if meta.PluginAPI > max {
-				max = meta.PluginAPI
-			}
-		}
-	}
-	return max
-}
-
-// ShellAPI devuelve el plugin_api máximo que el shell soporta.
-func ShellAPI() int { return shellPluginAPI() }
-
-// ShellAPISource dice de dónde salió el número del API.
-func ShellAPISource() string {
-	if cli.HaveCommand("noctalia") {
-		if out, err := cli.Run("noctalia", "plugins", "api"); err == nil {
-			if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
-				return "noctalia plugins api"
-			}
-		}
-	}
-	if materializedMaxAPI() > 0 {
-		return "máximo materializado"
-	}
-	return "piso por defecto"
 }
 
 func selectPlugins(m *Manifest, id string) ([]Entry, error) {

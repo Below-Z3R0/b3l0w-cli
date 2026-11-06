@@ -759,9 +759,64 @@ func servicesCommand(args []string) int {
 		return servicesRemove(args[1:])
 	case "variant":
 		return servicesVariant(args[1:])
+	case "rollback":
+		return servicesRollback(args[1:])
+	case "prune":
+		return servicesPrune(args[1:])
 	}
-	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant]")
+	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]")
 	return 1
+}
+
+// servicesRollback vuelve a la imagen anterior de un servicio.
+func servicesRollback(args []string) int {
+	manifest, stateDir, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) == 0 {
+		cli.Fail("falta el servicio: b3l0w services rollback <id>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	state, err := services.LoadState(stateDir, svc.ID)
+	if err != nil {
+		cli.Fail(svc.ID + " no está instalado")
+		return 1
+	}
+	in := &services.Installer{
+		Docker:   services.NewDocker(),
+		Registry: services.NewRegistry(""),
+		StateDir: stateDir,
+	}
+	newState, err := in.Rollback(*svc, state)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%s volvió a %s (%s)", newState.ID, newState.Tag, newState.Health))
+	return 0
+}
+
+// servicesPrune borra las imágenes colgantes del registry local.
+func servicesPrune(args []string) int {
+	out, err := services.NewDocker().PruneImages()
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if out == "" {
+		cli.Ok("no hay imágenes colgantes")
+		return 0
+	}
+	fmt.Println(out)
+	return 0
 }
 
 // servicesDoctor chequea que la máquina pueda correr servicios.
@@ -1089,20 +1144,9 @@ func pluginsCommand(args []string) int {
 		return pluginsInfo(args[1:])
 	case "search":
 		return pluginsSearch(args[1:])
-	case "api":
-		return pluginsAPI(args[1:])
 	}
-	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search|api]")
+	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]")
 	return 1
-}
-
-// pluginsAPI muestra el plugin_api que soporta el shell.
-func pluginsAPI(args []string) int {
-	api := plugins.ShellAPI()
-	cli.Step("API de plugins")
-	fmt.Printf("  %d\n", api)
-	fmt.Printf("  %s\n", cli.Dim("fuente: "+plugins.ShellAPISource()))
-	return 0
 }
 
 // pluginsExtensions lista los binarios b3l0w-* del directorio privado.
@@ -1433,7 +1477,9 @@ func pluginsList(args []string) int {
 		case local == "":
 			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("no instalado"))
 		case local != entry.Version:
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim(fmt.Sprintf("%s %s/%s", origin, state, local)))
+			// La versión instalada difiere de la del catálogo: Noctalia
+			// chose una revisión compatible con su rango de API.
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, local, cli.Dim(fmt.Sprintf("%s/%s (catálogo %s)", origin, state, entry.Version)))
 		default:
 			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim(fmt.Sprintf("ok %s/%s", origin, state)))
 		}
