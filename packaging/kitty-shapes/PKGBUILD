@@ -17,7 +17,7 @@ source=()
 sha256sums=()
 
 prepare() {
-	cp -r "$startdir/src/." "$srcdir"/
+	cp -r "$startdir/files/." "$srcdir"/
 }
 
 package() {
