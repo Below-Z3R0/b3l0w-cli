@@ -90,6 +90,15 @@ func Run(m *config.Manifest) int {
 		} else {
 			cli.Warn("noctalia: falta el source " + plugins.SourceName + " (b3l0w update --plugins)")
 		}
+		switch v := plugins.AutoUpdate(); v {
+		case "none":
+			cli.Ok("plugins: auto-update off (lo controla b3l0w)")
+		case "":
+			cli.Warn("plugins: no pude leer auto_update")
+		default:
+			cli.Fail(fmt.Sprintf("plugins: auto_update=%q; poné \"none\" para que b3l0w controle las actualizaciones", v))
+			errors++
+		}
 	} else {
 		cli.Warn("noctalia no está en PATH: los plugins no se actualizan")
 	}

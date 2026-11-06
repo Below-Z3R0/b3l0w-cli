@@ -26,7 +26,7 @@ func Remove(manifestPath, id, pluginsDir string, dryRun bool) error {
 		return fmt.Errorf("plugin %s no está en el manifiesto", id)
 	}
 
-	fromSource := HasSource(SourceName)
+	fromSource := sourceVersion(*entry) != ""
 	removed := false
 	for _, dir := range []string{slug(*entry), entry.Path} {
 		target := filepath.Join(pluginsDir, dir)

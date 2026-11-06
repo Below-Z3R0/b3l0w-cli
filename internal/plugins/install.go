@@ -8,23 +8,38 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
 
 // registryTarball es el repo del registry comprimido. Se usa el tarball
 // y no archivos sueltos porque un plugin tiene varios .luau y no hay
-// listado de archivos en el manifiesto.
+// listado de archivos en el manifiesto. Es el fallback cuando Noctalia
+// no está instalado: con shell, el source es la vía principal.
 const registryTarball = "https://codeload.github.com/Below-Z3R0/b3l0w-plugins/tar.gz/refs/heads/main"
 
-// Install baja e instala uno o todos los plugins del manifiesto.
+// Install instala uno o todos los plugins. Con source de Noctalia no
+// copia nada local: refresca el source, que es la única fuente. Copiar
+// a ~/.local/share/noctalia/plugins/<slug> taparía el source con una
+// versión vieja.
 func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
-	if err := EnsureSource(); err != nil {
-		fmt.Printf("  ! source: %v\n", err)
-	}
 	targets, err := selectPlugins(m, id)
 	if err != nil {
 		return err
+	}
+	for _, entry := range targets {
+		if err := checkAPI(entry); err != nil {
+			return err
+		}
+	}
+	if sourceReady() {
+		return installFromSource(targets, dryRun)
+	}
+	if err := EnsureSource(); err == nil && sourceReady() {
+		return installFromSource(targets, dryRun)
 	}
 	for _, entry := range targets {
 		if err := installOne(entry, pluginsDir, dryRun); err != nil {
@@ -34,16 +49,24 @@ func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
 	return nil
 }
 
-// Update compara la versión instalada con la del manifiesto.
+// Update compara la versión instalada con la del manifiesto. Con
+// source, el refresh lo hace Noctalia; sin shell, baja el tarball.
 func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
-	if err := EnsureSource(); err != nil {
-		fmt.Printf("  ! source: %v\n", err)
-	}
 	targets, err := selectPlugins(m, id)
 	if err != nil {
 		return err
 	}
+	if sourceReady() {
+		return updateFromSource(targets, dryRun)
+	}
+	if err := EnsureSource(); err == nil && sourceReady() {
+		return updateFromSource(targets, dryRun)
+	}
 	for _, entry := range targets {
+		if err := checkAPI(entry); err != nil {
+			fmt.Printf("  ✗ %v\n", err)
+			continue
+		}
 		local := InstalledVersion(pluginsDir, entry)
 		if local == "" {
 			fmt.Printf("  ! %s: no instalado\n", entry.ID)
@@ -59,6 +82,231 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 		}
 	}
 	return nil
+}
+
+func installFromSource(targets []Entry, dryRun bool) error {
+	if dryRun {
+		for _, entry := range targets {
+			fmt.Printf("  → instalar %s %s (enable en Noctalia)\n", entry.ID, entry.Version)
+		}
+		return nil
+	}
+	api := shellPluginAPI()
+	var ids []string
+	for _, entry := range targets {
+		ids = append(ids, entry.ID)
+	}
+	held, blocked, err := preflightSource(SourceName, api, ids)
+	if err != nil {
+		return fmt.Errorf("no se pudo verificar %s: %w", SourceName, err)
+	}
+	if len(held) > 0 {
+		for _, h := range held {
+			fmt.Printf("  · %s\n", h)
+		}
+	}
+	if len(blocked) > 0 {
+		return fmt.Errorf("no instalo; %s", strings.Join(blocked, ", "))
+	}
+	if err := UpdateSource(SourceName); err != nil {
+		return err
+	}
+	for _, entry := range targets {
+		if !Enabled(entry.ID) {
+			out, err := cli.RunCombined("noctalia", "msg", "plugins", "enable", entry.ID)
+			if err != nil {
+				return fmt.Errorf("noctalia enable %s: %v: %s", entry.ID, err, out)
+			}
+			if !waitEnabled(entry.ID, 5*time.Second) {
+				return fmt.Errorf("%s: Noctalia no lo habilitó; probá Browse Plugins", entry.ID)
+			}
+		}
+		meta, ok := sourceMeta(entry)
+		if !ok {
+			return fmt.Errorf("%s: Noctalia no lo materializó; probá Browse Plugins", entry.ID)
+		}
+		if meta.PluginAPI > shellPluginAPI() {
+			return fmt.Errorf("%s: plugin_api %d > shell %d (actualizá el shell)", entry.ID, meta.PluginAPI, shellPluginAPI())
+		}
+		if meta.Version != entry.Version {
+			fmt.Printf("  ! %s: source %s, manifiesto %s\n", entry.ID, meta.Version, entry.Version)
+		}
+		fmt.Printf("  ✓ %s %s (source)\n", entry.ID, meta.Version)
+	}
+	return nil
+}
+
+// sourceMeta lee el plugin.toml materializado por Noctalia.
+func sourceMeta(entry Entry) (pluginMeta, bool) {
+	for _, dir := range materializedDirs(entry) {
+		if meta, err := readPluginMeta(filepath.Join(dir, "plugin.toml")); err == nil {
+			return meta, true
+		}
+	}
+	return pluginMeta{}, false
+}
+
+// Enabled lee la salida de `noctalia msg plugins list`.
+func Enabled(id string) bool {
+	if !cli.HaveCommand("noctalia") {
+		return false
+	}
+	out, err := cli.RunCombined("noctalia", "msg", "plugins", "list")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && fields[0] == id && fields[len(fields)-1] == "enabled" {
+			return true
+		}
+	}
+	return false
+}
+
+// waitEnabled espera a que Noctalia termine de exportar el estado; el
+// enable contesta "ok (exporting in background)".
+func waitEnabled(id string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if Enabled(id) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func updateFromSource(targets []Entry, dryRun bool) error {
+	if dryRun {
+		for _, entry := range targets {
+			fmt.Printf("  → refrescar %s desde el source\n", entry.ID)
+		}
+		return nil
+	}
+	api := shellPluginAPI()
+	var installed []string
+	for _, entry := range targets {
+		if Enabled(entry.ID) {
+			installed = append(installed, entry.ID)
+		}
+	}
+	held, blocked, err := preflightSource(SourceName, api, installed)
+	if err != nil {
+		return fmt.Errorf("no se pudo verificar %s: %w", SourceName, err)
+	}
+	for _, h := range held {
+		fmt.Printf("  · %s\n", h)
+	}
+	for _, b := range blocked {
+		fmt.Printf("  ✗ %s\n", b)
+	}
+	if err := UpdateSource(SourceName); err != nil {
+		return err
+	}
+	for _, entry := range targets {
+		meta, ok := sourceMeta(entry)
+		if !ok {
+			fmt.Printf("  ! %s: no instalado\n", entry.ID)
+			continue
+		}
+		if meta.Version == entry.Version {
+			fmt.Printf("  ✓ %s: al día (%s)\n", entry.ID, meta.Version)
+			continue
+		}
+		fmt.Printf("  ▸ %s: %s -> %s (source)\n", entry.ID, entry.Version, meta.Version)
+	}
+	return nil
+}
+
+func checkAPI(entry Entry) error {
+	api := shellPluginAPI()
+	if entry.PluginAPI > api {
+		return fmt.Errorf("%s: plugin_api %d > %d (actualizá el shell)", entry.ID, entry.PluginAPI, api)
+	}
+	return nil
+}
+
+// shellPluginAPI devuelve el plugin_api máximo que el shell soporta.
+//
+// Contrato preferido: `noctalia plugins api`. No existe todavía en el
+// build upstream, así que el fallback es el máximo plugin_api que el
+// shell YA materializó con éxito: un piso probado, no una suposición.
+// Noctalia documenta "3 through 43" para v5.4.0, pero un build de git
+// puede ir más lejos (este materializó un plugin con API 45).
+func shellPluginAPI() int {
+	if cli.HaveCommand("noctalia") {
+		if out, err := cli.Run("noctalia", "plugins", "api"); err == nil {
+			if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	if n := materializedMaxAPI(); n > 0 {
+		return n
+	}
+	return DefaultPluginAPI
+}
+
+// DefaultPluginAPI es el piso documentado por Noctalia v5.4.0.
+const DefaultPluginAPI = 43
+
+// materializedMaxAPI devuelve el mayor plugin_api entre los plugins que
+// el shell ya materializó. Es la mejor prueba disponible del API que
+// soporta: si el shell cargó un plugin con API 45, soporta 45.
+func materializedMaxAPI() int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0
+	}
+	root := filepath.Join(home, ".local", "state", "noctalia", "plugins", "materialized")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	max := 0
+	for _, source := range entries {
+		if !source.IsDir() {
+			continue
+		}
+		plugins, err := os.ReadDir(filepath.Join(root, source.Name()))
+		if err != nil {
+			continue
+		}
+		for _, p := range plugins {
+			if !p.IsDir() {
+				continue
+			}
+			meta, err := readPluginMeta(filepath.Join(root, source.Name(), p.Name(), "plugin.toml"))
+			if err != nil {
+				continue
+			}
+			if meta.PluginAPI > max {
+				max = meta.PluginAPI
+			}
+		}
+	}
+	return max
+}
+
+// ShellAPI devuelve el plugin_api máximo que el shell soporta.
+func ShellAPI() int { return shellPluginAPI() }
+
+// ShellAPISource dice de dónde salió el número del API.
+func ShellAPISource() string {
+	if cli.HaveCommand("noctalia") {
+		if out, err := cli.Run("noctalia", "plugins", "api"); err == nil {
+			if n, err := strconv.Atoi(strings.TrimSpace(out)); err == nil && n > 0 {
+				return "noctalia plugins api"
+			}
+		}
+	}
+	if materializedMaxAPI() > 0 {
+		return "máximo materializado"
+	}
+	return "piso por defecto"
 }
 
 func selectPlugins(m *Manifest, id string) ([]Entry, error) {
@@ -196,13 +444,42 @@ func candidateDirs(pluginsDir string, entry Entry) []string {
 		filepath.Join(pluginsDir, slug(entry)),
 		filepath.Join(pluginsDir, entry.Path),
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		pattern := filepath.Join(home, ".local", "state", "noctalia", "plugins", "materialized", "*", slug(entry))
-		if matches, err := filepath.Glob(pattern); err == nil {
-			dirs = append(dirs, matches...)
+	dirs = append(dirs, materializedDirs(entry)...)
+	return dirs
+}
+
+func materializedDirs(entry Entry) []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	pattern := filepath.Join(home, ".local", "state", "noctalia", "plugins", "materialized", "*", slug(entry))
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil
+	}
+	return matches
+}
+
+// sourceVersion lee la versión materializada por Noctalia, o "".
+func sourceVersion(entry Entry) string {
+	for _, dir := range materializedDirs(entry) {
+		if meta, err := readPluginMeta(filepath.Join(dir, "plugin.toml")); err == nil {
+			return meta.Version
 		}
 	}
-	return dirs
+	return ""
+}
+
+// Origin dice de dónde sale el plugin instalado: "local", "source" o "".
+func Origin(pluginsDir string, entry Entry) string {
+	if _, err := os.Stat(filepath.Join(pluginsDir, slug(entry), "plugin.toml")); err == nil {
+		return "local"
+	}
+	if sourceVersion(entry) != "" {
+		return "source"
+	}
+	return ""
 }
 
 // InstalledVersion lee la versión del plugin instalado, o "".
@@ -218,4 +495,8 @@ func InstalledVersion(pluginsDir string, entry Entry) string {
 // Installed dice si el plugin está instalado (local o desde un source).
 func Installed(pluginsDir string, entry Entry) bool {
 	return InstalledVersion(pluginsDir, entry) != ""
+}
+
+func sourceReady() bool {
+	return HasSource(SourceName)
 }

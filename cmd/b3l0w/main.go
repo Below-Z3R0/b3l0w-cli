@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
@@ -17,6 +18,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
@@ -61,6 +63,8 @@ func run(args []string) int {
 		return programCommand(rest)
 	case "plugins":
 		return pluginsCommand(rest)
+	case "services":
+		return servicesCommand(rest)
 	case "plugin-exec":
 		return pluginExecCommand(rest)
 	case "channel":
@@ -126,6 +130,8 @@ func updateCommand(args []string) int {
 			opts.Desktop = true
 		case "--plugins":
 			opts.Plugins = true
+		case "--services":
+			opts.Services = true
 		case "--dry-run":
 			opts.DryRun = true
 		case "--force":
@@ -135,7 +141,7 @@ func updateCommand(args []string) int {
 		case "--self":
 			opts.Self = true
 		case "-h", "--help":
-			fmt.Println("uso: b3l0w update [--self] [--system|--programs|--plugins|--dotfiles] [--check] [--yes] [--dry-run] [--force]")
+			fmt.Println("uso: b3l0w update [--self] [--system|--programs|--plugins|--services|--dotfiles] [--check] [--yes] [--dry-run] [--force]")
 			return 0
 		default:
 			cli.Fail(fmt.Sprintf("opción desconocida: %s", arg))
@@ -530,15 +536,547 @@ func pluginExecCommand(args []string) int {
 	return 0
 }
 
+// servicePaths resuelve las rutas del manifiesto y del estado.
+func servicePaths(args []string) (manifest, stateDir string, rest []string, dryRun bool) {
+	home, _ := os.UserHomeDir()
+	manifest = filepath.Join(home, "Documents/Github/b3l0w/services/services.json")
+	stateDir = filepath.Join(home, ".local/state/b3l0w/services")
+	for _, arg := range args {
+		switch {
+		case arg == "--dry-run":
+			dryRun = true
+		case strings.HasPrefix(arg, "--manifest="):
+			manifest = strings.TrimPrefix(arg, "--manifest=")
+		case strings.HasPrefix(arg, "--state-dir="):
+			stateDir = strings.TrimPrefix(arg, "--state-dir=")
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return
+}
+
+// servicesInstall instala un servicio.
+func servicesInstall(args []string) int {
+	manifest, stateDir, rest, dryRun := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) == 0 {
+		cli.Fail("falta el servicio: b3l0w services install <id>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	if svc.State == "planned" {
+		cli.Fail(svc.ID + " todavía no está listo")
+		return 1
+	}
+	variant := ""
+	for _, arg := range rest[1:] {
+		switch {
+		case arg == "--yes" || arg == "-y":
+			// la confirmación no aplica al install: no pide nada
+		case strings.HasPrefix(arg, "--variant="):
+			variant = strings.TrimPrefix(arg, "--variant=")
+		default:
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		}
+	}
+	in := &services.Installer{
+		Docker:   services.NewDocker(),
+		Registry: services.NewRegistry(""),
+		StateDir: stateDir,
+	}
+	state, err := in.Install(*svc, variant, dryRun)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if state == nil || dryRun {
+		return 0
+	}
+	cli.Ok(fmt.Sprintf("%s instalado (%s, %s)", state.ID, state.Variant, state.Health))
+	if state.Provider != "" {
+		fmt.Printf("  provider: %s\n", state.Provider)
+	}
+	if svc.Models != "" {
+		fmt.Printf("  modelos: %s\n", cli.Dim("correr "+svc.Models))
+	}
+	return 0
+}
+
+// servicesUpdate actualiza los servicios instalados.
+func servicesUpdate(args []string) int {
+	manifest, stateDir, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	yes := false
+	rebuild := true
+	var only string
+	for _, arg := range rest {
+		switch {
+		case arg == "--yes" || arg == "-y":
+			yes = true
+		case arg == "--no-rebuild":
+			rebuild = false
+		case strings.HasPrefix(arg, "--service="):
+			only = strings.TrimPrefix(arg, "--service=")
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				only = arg
+				continue
+			}
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		}
+	}
+	states, _ := services.ListStates(stateDir)
+	in := &services.Installer{
+		Docker:   services.NewDocker(),
+		Registry: services.NewRegistry(""),
+		StateDir: stateDir,
+	}
+	if len(states) == 0 {
+		cli.Warn("no hay servicios instalados")
+		return 0
+	}
+	cli.Step("Actualizando servicios")
+	for _, state := range states {
+		if only != "" && state.ID != only {
+			continue
+		}
+		svc := m.Find(state.ID)
+		if svc == nil {
+			continue
+		}
+		newState, err := in.Update(*svc, state, rebuild, yes)
+		if err != nil {
+			cli.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			continue
+		}
+		if newState.UpdatedAt != state.UpdatedAt {
+			cli.Ok(fmt.Sprintf("%s actualizado", state.ID))
+		}
+	}
+	return 0
+}
+
+// servicesStatus muestra el estado de los servicios instalados.
+func servicesStatus(args []string) int {
+	manifest, stateDir, _, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	states, _ := services.ListStates(stateDir)
+	if len(states) == 0 {
+		cli.Warn("no hay servicios instalados")
+		return 0
+	}
+	docker := services.NewDocker()
+	cli.Step("Estado de los servicios")
+	for _, state := range states {
+		svc := m.Find(state.ID)
+		name := state.ID
+		if svc != nil {
+			name = svc.Name
+		}
+		fmt.Printf("  %-10s %-8s %-10s %s\n", state.ID, state.Variant, state.Health, cli.Dim(name))
+		if state.Provider != "" {
+			fmt.Printf("  %-10s provider: %s\n", "", state.Provider)
+		}
+		if svc == nil || svc.Compose == "" {
+			continue
+		}
+		file := svc.Compose
+		dir := ""
+		if home := homeDir(); home != "" {
+			dir = home + "/Documents/Github/" + repoName(svc.Repo)
+		}
+		ps, err := docker.PS(dir, file)
+		if err != nil {
+			continue
+		}
+		for _, p := range ps {
+			fmt.Printf("  %-10s %-12s %s\n", "", p.Name, cli.Dim(p.State+" "+p.Health))
+		}
+	}
+	return 0
+}
+
+func homeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}
+
+func repoName(repo string) string {
+	parts := strings.Split(repo, "/")
+	return parts[len(parts)-1]
+}
+
+func servicesCommand(args []string) int {
+	if len(args) == 0 {
+		return servicesList(args)
+	}
+	switch args[0] {
+	case "list":
+		return servicesList(args[1:])
+	case "hardware":
+		return servicesHardware(args[1:])
+	case "images":
+		return servicesImages(args[1:])
+	case "sync":
+		return servicesSync(args[1:])
+	case "install":
+		return servicesInstall(args[1:])
+	case "update":
+		return servicesUpdate(args[1:])
+	case "status":
+		return servicesStatus(args[1:])
+	case "doctor":
+		return servicesDoctor(args[1:])
+	case "logs":
+		return servicesLogs(args[1:])
+	case "restart":
+		return servicesSimple(args[1:], "restart")
+	case "stop":
+		return servicesSimple(args[1:], "stop")
+	case "remove":
+		return servicesRemove(args[1:])
+	case "variant":
+		return servicesVariant(args[1:])
+	}
+	cli.Fail("uso: b3l0w services [list|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant]")
+	return 1
+}
+
+// servicesDoctor chequea que la máquina pueda correr servicios.
+func servicesDoctor(args []string) int {
+	manifest, stateDir, _, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	states, _ := services.ListStates(stateDir)
+	docker := services.NewDocker()
+	res := docker.Doctor(m, services.DetectHardware(), states)
+	if res.Errors > 0 {
+		return 1
+	}
+	return 0
+}
+
+// servicesLogs muestra las últimas líneas de un servicio.
+func servicesLogs(args []string) int {
+	manifest, _, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) == 0 {
+		cli.Fail("falta el servicio: b3l0w services logs <id>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	tail := 100
+	service := ""
+	for _, arg := range rest[1:] {
+		switch {
+		case strings.HasPrefix(arg, "--tail="):
+			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--tail="))
+			if err != nil || n < 1 {
+				cli.Fail("--tail debe ser un entero positivo")
+				return 1
+			}
+			tail = n
+		case strings.HasPrefix(arg, "--"):
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		default:
+			service = arg
+		}
+	}
+	dir := serviceDir(*svc)
+	out, err := services.NewDocker().Logs(dir, services.ComposeFile(*svc), service, tail)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	fmt.Print(out)
+	return 0
+}
+
+// servicesSimple ejecuta restart o stop.
+func servicesSimple(args []string, action string) int {
+	manifest, _, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) == 0 {
+		cli.Fail("falta el servicio: b3l0w services " + action + " <id>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	dir := serviceDir(*svc)
+	file := services.ComposeFile(*svc)
+	docker := services.NewDocker()
+	var err2 error
+	if action == "restart" {
+		err2 = docker.Restart(dir, file)
+	} else {
+		err2 = docker.Stop(dir, file)
+	}
+	if err2 != nil {
+		cli.Fail(err2.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%s: %s", svc.ID, action))
+	return 0
+}
+
+// servicesRemove baja el stack. --purge borra los volúmenes.
+func servicesRemove(args []string) int {
+	manifest, stateDir, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) == 0 {
+		cli.Fail("falta el servicio: b3l0w services remove <id>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	purge := false
+	for _, arg := range rest[1:] {
+		switch {
+		case arg == "--purge":
+			purge = true
+		case strings.HasPrefix(arg, "--"):
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		default:
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		}
+	}
+	dir := serviceDir(*svc)
+	file := services.ComposeFile(*svc)
+	if err := services.NewDocker().Remove(dir, file, purge); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	os.Remove(filepath.Join(stateDir, svc.ID+".json"))
+	if purge {
+		cli.Ok(fmt.Sprintf("%s removido con sus volúmenes", svc.ID))
+	} else {
+		cli.Ok(fmt.Sprintf("%s removido (los volúmenes quedan)", svc.ID))
+	}
+	return 0
+}
+
+// servicesVariant cambia la variante de un servicio instalado.
+func servicesVariant(args []string) int {
+	manifest, stateDir, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if len(rest) < 2 {
+		cli.Fail("uso: b3l0w services variant <id> <variante>")
+		return 1
+	}
+	svc := m.Find(rest[0])
+	if svc == nil {
+		cli.Fail("servicio desconocido: " + rest[0])
+		return 1
+	}
+	want := rest[1]
+	state, err := services.LoadState(stateDir, svc.ID)
+	if err != nil {
+		cli.Fail(svc.ID + " no está instalado")
+		return 1
+	}
+	tags, err := services.NewRegistry("").Tags(svc.Image)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	published := services.AvailableVariants(tags, svc.Variants)
+	found := false
+	for _, v := range published {
+		if v == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		cli.Fail(fmt.Sprintf("%s: la variante %q no está publicada (hay: %s)", svc.ID, want, strings.Join(published, ", ")))
+		return 1
+	}
+	tag := services.TagFor(*svc, want, tags)
+	image := svc.Image + ":" + tag
+	cli.Step(fmt.Sprintf("%s → %s", svc.ID, want))
+	fmt.Printf("  imagen: %s\n", image)
+	fmt.Println("  → pull y recreate del stack")
+	if err := services.NewDocker().Pull(svc.Image, tag); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	digest, _ := services.NewDocker().ImageDigest(image)
+	state.Previous = state.Image
+	state.PreviousTag = state.Tag
+	state.Variant = want
+	state.Image = image
+	state.Tag = tag
+	state.Digest = digest
+	state.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := state.Save(stateDir); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%s ahora usa %s (%s)", svc.ID, want, tag))
+	return 0
+}
+
+// serviceDir devuelve el directorio del repo de un servicio.
+func serviceDir(svc services.Service) string {
+	home := homeDir()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "Documents", "Github", repoName(svc.Repo))
+}
+
+func servicesSync(args []string) int {
+	manifest, _, _, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	changed, err := services.Sync(m, manifest, services.NewRegistry(""))
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	if changed == 0 {
+		cli.Ok("manifiesto al día")
+		return 0
+	}
+	cli.Ok(fmt.Sprintf("manifiesto actualizado (%d servicios)", changed))
+	return 0
+}
+
+func servicesList(args []string) int {
+	manifest, stateDir, _, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	states, _ := services.ListStates(stateDir)
+	byID := make(map[string]*services.State, len(states))
+	for _, s := range states {
+		byID[s.ID] = s
+	}
+	reg := services.NewRegistry("")
+	st := services.CheckRegistry(m, reg)
+	services.RenderList(m, byID, st, services.DetectHardware())
+	return 0
+}
+
+func servicesHardware(args []string) int {
+	manifest, _, _, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	st := services.CheckRegistry(m, services.NewRegistry(""))
+	services.RenderHardware(services.DetectHardware(), m, st)
+	return 0
+}
+
+func servicesImages(args []string) int {
+	manifest, _, rest, _ := servicePaths(args)
+	m, err := services.LoadManifest(manifest)
+	if err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	reg := services.NewRegistry("")
+	for i := range m.Services {
+		svc := &m.Services[i]
+		if len(rest) > 0 && svc.ID != rest[0] {
+			continue
+		}
+		if svc.Image == "" {
+			continue
+		}
+		cli.Step(svc.ID + " · " + svc.Image)
+		tags, err := reg.Tags(svc.Image)
+		if err != nil {
+			cli.Warn(err.Error())
+			continue
+		}
+		for _, t := range tags {
+			if strings.HasPrefix(t, "buildcache-") {
+				continue
+			}
+			fmt.Printf("  %s\n", t)
+		}
+	}
+	return 0
+}
+
 func pluginsCommand(args []string) int {
 	if len(args) == 0 {
 		return pluginsExtensions()
 	}
 	switch args[0] {
 	case "sync":
-		return pluginsSync(args[1:])
+		cli.Fail("plugins sync fue eliminado; usá b3l0w plugins build")
+		return 1
 	case "build":
 		return pluginsBuild(args[1:])
+	case "release":
+		return pluginsRelease(args[1:])
+	case "enable":
+		return pluginsEnable(args[1:])
+	case "disable":
+		return pluginsDisable(args[1:])
 	case "install":
 		return pluginsInstall(args[1:])
 	case "update":
@@ -551,9 +1089,20 @@ func pluginsCommand(args []string) int {
 		return pluginsInfo(args[1:])
 	case "search":
 		return pluginsSearch(args[1:])
+	case "api":
+		return pluginsAPI(args[1:])
 	}
-	cli.Fail("uso: b3l0w plugins [sync|build|install|update|list]")
+	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search|api]")
 	return 1
+}
+
+// pluginsAPI muestra el plugin_api que soporta el shell.
+func pluginsAPI(args []string) int {
+	api := plugins.ShellAPI()
+	cli.Step("API de plugins")
+	fmt.Printf("  %d\n", api)
+	fmt.Printf("  %s\n", cli.Dim("fuente: "+plugins.ShellAPISource()))
+	return 0
 }
 
 // pluginsExtensions lista los binarios b3l0w-* del directorio privado.
@@ -607,31 +1156,133 @@ func loadPluginManifest(path string) (*plugins.Manifest, int) {
 	return m, 0
 }
 
-func pluginsSync(args []string) int {
-	src, registry, manifest, _, _, _ := pluginPaths(args)
-	m, code := loadPluginManifest(manifest)
-	if m == nil {
-		return code
+func pluginsBuild(args []string) int {
+	_, registry, manifest, _, rest, _ := pluginPaths(args)
+	check := false
+	for _, arg := range rest {
+		if arg == "--check" {
+			check = true
+		}
 	}
-	if err := plugins.Sync(src, registry, manifest, m); err != nil {
+	entries, err := plugins.Collect(registry)
+	if err != nil {
 		cli.Fail(err.Error())
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%d plugins sincronizados en %s", len(m.Plugins), registry))
+	if check {
+		ok, err := plugins.CheckCatalog(registry, entries)
+		if err != nil {
+			cli.Fail(err.Error())
+			return 1
+		}
+		if !ok {
+			cli.Fail("catalog.toml desactualizado; corré b3l0w plugins build")
+			return 1
+		}
+		cli.Ok("catalog.toml al día")
+		return 0
+	}
+	if err := plugins.Build(registry, manifest, entries); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%d plugins: catalog.toml y plugins.json actualizados", len(entries)))
 	return 0
 }
 
-func pluginsBuild(args []string) int {
-	src, registry, manifest, _, _, _ := pluginPaths(args)
+func pluginsRelease(args []string) int {
+	_, registry, manifest, _, rest, dryRun := pluginPaths(args)
+	push := false
+	yes := false
+	targetAPI := 0
+	var slugs []string
+	for _, arg := range rest {
+		switch {
+		case arg == "--push":
+			push = true
+		case arg == "--yes":
+			yes = true
+		case strings.HasPrefix(arg, "--api="):
+			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--api="))
+			if err != nil || n < 1 {
+				cli.Fail("--api debe ser un entero positivo")
+				return 1
+			}
+			targetAPI = n
+		case strings.HasPrefix(arg, "--plugin="):
+			slugs = append(slugs, strings.TrimPrefix(arg, "--plugin="))
+		case strings.HasPrefix(arg, "--"):
+			cli.Fail("flag desconocido: " + arg)
+			return 1
+		default:
+			slugs = append(slugs, arg)
+		}
+	}
+	if !yes && !dryRun && !cli.Confirm("Release plugins a main? [Y/n]", yes, true) {
+		return 0
+	}
+	if err := plugins.Release(plugins.ReleaseOptions{
+		RepoDir:      registry,
+		ManifestPath: manifest,
+		Slugs:        slugs,
+		TargetAPI:    targetAPI,
+		DryRun:       dryRun,
+		Push:         push,
+	}); err != nil {
+		cli.Fail(err.Error())
+		return 1
+	}
+	return 0
+}
+
+func pluginsEnable(args []string) int {
+	return pluginsToggle(args, true)
+}
+
+func pluginsDisable(args []string) int {
+	return pluginsToggle(args, false)
+}
+
+func pluginsToggle(args []string, enable bool) int {
+	_, _, manifest, _, rest, dryRun := pluginPaths(args)
+	if len(rest) == 0 {
+		cli.Fail("falta el id: b3l0w plugins enable|disable <autor/nombre>")
+		return 1
+	}
+	id := rest[0]
 	m, code := loadPluginManifest(manifest)
 	if m == nil {
 		return code
 	}
-	if err := plugins.Build(registry, src, m); err != nil {
-		cli.Fail(err.Error())
+	found := false
+	for _, entry := range m.Plugins {
+		if entry.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		cli.Fail("plugin no encontrado: " + id)
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("catalog.toml generado en %s", registry))
+	action := "disable"
+	if enable {
+		action = "enable"
+	}
+	if dryRun {
+		fmt.Printf("  → %s %s\n", action, id)
+		return 0
+	}
+	if !cli.HaveCommand("noctalia") {
+		cli.Fail("noctalia no está en PATH")
+		return 1
+	}
+	out, err := cli.RunCombined("noctalia", "msg", "plugins", action, id)
+	if err != nil {
+		cli.Fail(fmt.Sprintf("noctalia %s: %v: %s", action, err, out))
+		return 1
+	}
+	cli.Ok(fmt.Sprintf("%s %s", action, id))
 	return 0
 }
 
@@ -715,7 +1366,11 @@ func pluginsInfo(args []string) int {
 		if local == "" {
 			fmt.Println("  instalado:  no")
 		} else {
-			fmt.Printf("  instalado:  %s\n", local)
+			state := "disabled"
+			if plugins.Enabled(entry.ID) {
+				state = "enabled"
+			}
+			fmt.Printf("  instalado:  %s (%s, %s)\n", local, plugins.Origin(noctalia, entry), state)
 		}
 		return 0
 	}
@@ -769,13 +1424,18 @@ func pluginsList(args []string) int {
 	cli.Step("Plugins del registry")
 	for _, entry := range m.Plugins {
 		local := plugins.InstalledVersion(noctalia, entry)
+		origin := plugins.Origin(noctalia, entry)
+		state := "disabled"
+		if plugins.Enabled(entry.ID) {
+			state = "enabled"
+		}
 		switch {
 		case local == "":
 			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("no instalado"))
 		case local != entry.Version:
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("instalado "+local))
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim(fmt.Sprintf("%s %s/%s", origin, state, local)))
 		default:
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("ok"))
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim(fmt.Sprintf("ok %s/%s", origin, state)))
 		}
 	}
 	return 0
@@ -813,7 +1473,11 @@ uso: b3l0w <comando> [opciones]
   program remove <nom>   lo saca del manifiesto
   plugins                lista las extensiones binarias instaladas
   plugins list           lista los plugins de Noctalia vs registry
-  plugins sync|build     herramientas de publicación del registry
+  plugins build         regenera catalog.toml y plugins.json
+  plugins release       copia producción de dev a main (sin tests/)
+  plugins release --api=N  exige que los plugins no superen ese plugin_api
+  plugins enable <id>   habilita un plugin en Noctalia
+  plugins disable <id>  deshabilita un plugin en Noctalia
   plugins install|update [id]  instala/actualiza plugins
   plugins remove <id>    borra local o deshabilita si viene del source
   plugins info <id>      muestra versión, API, repo y si está instalado

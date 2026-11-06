@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 )
@@ -47,10 +48,169 @@ func HasSource(name string) bool {
 	return false
 }
 
+// AutoUpdate lee plugins.auto_update del estado (settings.toml) y, si
+// no está, del config. Noctalia tiene que estar en "none" para que las
+// actualizaciones las controle b3l0w.
+func AutoUpdate() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	paths := []string{
+		filepath.Join(home, ".local", "state", "noctalia", "settings.toml"),
+		filepath.Join(home, ".config", "noctalia", "config.toml"),
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "auto_update") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			return strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		}
+	}
+	return ""
+}
+
+// Sources devuelve los sources configurados en Noctalia.
+func Sources() ([]string, error) {
+	if !cli.HaveCommand("noctalia") {
+		return nil, nil
+	}
+	out, err := cli.RunCombined("noctalia", "msg", "plugins", "source", "list")
+	if err != nil {
+		return nil, fmt.Errorf("%v: %s", err, out)
+	}
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			names = append(names, fields[0])
+		}
+	}
+	return names, nil
+}
+
+// InstalledBySource agrupa los plugins habilitados por source.
+func InstalledBySource() (map[string][]string, error) {
+	if !cli.HaveCommand("noctalia") {
+		return nil, nil
+	}
+	out, err := cli.RunCombined("noctalia", "msg", "plugins", "list")
+	if err != nil {
+		return nil, fmt.Errorf("%v: %s", err, out)
+	}
+	bySource := make(map[string][]string)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || fields[len(fields)-1] != "enabled" {
+			continue
+		}
+		source := strings.Trim(fields[1], "[]")
+		if source == "" || source == "local" {
+			continue
+		}
+		bySource[source] = append(bySource[source], fields[0])
+	}
+	return bySource, nil
+}
+
+// UpdateSources refresca cada source. Noctalia ya sabe resolver qué
+// revisión instalar según su rango de API, así que el CLI no bloquea
+// el update: solo informa qué plugins quedan en una versión anterior
+// ("held back") porque la más nueva pide más API del que el shell
+// soporta.
+func UpdateSources() error {
+	sources, err := Sources()
+	if err != nil {
+		return err
+	}
+	installed, err := InstalledBySource()
+	if err != nil {
+		return err
+	}
+	api := shellPluginAPI()
+	failed := 0
+	for _, name := range sources {
+		held, blocked, err := preflightSource(name, api, installed[name])
+		if err != nil {
+			fmt.Printf("  ! %s: no se pudo verificar: %v\n", name, err)
+			failed++
+			continue
+		}
+		for _, h := range held {
+			fmt.Printf("  · %s\n", h)
+		}
+		for _, b := range blocked {
+			fmt.Printf("  ✗ %s\n", b)
+		}
+		if err := UpdateSource(name); err != nil {
+			fmt.Printf("  ! %s: %v\n", name, err)
+			failed++
+			continue
+		}
+		fmt.Printf("  ✓ %s actualizado\n", name)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d sources fallaron", failed)
+	}
+	return nil
+}
+
+// preflightSource consulta el catálogo remoto sin tocar el working tree
+// y dice qué plugins quedan atrás y cuáles no son instalables.
+//
+// No bloquea: la resolución la hace Noctalia, que instala la revisión
+// más nueva que su rango de API permite.
+func preflightSource(name string, api int, ids []string) (held, blocked []string, err error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	repo := filepath.Join(home, ".local", "state", "noctalia", "plugins", "sources", name, "repo")
+	if _, err := os.Stat(repo); err != nil {
+		return nil, nil, fmt.Errorf("no está el clon de %s", name)
+	}
+	repairSourceRepo(name)
+	if _, err := cli.RunTimeout(30*time.Second, "git", "-C", repo, "fetch", "--quiet"); err != nil {
+		return nil, nil, err
+	}
+	sha, err := cli.Run("git", "-C", repo, "rev-parse", "FETCH_HEAD")
+	if err != nil {
+		return nil, nil, err
+	}
+	catalogText, err := cli.Run("git", "-C", repo, "show", strings.TrimSpace(sha)+":catalog.toml")
+	if err != nil {
+		return nil, nil, err
+	}
+	catalog := ParseCatalog(catalogText)
+	for _, id := range ids {
+		res := catalog.Resolve(id, api)
+		switch {
+		case !res.Installable:
+			blocked = append(blocked, fmt.Sprintf("%s: ninguna versión compatible con API %d", id, api))
+		case res.HeldBack:
+			held = append(held, fmt.Sprintf("%s: queda en v%s (la v%s pide API %d, el shell llega a %d)",
+				id, res.Version, res.TipVersion, res.TipAPI, api))
+		}
+	}
+	return held, blocked, nil
+}
+
 // UpdateSource repara el clon si quedó con archivos borrados y pide a
 // Noctalia que refresque el source.
 func UpdateSource(name string) error {
-	repairSourceRepo(name)
 	out, err := cli.RunCombined("noctalia", "msg", "plugins", "update", name)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)

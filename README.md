@@ -16,7 +16,8 @@ b3l0w update --check         # reporta, no toca nada
 b3l0w update --self          # actualiza el propio b3l0w
 b3l0w check [--keep=N]       # estado + snapshots de Limine
 b3l0w channel [stable|edge]  # canal del escritorio
-b3l0w plugins ...            # sync/build/install/update/list/remove/scripts
+b3l0w plugins ...            # build/release/install/update/list/remove/info/search
+b3l0w services ...           # list/hardware/images/sync/install/update/status
 b3l0w install <nombre>       # baja el programa del release a ~/.local/bin
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
@@ -153,27 +154,136 @@ Un binario `b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` (0700).
 un `b3l0w-update` en un directorio del PATH lo haría correr con este
 usuario, y este CLI pide sudo. `git` acepta ese riesgo; acá no.
 
-## Plugins de Noctalia
+## Servicios (Docker)
 
-El repo `b3l0w-plugins` es un source de Noctalia: una carpeta por plugin y un
-`catalog.toml` en la raíz. El CLI lo agrega solo si falta.
+Cada servicio es un stack de contenedores con su propio repo: el compose,
+el Dockerfile y los workflows viven ahí. El repo `b3l0w` es el
+**recopilatorio**: `services/services.json` dice qué existe, qué variantes
+hay publicadas y cómo se llama la imagen.
+
+El CLI **consume** lo que el CI publica en GHCR. No compila: el build
+pesado ocurre una vez, en el runner, no en la máquina del usuario.
 
 ```bash
-b3l0w update --plugins       # scripts + source/registry
-b3l0w plugins list           # versión instalada vs registry
-b3l0w plugins remove <id>    # borra local o deshabilita si viene del source
-b3l0w plugins scripts        # instala los backends en /usr/local/bin
+b3l0w services list                  # tabla: estado, variante, imagen
+b3l0w services hardware              # CPU, GPU y variante recomendada
+b3l0w services images [id]           # tags publicados en el registry
+b3l0w services sync                  # actualiza el manifiesto (como pacman -Sy)
+b3l0w services install <id>          # pull + up + healthcheck
+b3l0w services install <id> --variant=intel
+b3l0w services update [id]           # digest nuevo + pull + recreate
+b3l0w services status [id]           # contenedores y health
+b3l0w services doctor                # docker, compose, GPU, grupos, disco
+b3l0w services logs <id> [--tail=N]  # últimas líneas
+b3l0w services restart|stop <id>
+b3l0w services remove <id> [--purge]
+b3l0w services variant <id> <var>    # cambia de variante sin reinstalar
 ```
 
-Los **backends** (scripts que algunos plugins ejecutan) viven embebidos en
-`internal/plugins/scripts/` y se instalan con `plugins scripts` o con
-`update --plugins`.
+### La variante se elige por hardware, no por suposición
 
-## Plugins incluidos
+`b3l0w services hardware` detecta CPU y GPUs por sysfs (`/sys/class/drm`),
+clasifica integrada vs dedicada y recomienda la variante:
 
-Los tres plugins viven en `internal/plugins/` y se compilan a binarios
-`b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/`. El core los ejecuta como
-extensión: `b3l0w <nombre> …`.
+| Hardware | Variante | Provider |
+|---|---|---|
+| NVIDIA dedicada | `cuda` | CUDA |
+| AMD dedicada (gfx9+) | `amd` | MIGraphX |
+| Intel Arc | `intel` | OpenVINO |
+| Intel iGPU | `intel` | OpenVINO (oneDNN) |
+| AMD APU | `amd` | MIGraphX si es gfx9+, si no CPU |
+| Sin GPU | `cpu` | CPU |
+
+`--variant=` siempre gana sobre la recomendación. Si la variante elegida
+no está publicada, el comando lo dice con las que sí.
+
+**La recomendación no es una garantía:** después de levantar el stack, el
+CLI lee el provider real del `/status` del servicio y lo muestra. Si pediste
+aceleración y el provider real es `CPU`, la aceleración no está funcionando.
+
+### El manifiesto se sincroniza contra el registry
+
+`services.json` declara `available` (lo publicado). `b3l0w services list`
+consulta el registry en vivo y avisa si el manifiesto quedó viejo, igual que
+una base de pacman desactualizada. `b3l0w services sync` lo corrige.
+
+### El update pide permiso y hace rollback
+
+`b3l0w update` incluye services: compara el digest local con el remoto y,
+si cambió, pregunta por cada servicio. Con `--yes` aplica todo. Si el
+healthcheck falla después del recreate, vuelve a la imagen anterior y avisa.
+
+Los servicios son **opcionales**: `install system` no los instala. No hay
+servicios instalados, `b3l0w update` no toca nada.
+
+## Plugins de Noctalia
+
+El repo `b3l0w-plugins` es la **fuente única**: una carpeta por plugin y un
+`catalog.toml` en la raíz. `main` es producción (lo que clona Noctalia) y
+`dev` es integración (tests, docs de desarrollo, trabajo en curso).
+
+```bash
+b3l0w plugins build [--check]  # regenera catalog.toml y plugins.json
+b3l0w plugins release [--push] # copia producción de dev a main, sin tests/
+b3l0w plugins enable <id>      # habilita un plugin en Noctalia
+b3l0w plugins disable <id>     # deshabilita un plugin en Noctalia
+b3l0w plugins list             # instalado vs registry, con origen
+b3l0w plugins install <id>     # agrega/refresca el source; no copia local
+b3l0w plugins update [id]      # refresca el source
+b3l0w plugins remove <id>      # borra local o deshabilita si viene del source
+b3l0w plugins info <id>
+b3l0w plugins search <texto>
+b3l0w plugins api              # el plugin_api que soporta el shell
+```
+
+### La compatibilidad de API la resuelve Noctalia, no el CLI
+
+Noctalia soporta un **rango** de API (la doc de v5.4.0 dice "3 through
+43") y el catálogo de cada source trae filas `[[plugin.release]]` con la
+revisión anterior y su `rev`. Cuando el plugin más nuevo pide más API del
+que el shell soporta, Noctalia instala la revisión compatible y la
+etiqueta "older version" en el store.
+
+El CLI **no bloquea** el update por esto: refresca el source y **informa**
+qué queda atrás:
+
+```
+· noctalia/umbriel-companion: queda en v1.2.4 (la v1.3.0 pide API 45, el shell llega a 43)
+```
+
+`b3l0w plugins api` dice cuál es el API del shell y de dónde salió el
+número:
+
+| Fuente | Cuándo |
+|---|---|
+| `noctalia plugins api` | si el shell expone el comando (todavía no upstream) |
+| `máximo materializado` | el mayor `plugin_api` que el shell ya cargó con éxito |
+| `piso por defecto` (43) | si no hay plugins materializados |
+
+El segundo es un piso **probado**, no una suposición: si el shell cargó un
+plugin con API 45, soporta 45.
+
+`catalog.toml` y `plugins/plugins.json` se generan: no se editan a mano.
+`plugins build` escribe el catálogo en `b3l0w-plugins` y el manifiesto en
+`b3l0w`; commiteá los dos. `plugins sync` fue eliminado; `plugins release`
+copia solo las carpetas de producción, **regenera el catálogo desde `main`**
+(nunca desde `dev`), limpia `tests/`, `docs/`, `fixtures/`, `*.py`,
+`*.md` (salvo `LICENSE`), `package.json` y locks, y commitea en `main`.
+Un merge normal `dev → main` arrastraría los tests.
+
+Un `.releaseignore` opcional dentro de una carpeta de plugin agrega rutas
+relativas a borrar en el release (una por línea).
+
+Los **backends** de los plugins viven embebidos en
+`internal/plugins/scripts/` y se ejecutan con `b3l0w plugin-exec <script>`.
+No se copian a `/usr/local/bin`; `plugins scripts` ya no existe.
+
+## Extensiones del CLI
+
+Los tres binarios de `internal/plugins/` (`anilist`, `docker`, `we`) son
+extensiones del CLI, no plugins de Noctalia. Se compilan a
+`b3l0w-<nombre>` en `~/.local/lib/b3l0w/plugins/` y se ejecutan como
+`b3l0w <nombre> …`.
 
 ### `b3l0w we` — Wallpaper Engine
 

@@ -16,6 +16,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
+	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshot"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
@@ -37,6 +38,7 @@ type Options struct {
 	Desktop     bool
 	Keep        int
 	Plugins     bool
+	Services    bool
 	Adopt       bool
 }
 
@@ -61,14 +63,15 @@ func Run(m *config.Manifest, opts Options) int {
 	defer cli.RestoreTTY()
 
 	// Sin banderas se hacen las tres capas y el CLI; con una sola, esa.
-	anySelector := opts.System || opts.Programs || opts.Plugins
+	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
 	selfWanted := opts.Self || !anySelector
 	systemWanted := opts.System || !anySelector
 	programsWanted := opts.Programs || !anySelector
 	pluginsWanted := opts.Plugins || !anySelector
+	servicesWanted := opts.Services || !anySelector
 
 	if !opts.Yes {
-		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted), false, true) {
+		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted), false, true) {
 			cli.Warn("cancelled")
 			return 0
 		}
@@ -100,32 +103,26 @@ func Run(m *config.Manifest, opts Options) int {
 			return code
 		}
 	}
+	if servicesWanted {
+		updateServices(opts.Yes)
+	}
 	return snapshots.Report(opts.Keep, opts.Yes)
 }
 
-// updatePlugins actualiza los scripts embebidos y, según el caso, el
-// source de Noctalia o los plugins locales del registry.
+// updatePlugins refresca los sources con preflight de plugin_api. Si
+// un plugin habilitado no es compatible con el shell, se saltea el
+// source entero y se conserva la versión instalada.
 func updatePlugins() int {
 	cli.Step("Actualizando plugins")
 
-	if plugins.HasSource(plugins.SourceName) {
-		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
-			cli.Warn("source: " + err.Error())
-			return 1
+	if cli.HaveCommand("noctalia") {
+		if sources, err := plugins.Sources(); err == nil && len(sources) > 0 {
+			if err := plugins.UpdateSources(); err != nil {
+				cli.Warn("plugins: " + err.Error())
+				return 1
+			}
+			return 0
 		}
-		cli.Ok("source " + plugins.SourceName + " actualizado")
-		return 0
-	}
-
-	if err := plugins.EnsureSource(); err != nil {
-		cli.Warn("source: " + err.Error())
-	} else if plugins.HasSource(plugins.SourceName) {
-		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
-			cli.Warn("source: " + err.Error())
-			return 1
-		}
-		cli.Ok("source " + plugins.SourceName + " agregado y actualizado")
-		return 0
 	}
 
 	m, err := plugins.LoadManifest(plugins.DefaultManifestPath())
@@ -136,6 +133,42 @@ func updatePlugins() int {
 	if err := plugins.Update(m, "", plugins.DefaultPluginsDir(), false); err != nil {
 		cli.Fail(err.Error())
 		return 1
+	}
+	return 0
+}
+
+// updateServices pregunta por cada servicio instalado si hay digest
+// nuevo y lo actualiza. Los servicios son opcionales: sin estado
+// guardado, no hay nada que hacer.
+func updateServices(yes bool) int {
+	states, err := services.ListStates(services.DefaultStateDir())
+	if err != nil || len(states) == 0 {
+		return 0
+	}
+	cli.Step("Actualizando servicios")
+	m, err := services.LoadManifest(services.DefaultManifestPath())
+	if err != nil {
+		cli.Warn("services: " + err.Error())
+		return 0
+	}
+	in := &services.Installer{
+		Docker:   services.NewDocker(),
+		Registry: services.NewRegistry(""),
+		StateDir: services.DefaultStateDir(),
+	}
+	for _, state := range states {
+		svc := m.Find(state.ID)
+		if svc == nil {
+			continue
+		}
+		newState, err := in.Update(*svc, state, true, yes)
+		if err != nil {
+			cli.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			continue
+		}
+		if newState.UpdatedAt != state.UpdatedAt {
+			cli.Ok(fmt.Sprintf("%s actualizado", state.ID))
+		}
 	}
 	return 0
 }
@@ -287,7 +320,7 @@ func fileExists(path string) bool {
 
 // confirmPrompt arma la pregunta según lo que se va a tocar. Formato
 // pacman: [Y/n] con Y por defecto.
-func confirmPrompt(self, system, programs, pluginsWanted bool) string {
+func confirmPrompt(self, system, programs, pluginsWanted, servicesWanted bool) string {
 	var parts []string
 	if self {
 		parts = append(parts, "b3l0w")
@@ -300,6 +333,9 @@ func confirmPrompt(self, system, programs, pluginsWanted bool) string {
 	}
 	if pluginsWanted {
 		parts = append(parts, "plugins")
+	}
+	if servicesWanted {
+		parts = append(parts, "services")
 	}
 	if len(parts) == 0 {
 		return "Update? [Y/n] "
