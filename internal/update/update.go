@@ -271,14 +271,14 @@ func updateDotfiles(opts Options) int {
 		dir = defaultDotfilesDir()
 	}
 	if dir == "" {
-		cli.Fail("no encontré dotfiles/; pasá --dotfiles-dir=<ruta>")
+		cli.Fail("dotfiles/ not found; pass --dotfiles-dir=<path>")
 		return 1
 	}
 
 	// Validar el TOML de Noctalia antes de tocar nada.
 	if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
 		if out, err := cli.RunCombined("noctalia", "config", "validate", path); err != nil {
-			cli.Fail("el TOML del repo no valida: " + out)
+			cli.Fail("repo TOML does not validate: " + out)
 			return 1
 		}
 	}
@@ -296,17 +296,34 @@ func updateDotfiles(opts Options) int {
 			cli.Fail(err.Error())
 			return 1
 		}
-		cli.Ok(fmt.Sprintf("%d archivos adoptados (sin tocarlos)", n))
+		cli.Ok(fmt.Sprintf("%d files adopted (untouched)", n))
 		return 0
 	}
 
 	// Snapshot antes de tocar el home. Si snapper no tiene config `home`,
 	// el 3-way sigue protegiendo: no se pisa ningún cambio local.
 	if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
-		cli.Warn("sin snapshot de home: " + err.Error())
+		cli.Warn("no home snapshot: " + err.Error())
 	}
 
-	cli.Step("Aplicando dotfiles")
+	// Detectar conflictos antes de escribir: si los hay, preguntar si
+	// el usuario quiere que el repo gane, con un segundo aviso.
+	if !opts.DryRun && !opts.Force {
+		if preview, err := dotfiles.Pull(dir, home, state, false, true); err == nil && len(preview.Conflicts) > 0 {
+			fmt.Printf("  ! %d conflict(s):\n", len(preview.Conflicts))
+			for _, f := range preview.Conflicts {
+				fmt.Printf("    %s\n", f)
+			}
+			if cli.Confirm("  Merge automatically? The repo version overwrites your local changes [y/N] ", false, false) {
+				if cli.Confirm(fmt.Sprintf("  This will overwrite %d file(s). Continue? [y/N] ", len(preview.Conflicts)), false, false) {
+					opts.Force = true
+				}
+			}
+			fmt.Println()
+		}
+	}
+
+	cli.Step("Applying dotfiles")
 	res, err := dotfiles.Pull(dir, home, state, opts.Force, opts.DryRun)
 	if err != nil {
 		cli.Fail(err.Error())
@@ -314,23 +331,24 @@ func updateDotfiles(opts Options) int {
 	}
 
 	for _, f := range res.Updated {
-		cli.Ok(fmt.Sprintf("%s: actualizado", f))
+		cli.Ok(fmt.Sprintf("%s: updated", f))
 	}
 	for _, f := range res.Kept {
-		fmt.Printf("  %s %s: conservado (cambio local)\n", cli.Dim("·"), f)
+		fmt.Printf("  %s %s: kept (local change)\n", cli.Dim("·"), f)
 	}
 	for _, f := range res.Missing {
-		cli.Ok(fmt.Sprintf("%s: instalado", f))
+		cli.Ok(fmt.Sprintf("%s: installed", f))
 	}
 	for _, f := range res.Conflicts {
-		cli.Warn(fmt.Sprintf("%s: conflicto, revisá %s.new", f, f))
+		cli.Warn(fmt.Sprintf("%s: conflict, see %s.new", f, f))
 	}
 
 	if opts.DryRun {
-		fmt.Printf("\n  %s\n", cli.Dim("dry-run: no se escribió nada"))
+		fmt.Printf("\n  %s\n", cli.Dim("dry-run: nothing written"))
 	}
 	if len(res.Conflicts) > 0 {
-		fmt.Printf("\n  %s\n", cli.Dim("los conflictos no se pisaron; fusioná a mano y volvé a correr"))
+		fmt.Printf("\n  %s\n", cli.Dim("conflicts were not overwritten; merge by hand and run again"))
+		fmt.Printf("  %s\n", cli.Dim("validate with: noctalia config validate  |  umbriel config validate"))
 	}
 	return 0
 }
