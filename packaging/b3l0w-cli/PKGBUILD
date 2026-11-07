@@ -3,7 +3,7 @@
 # El código se deja en ./src (lo hace el CI o a mano) y se compila acá.
 # El binario va a /usr/bin: una sola ruta, un solo dueño.
 pkgname=b3l0w-cli
-pkgver=0.5.0
+pkgver=0.5.1
 pkgrel=1
 pkgdesc="CLI de administración de b3l0wz3r0-os"
 arch=(x86_64)
