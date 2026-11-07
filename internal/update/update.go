@@ -71,9 +71,12 @@ func Run(m *config.Manifest, opts Options) int {
 	programsWanted := opts.Programs || !anySelector
 	pluginsWanted := opts.Plugins || !anySelector
 	servicesWanted := opts.Services || !anySelector
+	// Los dotfiles usan merge 3-way: no pisan cambios locales, así
+	// que van en el update general sin pedir nada extra.
+	dotfilesWanted := !anySelector
 
 	if !opts.Yes {
-		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted), false, true) {
+		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted, dotfilesWanted), false, true) {
 			cli.Warn("cancelled")
 			return 0
 		}
@@ -111,6 +114,11 @@ func Run(m *config.Manifest, opts Options) int {
 	}
 	if servicesWanted {
 		updateServices(opts.Yes)
+	}
+	if dotfilesWanted {
+		if code := updateDotfiles(opts); code != 0 {
+			return code
+		}
 	}
 	return snapshots.Report(opts.Keep, opts.Yes)
 }
@@ -351,7 +359,7 @@ func fileExists(path string) bool {
 
 // confirmPrompt arma la pregunta según lo que se va a tocar. Formato
 // pacman: [Y/n] con Y por defecto.
-func confirmPrompt(self, system, programs, pluginsWanted, servicesWanted bool) string {
+func confirmPrompt(self, system, programs, pluginsWanted, servicesWanted, dotfilesWanted bool) string {
 	var parts []string
 	if self {
 		parts = append(parts, "b3l0w")
@@ -367,6 +375,9 @@ func confirmPrompt(self, system, programs, pluginsWanted, servicesWanted bool) s
 	}
 	if servicesWanted {
 		parts = append(parts, "services")
+	}
+	if dotfilesWanted {
+		parts = append(parts, "dotfiles")
 	}
 	if len(parts) == 0 {
 		return "Update? [Y/n] "

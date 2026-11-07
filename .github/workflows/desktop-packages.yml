@@ -9,6 +9,7 @@ concurrency:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build:
@@ -112,3 +113,39 @@ jobs:
           gh release create "$TAG" dist/*.pkg.tar.zst dist/manifest.json \
             --title "Desktop packages $TAG" \
             --notes "Noctalia, Umbriel and the Umbriel portal, built from upstream main. No pacman repo: download and install with pacman -U."
+
+      # El release queda publicado pero [b3l0w] todavía sirve la versión
+      # vieja hasta que alguien firme y suba los paquetes. Este paso
+      # abre un issue para que GitHub notifique.
+      - name: Avisar que falta publicar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.build.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          faltan=0
+          for asset in $(gh release view "$TAG" --repo "$REPO" --json assets \
+              --jq '.assets[].name | select(endswith(".pkg.tar.zst"))'); do
+            if ! curl -fsI "https://raw.githubusercontent.com/Below-Z3R0/b3l0w-packages/main/x86_64/$asset" >/dev/null; then
+              echo "falta: $asset"
+              faltan=$((faltan + 1))
+            fi
+          done
+          if [ "$faltan" -eq 0 ]; then
+            echo "todo publicado en [b3l0w]"
+            exit 0
+          fi
+          if [ "$(gh issue list --repo "$REPO" --state open \
+              --search "$TAG in:title" --json number --jq 'length')" -gt 0 ]; then
+            echo "ya hay un issue abierto para $TAG"
+            exit 0
+          fi
+          gh issue create --repo "$REPO" \
+            --title "📦 $TAG: falta firmar y publicar en [b3l0w]" \
+            --body "El release $TAG se publicó, pero $faltan paquete(s) no están en [b3l0w]. Mientras no se publique, pacman -S sigue sirviendo la versión anterior.
+
+          En local:
+
+              cd ~/Documents/Github/b3l0w-cli
+              bash scripts/maintainers/repo-sync.sh --push"
