@@ -1,0 +1,109 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Recompila el fork de CachyOS de Calamares contra las librerías del
+# día. El código sigue siendo de CachyOS: nosotros solo garantizamos
+# que el binario arranque cuando python/boost/yaml-cpp se actualizan.
+#
+# La config (branding, secuencia, módulos) NO vive acá: va en el repo
+# b3l0w-iso/calamares y se copia en la ISO.
+
+pkgname=b3l0w-calamares
+pkgver=3.4.2
+pkgrel=14
+pkgdesc='Instalador Calamares de b3l0wz3r0-os (fork de CachyOS, recompilado)'
+arch=('x86_64')
+license=(GPL-3.0-or-later)
+url="https://github.com/CachyOS/cachyos-calamares"
+# Toma el control de cualquier Calamares previo: el de CachyOS está
+# compilado contra librerías viejas y no arranca.
+conflicts=('calamares' 'cachyos-calamares' 'cachyos-calamares-next')
+replaces=('cachyos-calamares' 'cachyos-calamares-next')
+provides=('calamares')
+depends=(
+  boost-libs
+  ckbcomp
+  cryptsetup
+  dmidecode
+  gptfdisk
+  hwinfo
+  kconfig
+  kcoreaddons
+  kcrash
+  ki18n
+  kparts
+  kpmcore
+  kservice
+  kwidgetsaddons
+  libpwquality
+  mkinitcpio-openswap
+  networkmanager
+  polkit-qt6
+  python
+  qt6-declarative
+  qt6-svg
+  rsync
+  solid
+  squashfs-tools
+  upower
+  yaml-cpp
+  qt6-imageformats
+  python-toml
+)
+makedepends=(
+  boost
+  cmake
+  doxygen
+  extra-cmake-modules
+  git
+  ninja
+  python-jsonschema
+  python-pyaml
+  python-unidecode
+  qt6-tools
+)
+sha256sums=('SKIP')
+source=(calamares::"git+${url}.git#branch=cachyos-dev")
+options=('!emptydirs')
+
+prepare() {
+    cd "${srcdir}/calamares"
+    sed -i -e "s|\${CALAMARES_VERSION_MAJOR}.\${CALAMARES_VERSION_MINOR}.\${CALAMARES_VERSION_PATCH}|${pkgver}-${pkgrel}|g" CMakeLists.txt
+    sed -i -e "s|CALAMARES_VERSION_RC 1|CALAMARES_VERSION_RC 0|g" CMakeLists.txt
+}
+
+build() {
+    cd "${srcdir}/calamares"
+
+    export CXXFLAGS+=" -fPIC"
+
+    cmake -S . -Bbuild \
+        -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DWITH_APPSTREAM=OFF \
+        -DWITH_PYBIND11=OFF \
+        -DWITH_QT6=ON \
+        -DSKIP_MODULES="dracut dracutlukscfg \
+        dummycpp dummyprocess dummypython dummypythonqt \
+        finishedq keyboardq license localeq notesqml oemid \
+        openrcdmcryptcfg packagechooserq fsresizer \
+        rawfs mkinitfs contextualprocess interactiveterminal \
+        plasmalnf services-openrc \
+        summaryq tracking usersq webview welcomeq"
+
+    cmake --build build
+}
+
+package() {
+    cd "${srcdir}/calamares/build"
+    DESTDIR="${pkgdir}" cmake --build . --target install
+
+    # Los módulos son lo que aporta el fork de CachyOS (limine, chwd,
+    # mhwdcfg...). La config de /etc/calamares la pone b3l0w-iso.
+    install -Dm644 "${srcdir}/calamares/src/modules/netinstall/netinstall.yaml" \
+        "$pkgdir/etc/calamares/modules/netinstall.yaml"
+
+    # Sin lanzador: el instalador se abre desde la ISO, no desde el menú.
+    rm -rf "$pkgdir/usr/share/applications"
+}
