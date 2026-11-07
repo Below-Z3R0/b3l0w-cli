@@ -108,9 +108,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.TAG }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           gh release create "$TAG" dist/*.pkg.tar.zst dist/manifest.json \
+            --repo "$REPO" \
             --title "Desktop packages $TAG" \
             --notes "Noctalia, Umbriel and the Umbriel portal, built from upstream main. No pacman repo: download and install with pacman -U."
 
