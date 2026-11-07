@@ -52,12 +52,28 @@ cp -f "${PKGS[@]}" "$DEST/"
 printf '▸ %d paquete(s) copiados a %s\n' "${#PKGS[@]}" "$DEST"
 
 cd "$DEST"
-printf '▸ firmando la base de datos (te va a pedir la passphrase)\n'
+
+# `repo-add --sign` firma la BASE DE DATOS, no los paquetes. Con
+# SigLevel = Required, pacman exige un .sig por paquete: hay que
+# firmarlos antes.
+printf '▸ firmando cada paquete (te va a pedir la passphrase)\n'
+for pkg in ./*.pkg.tar.zst; do
+	if [ ! -f "$pkg.sig" ]; then
+		gpg --detach-sign "$pkg"
+	fi
+done
+
+printf '▸ firmando la base de datos\n'
 repo-add --sign --remove b3l0w.db.tar.gz ./*.pkg.tar.zst
 
-# Symlinks -> copias reales, para que raw.githubusercontent los sirva.
-cp -f b3l0w.db.tar.gz b3l0w.db
-cp -f b3l0w.files.tar.gz b3l0w.files
+# `repo-add` deja symlinks y `cp -f` los sigue (escribe en el destino,
+# no reemplaza el enlace). Hay que borrarlos primero: raw.githubusercontent
+# sirve el TEXTO del symlink y pacman recibiría la ruta, no la DB.
+rm -f b3l0w.db b3l0w.db.sig b3l0w.files b3l0w.files.sig
+cp b3l0w.db.tar.gz b3l0w.db
+cp b3l0w.db.tar.gz.sig b3l0w.db.sig
+cp b3l0w.files.tar.gz b3l0w.files
+cp b3l0w.files.tar.gz.sig b3l0w.files.sig
 
 printf '\n▸ contenido del repo\n'
 ls -lh b3l0w.db b3l0w.db.sig b3l0w.files ./*.pkg.tar.zst ./*.sig 2>/dev/null || true
