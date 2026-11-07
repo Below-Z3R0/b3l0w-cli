@@ -3,6 +3,11 @@ name: desktop-packages
 on:
   workflow_dispatch:
 
+# El tag se calcula con run_number: es único y no depende de outputs
+# entre jobs (un output vacío hacía fallar `gh release create`).
+env:
+  TAG: desktop-${{ github.run_number }}
+
 concurrency:
   group: desktop-packages-${{ github.ref }}
   cancel-in-progress: true
@@ -15,20 +20,15 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
-    outputs:
-      tag: ${{ steps.build.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build in Arch
-        id: build
         run: |
           set -euo pipefail
-          tag="desktop-$(date -u +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           docker run --rm \
             -v "$PWD:/work" -w /work \
-            -e TAG="$tag" \
+            -e TAG="$TAG" \
             archlinux:base-devel bash -euxo pipefail -c '
               pacman -Syu --noconfirm --needed git sudo namcap devtools
               useradd -m builder
@@ -68,7 +68,7 @@ jobs:
 
       - name: Manifest
         env:
-          TAG: ${{ needs.build.outputs.tag }}
+          TAG: ${{ env.TAG }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -107,7 +107,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.build.outputs.tag }}
+          TAG: ${{ env.TAG }}
         run: |
           set -euo pipefail
           gh release create "$TAG" dist/*.pkg.tar.zst dist/manifest.json \
@@ -120,7 +120,7 @@ jobs:
       - name: Avisar que falta publicar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.build.outputs.tag }}
+          TAG: ${{ env.TAG }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
