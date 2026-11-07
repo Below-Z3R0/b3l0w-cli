@@ -1458,7 +1458,9 @@ func pluginsUpdate(args []string) int {
 
 func setupCommand() int {
 	cli.Step("Setup de b3l0w")
+	ensureRepo()
 	ensureKeyring()
+	avisarBinarioViejo()
 	if err := plugins.EnsureSource(); err != nil {
 		cli.Warn("source: " + err.Error())
 	} else {

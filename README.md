@@ -22,6 +22,7 @@ b3l0w extensions             # lista las extensiones binarias del CLI
 b3l0w sync [cat] [--check]   # refresca las DB del registry
 b3l0w apps [-S|-Syu|-R|-Q]   # wrapper de pacman con freno de partial upgrade
 b3l0w install <nombre>       # baja y verifica el programa del release
+b3l0w setup                  # repo [b3l0w], clave del keyring, plugins
 b3l0w doctor                 # dependencias, programas, scripts y plugins
 ```
 
@@ -107,6 +108,19 @@ b3l0w plugins -Ss anilist  # mismo que b3l0w plugins search anilist
 **No se reimplementa pacman.** `services -Syu` verifica y pregunta si
 actualizar; los servicios son Docker, no paquetes. Y `-Ss` solo existe
 donde hay catálogo que consultar.
+
+## Setup
+
+`b3l0w setup` deja la máquina lista para usar el repo:
+
+1. Agrega `[b3l0w]` a `/etc/pacman.conf` (muestra el bloque y pide
+   confirmación).
+2. Importa la clave al keyring con `pacman-key --add` + `--lsign-key`.
+3. Avisa si quedó un `~/.local/bin/b3l0w` que tapa al del paquete.
+4. Agrega el source de plugins y corre `doctor`.
+
+No pide sudo para el comando entero: solo para los pasos que tocan
+archivos del sistema.
 
 ## Registry
 
