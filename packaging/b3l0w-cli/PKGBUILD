@@ -30,4 +30,13 @@ build() {
 package() {
 	install -Dm755 "$srcdir/b3l0w" "$pkgdir/usr/bin/b3l0w"
 	install -Dm644 "$srcdir/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+	# El actualizador visible es b3l0w; por debajo sigue llamando a
+	# arch-update (mantenimiento de CachyOS), que es una dependencia.
+	install -Dm644 "$startdir/../assets/b3l0w-update.desktop" \
+		"$pkgdir/usr/share/applications/b3l0w-update.desktop"
+	for size in 16 24 32 48 64 128 256 512; do
+		install -Dm644 "$startdir/../assets/icons/b3l0w-$size.png" \
+			"$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/b3l0w.png"
+	done
 }

@@ -1461,6 +1461,7 @@ func setupCommand() int {
 	ensureRepo()
 	ensureKeyring()
 	avisarBinarioViejo()
+	ensureLauncher()
 	if err := plugins.EnsureSource(); err != nil {
 		cli.Warn("source: " + err.Error())
 	} else {

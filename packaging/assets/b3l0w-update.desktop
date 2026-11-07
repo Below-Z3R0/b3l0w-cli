@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=b3l0w Update
+Comment=System updater for b3l0wz3r0-os
+Icon=b3l0w
+Type=Application
+Terminal=true
+Exec=b3l0w update --system
+Categories=System;
+Keywords=update;upgrade;b3l0w;
