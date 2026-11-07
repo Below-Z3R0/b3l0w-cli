@@ -1,0 +1,35 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Heronite publica un .pkg.tar.zst nativo de Arch. Reempaquetarlo con
+# makepkg permite reconstruirlo con nuestra clave y tener el SHA256
+# verificado en el PKGBUILD, en vez de confiar en el release a ciegas.
+#
+# El binario se empaqueta como `heronite-rs` (upstream), y el .desktop
+# ya apunta a ese nombre.
+pkgname=heronite
+pkgver=1.2.0
+pkgrel=1
+pkgdesc="Fast native game launcher: Steam, Epic, GOG, Amazon, Battle.net, EA, Ubisoft, emuladores"
+arch=('x86_64')
+url="https://heronite.app"
+license=('GPL-3.0-only')
+depends=('glibc' 'gcc-libs' 'systemd-libs' 'libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'vulkan-icd-loader' 'wayland' 'fontconfig')
+provides=('heronite')
+conflicts=('heronite')
+options=(!strip)
+
+_gh="https://github.com/RafaelGoulartB/Heronite/releases/download/v${pkgver}"
+
+source=("heronite-${pkgver}-1-x86_64.pkg.tar.zst::${_gh}/heronite-${pkgver}-1-x86_64.pkg.tar.zst")
+sha256sums=('867b319aaa60f7956c504e2f024dae1edff5d9bfcd5a3ea3a3038d4ef087512b')
+
+package() {
+	# El paquete upstream ya trae el árbol /usr completo. Se extrae tal
+	# cual, salteando los metadatos del empaquetado original para que
+	# makepkg genere los propios.
+	bsdtar -xf "${srcdir}/heronite-${pkgver}-1-x86_64.pkg.tar.zst" \
+		-C "${pkgdir}/" \
+		--exclude '.PKGINFO' \
+		--exclude '.BUILDINFO' \
+		--exclude '.MTREE'
+}
