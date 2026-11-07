@@ -1,0 +1,56 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Meta paquete de gaming de b3l0wz3r0-os.
+#
+# Por qué existe: antes dependíamos de `cachyos-gaming-meta`, que arrastra
+# Lutris, Heroic, Protontricks y un árbol enorme de dependencias (KDE,
+# lib32, Wine) que no son nuestras. Al quitarlo con `pacman -Rns` se
+# llevó 122 paquetes colaterales.
+#
+# Este meta declara SOLO lo que la distro usa de verdad.
+#
+# Regla de remoción: `pacman -R b3l0w-gaming-meta` (sin -s). Con -s se
+# llevan las dependencias que otros paquetes también necesitan.
+pkgname=b3l0w-gaming-meta
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Gaming de b3l0wz3r0-os: Steam, Heronite, Millennium, vkBasalt, MangoHud y Wine"
+arch=('any')
+url="https://github.com/Below-Z3R0/b3l0w"
+license=('MIT')
+depends=(
+	'steam'
+	'heronite'
+	'millennium-bin'
+	'vkbasalt'
+	'mangohud'
+	'gamescope'
+	'wine'
+	'winetricks'
+	'umu-launcher'
+	'vulkan-tools'
+)
+optdepends=(
+	'proton-cachyos: runtime de Proton de CachyOS'
+	'protonup-qt: instalar y gestionar GE-Proton'
+	'obs-studio: grabación y streaming'
+	'linux-wallpaperengine-git: fondos animados'
+)
+options=(!strip)
+
+package() {
+	# Meta paquete: no instala archivos.
+	install -d "$pkgdir/usr/share/doc/$pkgname"
+	cat >"$pkgdir/usr/share/doc/$pkgname/README" <<'EOF'
+b3l0w-gaming-meta
+
+Steam, Heronite, Millennium, vkBasalt, MangoHud, gamescope y Wine.
+
+Para quitar el meta sin arrastrar dependencias compartidas:
+
+    sudo pacman -R b3l0w-gaming-meta
+
+NUNCA uses -Rns: se lleva las lib32 y el stack KDE que otros paquetes
+necesitan.
+EOF
+}

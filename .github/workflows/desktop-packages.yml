@@ -17,9 +17,11 @@ permissions:
   issues: write
 
 jobs:
-  build:
+  # Paquetes que necesitan makepkg: compilan dentro de un contenedor Arch.
+  # Nada se compila en la máquina del mantenedor.
+  build-arch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -34,8 +36,25 @@ jobs:
               useradd -m builder
               echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
               chown -R builder:builder /work/packaging
-              for pkg in xdg-desktop-portal-umbriel-b3l0w umbriel-b3l0w noctalia-b3l0w; do
-                su builder -c "cd /work/packaging/$pkg && makepkg -s --noconfirm --needed"
+              for pkg in \
+                xdg-desktop-portal-umbriel-b3l0w \
+                umbriel-b3l0w \
+                noctalia-b3l0w \
+                b3l0w-calamares \
+                vkbasalt \
+                millennium-bin; do
+                echo "==> $pkg"
+                case "$pkg" in
+                  # millennium-bin solo descarga el tar.gz upstream y lo
+                  # empaqueta: no compila, así que no necesita resolver
+                  # las deps (entre ellas steam, que vive en multilib).
+                  millennium-bin)
+                    su builder -c "cd /work/packaging/$pkg && makepkg -f --noconfirm --nodeps"
+                    ;;
+                  *)
+                    su builder -c "cd /work/packaging/$pkg && makepkg -s --noconfirm --needed"
+                    ;;
+                esac
                 namcap /work/packaging/$pkg/*.pkg.tar.zst || true
                 if [ "$pkg" = "xdg-desktop-portal-umbriel-b3l0w" ]; then
                   pacman -U --noconfirm /work/packaging/$pkg/*.pkg.tar.zst
@@ -54,16 +73,43 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: desktop-packages
+          name: arch-packages
+          path: dist/*.pkg.tar.zst
+
+  # Paquetes cuyo upstream ya publica .pkg.tar.zst. Solo se verifica el
+  # SHA256 del release y se pasa el archivo tal cual: no se recompila.
+  build-prebuilt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Heronite
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tag=$(gh release view --repo RafaelGoulartB/Heronite --json tagName -q .tagName)
+          ver="${tag#v}"
+          asset="heronite-${ver}-1-x86_64.pkg.tar.zst"
+          url="https://github.com/RafaelGoulartB/Heronite/releases/download/${tag}"
+          curl -fsSLO "${url}/${asset}"
+          curl -fsSL "${url}/SHA256SUMS" -o SHA256SUMS
+          grep " ${asset}\$" SHA256SUMS | sha256sum -c -
+          mv "${asset}" dist/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prebuilt-packages
           path: dist/*.pkg.tar.zst
 
   release:
-    needs: build
+    needs: [build-arch, build-prebuilt]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: desktop-packages
+          pattern: "*-packages"
+          merge-multiple: true
           path: dist
 
       - name: Manifest
@@ -114,7 +160,7 @@ jobs:
           gh release create "$TAG" dist/*.pkg.tar.zst dist/manifest.json \
             --repo "$REPO" \
             --title "Desktop packages $TAG" \
-            --notes "Noctalia, Umbriel and the Umbriel portal, built from upstream main. No pacman repo: download and install with pacman -U."
+            --notes "Noctalia, Umbriel, el portal, Calamares, vkBasalt, Millennium y Heronite. Construido en runners; la firma se hace en local antes de publicar en [b3l0w]."
 
       # El release queda publicado pero [b3l0w] todavía sirve la versión
       # vieja hasta que alguien firme y suba los paquetes. Este paso
@@ -150,4 +196,4 @@ jobs:
           En local:
 
               cd ~/Documents/Github/b3l0w-cli
-              bash scripts/maintainers/repo-sync.sh --push"
+              bash ~/Documents/Manteiner/release/repo-sync.sh --push"

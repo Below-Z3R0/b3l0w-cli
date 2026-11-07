@@ -1,0 +1,51 @@
+# Maintainer: b3l0w <paquetes@b3l0w.local>
+#
+# Meta paquete de escritorio de b3l0wz3r0-os.
+#
+# Reemplaza a `cachyos-desktop-meta` / `cachyos-gaming-applications`: declara
+# solo el shell (Noctalia + Umbriel), el portal, el login y lo mínimo para
+# que la sesión arranque.
+#
+# Regla de remoción: `pacman -R b3l0w-desktop-meta` (sin -s).
+pkgname=b3l0w-desktop-meta
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Escritorio de b3l0wz3r0-os: Noctalia, Umbriel, portal, SDDM y terminal"
+arch=('any')
+url="https://github.com/Below-Z3R0/b3l0w"
+license=('MIT')
+depends=(
+	'noctalia-b3l0w'
+	'umbriel-b3l0w'
+	'xdg-desktop-portal-umbriel-b3l0w'
+	'xdg-desktop-portal-gtk'
+	'sddm'
+	'kitty'
+	'dolphin'
+	'konsole'
+	'pipewire'
+	'wireplumber'
+	'flatpak'
+	'kded'
+	'kwin'
+)
+optdepends=(
+	'plasma-workspace: panel de configuración de KDE'
+	'systemsettings: abrir los kcm_*.desktop'
+)
+options=(!strip)
+
+package() {
+	install -d "$pkgdir/usr/share/doc/$pkgname"
+	cat >"$pkgdir/usr/share/doc/$pkgname/README" <<'EOF'
+b3l0w-desktop-meta
+
+Noctalia + Umbriel + portal + SDDM + kitty + Dolphin + Konsole.
+
+Para quitar el meta sin arrastrar dependencias compartidas:
+
+    sudo pacman -R b3l0w-desktop-meta
+
+NUNCA uses -Rns: se lleva kded, kwin y las lib32 que Steam necesita.
+EOF
+}
