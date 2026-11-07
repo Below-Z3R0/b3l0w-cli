@@ -24,8 +24,12 @@ func RestoreTTY() {
 		cmd.Stderr = os.Stderr
 		_ = cmd.Run()
 	}
-	// Mostrar cursor y resetear atributos. No se limpia la pantalla: el
-	// usuario tiene que poder leer el resultado del update.
-	fmt.Fprint(os.Stdout, "\x1b[?25h\x1b[0m")
+	// Salir del alternate screen (cachy-update lo usa para el resumen
+	// y a veces no lo cierra), mostrar el cursor y resetear atributos.
+	//
+	// `\x1b[?1049l` es inofensivo si no se estaba en alternate screen.
+	// No se limpia la pantalla: el usuario tiene que poder leer el
+	// resultado del update.
+	fmt.Fprint(os.Stdout, "\x1b[?1049l\x1b[?25h\x1b[0m")
 	fmt.Fprintln(os.Stdout)
 }
