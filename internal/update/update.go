@@ -120,7 +120,12 @@ func Run(m *config.Manifest, opts Options) int {
 			return code
 		}
 	}
-	return snapshots.Report(opts.Keep, opts.Yes)
+	code := snapshots.Report(opts.Keep, opts.Yes)
+	if code == 0 {
+		cli.Step("Done")
+		cli.Ok("update complete")
+	}
+	return code
 }
 
 // updatePlugins refresca los sources con preflight de plugin_api. Si
