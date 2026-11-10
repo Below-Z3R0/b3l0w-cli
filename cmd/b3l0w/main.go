@@ -910,7 +910,9 @@ func servicesLogs(args []string) int {
 	}
 	tail := 100
 	service := ""
-	for _, arg := range rest[1:] {
+	// Se recorre TODO rest, no rest[1:]: con el flag adelante
+	// (--tail=50 argos) el id queda fuera del slice y --tail se ignora.
+	for _, arg := range rest {
 		switch {
 		case strings.HasPrefix(arg, "--tail="):
 			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--tail="))
@@ -919,6 +921,10 @@ func servicesLogs(args []string) int {
 				return 1
 			}
 			tail = n
+		case arg == "--dry-run":
+			// ya lo agarro servicePaths
+		case arg == id:
+			// el id del servicio, no un flag
 		case strings.HasPrefix(arg, "--"):
 			output.Fail("flag desconocido: " + arg)
 			return 1
@@ -938,7 +944,7 @@ func servicesLogs(args []string) int {
 
 // servicesSimple ejecuta restart o stop.
 func servicesSimple(args []string, action string) int {
-	manifest, _, rest, _ := servicePaths(args)
+	manifest, _, rest, dryRun := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
 		output.Fail(err.Error())
@@ -956,6 +962,10 @@ func servicesSimple(args []string, action string) int {
 	dir := serviceDir(*svc)
 	files := services.ComposeFiles(*svc, "")
 	docker := services.NewDocker()
+	if dryRun {
+		output.Ok(fmt.Sprintf("%s: %s (dry-run, no se tocó nada)", svc.ID, action))
+		return 0
+	}
 	var err2 error
 	if action == "restart" {
 		err2 = docker.Restart(dir, files)
@@ -972,7 +982,7 @@ func servicesSimple(args []string, action string) int {
 
 // servicesRemove baja el stack. --purge borra los volúmenes.
 func servicesRemove(args []string) int {
-	manifest, stateDir, rest, _ := servicePaths(args)
+	manifest, stateDir, rest, dryRun := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
 		output.Fail(err.Error())
@@ -989,10 +999,17 @@ func servicesRemove(args []string) int {
 		return 1
 	}
 	purge := false
-	for _, arg := range rest[1:] {
+	// Los flags se buscan en TODO rest, no en rest[1:]: con el flag
+	// adelante (--purge argos) el id caía en la rama default y el
+	// comando decía "flag desconocido: argos".
+	for _, arg := range rest {
 		switch {
 		case arg == "--purge":
 			purge = true
+		case arg == "--dry-run":
+			// ya lo agarro servicePaths
+		case arg == svc.ID:
+			// el id, no un flag
 		case strings.HasPrefix(arg, "--"):
 			output.Fail("flag desconocido: " + arg)
 			return 1
@@ -1000,6 +1017,10 @@ func servicesRemove(args []string) int {
 			output.Fail("flag desconocido: " + arg)
 			return 1
 		}
+	}
+	if dryRun {
+		output.Ok(fmt.Sprintf("%s removido (dry-run, no se tocó nada)", svc.ID))
+		return 0
 	}
 	dir := serviceDir(*svc)
 	files := services.ComposeFiles(*svc, "")

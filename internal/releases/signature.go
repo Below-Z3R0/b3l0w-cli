@@ -103,7 +103,7 @@ func Render(statuses []Status) int {
 			output.Ok(fmt.Sprintf("%s: firmado (%s)", st.Name, st.Tag))
 		default:
 			output.Fail(fmt.Sprintf("%s: SIN FIRMA (%s)", st.Name, st.Tag))
-			fmt.Printf("      bash scripts/maintainers/sign-release.sh %s %s\n", st.Repo, st.Tag)
+			fmt.Printf("      b3l0w-manteiner sign release %s %s\n", st.Repo, st.Tag)
 			errores++
 		}
 	}

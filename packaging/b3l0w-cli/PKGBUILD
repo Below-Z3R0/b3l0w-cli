@@ -17,7 +17,16 @@ source=()
 sha256sums=()
 
 prepare() {
-	cp -r "$startdir/files/." "$srcdir"/
+	# El código se copia desde el repo, no desde un snapshot en
+	# files/: ese snapshot quedaba viejo en cada refactor y rompía el
+	# build sin que nadie lo notara (el paquete se publicaba roto).
+	#
+	# El repo vive dos directorios arriba: packaging/b3l0w-cli -> repo.
+	repo="$(cd "$startdir/../.." && pwd)"
+	cp -r "$repo/cmd" "$srcdir"/
+	cp -r "$repo/internal" "$srcdir"/
+	cp "$repo/go.mod" "$repo/go.sum" "$srcdir"/
+	cp "$repo/README.md" "$srcdir"/
 }
 
 build() {
