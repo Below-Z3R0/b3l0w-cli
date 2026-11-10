@@ -7,7 +7,7 @@ package snapshot
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Create intenta una snapshot del subvolume home.

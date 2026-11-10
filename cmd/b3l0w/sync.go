@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // syncCommand es el "pacman -Sy" del CLI: refresca las DB locales

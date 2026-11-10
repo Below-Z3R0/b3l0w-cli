@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Remove borra un plugin local. Si viene del source de Noctalia, no se

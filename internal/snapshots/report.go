@@ -3,7 +3,7 @@ package snapshots
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Report cuenta las entradas, pregunta si reducir y con qué límite.

@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // ensureLauncher oculta el lanzador de Cachy-Update y deja el de

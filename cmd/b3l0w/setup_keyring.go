@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
-	"github.com/Below-Z3R0/b3l0w-cli/internal/verify"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/verify"
 )
 
 // ensureKeyring deja la clave del repo [b3l0w] en el keyring de pacman.

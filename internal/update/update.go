@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/dotfiles"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
@@ -24,6 +23,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Options son las banderas de `b3l0w update`.

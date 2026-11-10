@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/verify"
+	"github.com/Below-Z3R0/b3l0w-kit/verify"
 )
 
 // TestVerifyReleaseSinFirma cubre el release que no publica SHA256SUMS:

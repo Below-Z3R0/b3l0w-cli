@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // MaxAge es cuánto puede tener la DB de pacman antes de negarse a

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Uninstall borra el binario de ~/.local/bin y lo saca del manifiesto.

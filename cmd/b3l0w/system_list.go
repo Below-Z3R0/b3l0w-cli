@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // systemList muestra la definición del sistema: los perfiles y cuántos

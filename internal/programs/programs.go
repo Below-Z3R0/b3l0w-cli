@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // versionRe acepta "v1.2.3" y "1.2.3". Es la única forma de leer una

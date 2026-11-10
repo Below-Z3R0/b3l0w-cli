@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 //go:embed plugins.json

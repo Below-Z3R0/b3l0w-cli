@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // DockerAdapter habla con Docker. Todo pasa por compose v2.

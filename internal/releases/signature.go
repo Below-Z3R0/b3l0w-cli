@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 // Inyectables para los tests.

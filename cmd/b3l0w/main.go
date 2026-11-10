@@ -14,7 +14,6 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/apps"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/channel"
-	"github.com/Below-Z3R0/b3l0w-cli/internal/cli"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
@@ -26,6 +25,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
+	"github.com/Below-Z3R0/b3l0w-kit/cli"
 )
 
 func main() {
