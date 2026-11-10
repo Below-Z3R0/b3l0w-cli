@@ -24,12 +24,22 @@ package() {
 		"$pkgdir/usr/share/pacman/keyrings/b3l0w-trusted"
 }
 
-# --populate importa la clave y la firma localmente en un solo paso:
-# es el mecanismo oficial de Arch para keyrings de repos de terceros.
-post_install() {
+# `pacman-key --populate b3l0w` importa la clave y la marca de confianza
+# leyendo /usr/share/pacman/keyrings/b3l0w.gpg + b3l0w-trusted.
+#
+# OJO: post_install DEBE ser un ARRAY, no una función. makepkg solo
+# genera el script .INSTALL a partir de la forma array; con la forma
+# `post_install() { ... }` el script sale vacío y la clave nunca se
+# importa (fue el bug que dejó la ISO sin verificación de firmas).
+#
+# Mismo patrón que archlinux-keyring y cachyos-keyring: el populate lo
+# dispara `pacman-key --populate <repo>` desde el conf del sistema, no
+# desde el post_install. Se mantiene el array para que funcione igual
+# en una instalación nueva.
+post_install=(
 	pacman-key --populate b3l0w
-}
+)
 
-post_upgrade() {
-	post_install
-}
+post_upgrade=(
+	pacman-key --populate b3l0w
+)
