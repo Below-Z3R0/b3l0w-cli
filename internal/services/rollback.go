@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // NormalizeDigest deja solo el "sha256:..." del digest.
@@ -74,7 +74,7 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	if state.PreviousTag == "" || state.Previous == "" {
 		return nil, fmt.Errorf("%s no tiene imagen anterior guardada", svc.ID)
 	}
-	cli.Step(fmt.Sprintf("%s · rollback", svc.ID))
+	output.Step(fmt.Sprintf("%s · rollback", svc.ID))
 	fmt.Printf("  %s -> %s\n", state.Image, state.Previous)
 
 	if err := in.Docker.Pull(svc.Image, state.PreviousTag); err != nil {

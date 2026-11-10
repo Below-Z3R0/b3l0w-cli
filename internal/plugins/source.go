@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // SourceName es el nombre del source de Noctalia que publica el registry.
@@ -20,10 +20,10 @@ func EnsureSource() error {
 	if HasSource(SourceName) {
 		return nil
 	}
-	if !cli.HaveCommand("noctalia") {
+	if !system.HaveCommand("noctalia") {
 		return fmt.Errorf("noctalia no está en PATH")
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "source", "add", SourceName, "git", RegistryURL)
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "source", "add", SourceName, "git", RegistryURL)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)
 	}
@@ -32,10 +32,10 @@ func EnsureSource() error {
 
 // HasSource dice si Noctalia tiene el source agregado.
 func HasSource(name string) bool {
-	if !cli.HaveCommand("noctalia") {
+	if !system.HaveCommand("noctalia") {
 		return false
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "source", "list")
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "source", "list")
 	if err != nil {
 		return false
 	}
@@ -81,10 +81,10 @@ func AutoUpdate() string {
 
 // Sources devuelve los sources configurados en Noctalia.
 func Sources() ([]string, error) {
-	if !cli.HaveCommand("noctalia") {
+	if !system.HaveCommand("noctalia") {
 		return nil, nil
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "source", "list")
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "source", "list")
 	if err != nil {
 		return nil, fmt.Errorf("%v: %s", err, out)
 	}
@@ -100,10 +100,10 @@ func Sources() ([]string, error) {
 
 // InstalledBySource agrupa los plugins habilitados por source.
 func InstalledBySource() (map[string][]string, error) {
-	if !cli.HaveCommand("noctalia") {
+	if !system.HaveCommand("noctalia") {
 		return nil, nil
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "list")
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "list")
 	if err != nil {
 		return nil, fmt.Errorf("%v: %s", err, out)
 	}
@@ -150,7 +150,7 @@ func UpdateSources() error {
 // UpdateSource repara el clon si quedó con archivos borrados y pide a
 // Noctalia que refresque el source.
 func UpdateSource(name string) error {
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "update", name)
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "update", name)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)
 	}
@@ -168,13 +168,13 @@ func repairSourceRepo(name string) {
 	if _, err := os.Stat(repo); err != nil {
 		return
 	}
-	out, err := cli.RunCombined("git", "-C", repo, "status", "--porcelain")
+	out, err := system.RunCombined("git", "-C", repo, "status", "--porcelain")
 	if err != nil {
 		return
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "D ") || strings.HasPrefix(line, " D ") {
-			cli.RunCombined("git", "-C", repo, "reset", "--hard", "HEAD")
+			system.RunCombined("git", "-C", repo, "reset", "--hard", "HEAD")
 			return
 		}
 	}

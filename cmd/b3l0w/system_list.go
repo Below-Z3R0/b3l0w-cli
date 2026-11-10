@@ -5,7 +5,8 @@ import (
 	"sort"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // systemList muestra la definición del sistema: los perfiles y cuántos
@@ -13,10 +14,10 @@ import (
 func systemList() int {
 	def, err := systemdef.Builtin()
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Step("Definición del sistema")
+	output.Step("Definición del sistema")
 	names := def.Names()
 	sort.Strings(names)
 	fmt.Printf("  %-10s %6s %5s %5s %5s %6s %s\n",

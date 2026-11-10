@@ -14,7 +14,8 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // Inyectables para los tests.
@@ -169,16 +170,16 @@ func Render(statuses []Status) int {
 	if len(statuses) == 0 {
 		return 0
 	}
-	cli.Step("Firmas de releases")
+	output.Step("Firmas de releases")
 	errores := 0
 	for _, st := range statuses {
 		switch {
 		case st.Err != "":
-			cli.Warn(fmt.Sprintf("%s: no se pudo consultar (%s)", st.Name, st.Err))
+			output.Warn(fmt.Sprintf("%s: no se pudo consultar (%s)", st.Name, st.Err))
 		case st.Signed:
-			cli.Ok(fmt.Sprintf("%s: firmado (%s)", st.Name, st.Tag))
+			output.Ok(fmt.Sprintf("%s: firmado (%s)", st.Name, st.Tag))
 		default:
-			cli.Fail(fmt.Sprintf("%s: SIN FIRMA (%s)", st.Name, st.Tag))
+			output.Fail(fmt.Sprintf("%s: SIN FIRMA (%s)", st.Name, st.Tag))
 			fmt.Printf("      bash scripts/maintainers/sign-release.sh %s %s\n", st.Repo, st.Tag)
 			errores++
 		}

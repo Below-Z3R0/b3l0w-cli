@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 //go:embed plugins.json
@@ -348,7 +349,7 @@ func gitTimestamp(repoDir, pluginSlug string, first bool) int64 {
 	if first {
 		args = []string{"-C", repoDir, "log", "--reverse", "--format=%ct", "--", pluginSlug}
 	}
-	out, err := cli.Run("git", args...)
+	out, err := system.Run("git", args...)
 	if err != nil {
 		return 0
 	}

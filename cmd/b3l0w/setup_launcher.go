@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // ensureLauncher oculta el lanzador de Cachy-Update y deja el de
@@ -21,13 +21,13 @@ func ensureLauncher() {
 	}
 	apps := filepath.Join(home, ".local", "share", "applications")
 	if err := os.MkdirAll(apps, 0o755); err != nil {
-		cli.Warn("launcher: " + err.Error())
+		output.Warn("launcher: " + err.Error())
 		return
 	}
 
 	target := filepath.Join(apps, "arch-update.desktop")
 	if _, err := os.Stat(target); err == nil {
-		cli.Ok("launcher: Cachy-Update oculto")
+		output.Ok("launcher: Cachy-Update oculto")
 		return
 	}
 
@@ -37,8 +37,8 @@ Name=Cachy-Update
 Hidden=true
 `
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
-		cli.Warn("launcher: " + err.Error())
+		output.Warn("launcher: " + err.Error())
 		return
 	}
-	cli.Ok("launcher: Cachy-Update oculto")
+	output.Ok("launcher: Cachy-Update oculto")
 }

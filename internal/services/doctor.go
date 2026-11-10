@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // DoctorResult es el resultado de los chequeos.
@@ -17,59 +17,59 @@ type DoctorResult struct {
 // Doctor chequea que la máquina pueda correr servicios.
 func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) DoctorResult {
 	res := DoctorResult{}
-	cli.Step("Chequeos de servicios")
+	output.Step("Chequeos de servicios")
 
 	// Docker y el daemon.
 	if !d.DockerOK() {
-		cli.Fail("docker: el daemon no responde")
+		output.Fail("docker: el daemon no responde")
 		res.Errors++
 	} else {
-		cli.Ok("docker: daemon responde")
+		output.Ok("docker: daemon responde")
 	}
 
 	// Compose v2: el v1 no soporta --project-directory ni perfiles.
 	if !d.HaveComposeV2() {
-		cli.Fail("docker compose: falta el plugin (docker-compose)")
+		output.Fail("docker compose: falta el plugin (docker-compose)")
 		res.Errors++
 	} else {
-		cli.Ok("docker compose: " + d.ComposeVersion())
+		output.Ok("docker compose: " + d.ComposeVersion())
 	}
 
 	// Disco: las imágenes son grandes.
 	if free, err := d.DiskFree(); err == nil {
 		gb := float64(free) / (1 << 30)
 		if gb < 20 {
-			cli.Warn(fmt.Sprintf("disco: %.1f GiB libres; las imágenes de GPU necesitan 15-25 GiB", gb))
+			output.Warn(fmt.Sprintf("disco: %.1f GiB libres; las imágenes de GPU necesitan 15-25 GiB", gb))
 			res.Warnings++
 		} else {
-			cli.Ok(fmt.Sprintf("disco: %.1f GiB libres", gb))
+			output.Ok(fmt.Sprintf("disco: %.1f GiB libres", gb))
 		}
 	}
 
 	// Aceleración.
 	if len(hw.GPUs) == 0 {
-		cli.Warn("gpu: no hay GPU; los servicios usarán la variante cpu")
+		output.Warn("gpu: no hay GPU; los servicios usarán la variante cpu")
 		res.Warnings++
 	} else {
 		for _, g := range hw.GPUs {
-			cli.Ok("gpu: " + DescribeGPU(g))
+			output.Ok("gpu: " + DescribeGPU(g))
 		}
 	}
 	switch {
 	case hw.GPUs == nil:
 	case hasNvidia(hw.GPUs):
 		if !NVIDIAToolkitInstalled() {
-			cli.Fail("nvidia-container-toolkit: falta; la variante cuda no va a acelerar")
+			output.Fail("nvidia-container-toolkit: falta; la variante cuda no va a acelerar")
 			res.Errors++
 		} else {
-			cli.Ok("nvidia-container-toolkit: instalado")
+			output.Ok("nvidia-container-toolkit: instalado")
 		}
 	default:
 		if !RenderDRI() {
-			cli.Fail("/dev/dri: no existe; la variante intel/amd no va a acelerar")
+			output.Fail("/dev/dri: no existe; la variante intel/amd no va a acelerar")
 			res.Errors++
 		} else {
-			cli.Ok("/dev/dri: presente")
+			output.Ok("/dev/dri: presente")
 		}
 	}
 
@@ -77,11 +77,11 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 	if len(hw.GPUs) > 0 && !hasNvidia(hw.GPUs) {
 		for _, g := range []string{"render", "video"} {
 			if !GroupExists(g) {
-				cli.Warn(fmt.Sprintf("grupo %s: no existe", g))
+				output.Warn(fmt.Sprintf("grupo %s: no existe", g))
 				res.Warnings++
 				continue
 			}
-			cli.Ok("grupo " + g + ": existe")
+			output.Ok("grupo " + g + ": existe")
 		}
 	}
 
@@ -90,10 +90,10 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 		for _, port := range state.Ports {
 			if PortInUse(port) {
 				// Ocupado puede ser el propio servicio.
-				cli.Ok(fmt.Sprintf("puerto %d: en uso (%s)", port, state.ID))
+				output.Ok(fmt.Sprintf("puerto %d: en uso (%s)", port, state.ID))
 				continue
 			}
-			cli.Warn(fmt.Sprintf("puerto %d: libre (lo declara %s)", port, state.ID))
+			output.Warn(fmt.Sprintf("puerto %d: libre (lo declara %s)", port, state.ID))
 			res.Warnings++
 		}
 	}
@@ -113,13 +113,13 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 			continue
 		}
 		provider := svc.EP[variant]
-		cli.Ok(fmt.Sprintf("%s: %s (%s) %s", svc.ID, variant, provider, reason))
+		output.Ok(fmt.Sprintf("%s: %s (%s) %s", svc.ID, variant, provider, reason))
 	}
 
 	if res.Errors > 0 {
-		cli.Fail(fmt.Sprintf("%d chequeos fallaron", res.Errors))
+		output.Fail(fmt.Sprintf("%d chequeos fallaron", res.Errors))
 	} else if res.Warnings > 0 {
-		cli.Warn(fmt.Sprintf("%d avisos", res.Warnings))
+		output.Warn(fmt.Sprintf("%d avisos", res.Warnings))
 	}
 	return res
 }

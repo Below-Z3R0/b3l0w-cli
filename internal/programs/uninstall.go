@@ -5,7 +5,9 @@ import (
 	"os"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/paths"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Uninstall borra el binario de ~/.local/bin y lo saca del manifiesto.
@@ -25,12 +27,12 @@ func Uninstall(name string, m *config.Manifest) (string, error) {
 		}
 		_ = os.Remove(path) // el binario suelto, si quedó
 		m.Remove(name)
-		if err := m.Save(cli.ManifestPath()); err != nil {
+		if err := m.Save(paths.ManifestPath()); err != nil {
 			return "", fmt.Errorf("no se pudo guardar el manifiesto: %w", err)
 		}
 		return path, nil
 	}
-	if owner := cli.PackageOwner(path); owner != "" {
+	if owner := system.PackageOwner(path); owner != "" {
 		if ownedByB3l0w(owner) {
 			if err := RemovePackage(name); err != nil {
 				return "", err
@@ -44,7 +46,7 @@ func Uninstall(name string, m *config.Manifest) (string, error) {
 		}
 	}
 	m.Remove(name)
-	if err := m.Save(cli.ManifestPath()); err != nil {
+	if err := m.Save(paths.ManifestPath()); err != nil {
 		return "", fmt.Errorf("no se pudo guardar el manifiesto: %w", err)
 	}
 	return path, nil

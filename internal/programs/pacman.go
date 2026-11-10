@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // PackageName es el nombre del programa en el repo [b3l0w].
@@ -24,27 +24,27 @@ func PackageName(name string) string {
 // [b3l0w]. Si es así, pacman manda: el asset suelto queda como
 // camino viejo para programas que todavía no están empaquetados.
 func Packaged(name string) bool {
-	if !cli.HaveCommand("pacman") {
+	if !system.HaveCommand("pacman") {
 		return false
 	}
-	_, err := cli.RunTimeout(5*time.Second, "pacman", "-Si", PackageName(name))
+	_, err := system.RunTimeout(5*time.Second, "pacman", "-Si", PackageName(name))
 	return err == nil
 }
 
 // InstallPackage instala con pacman heredando la terminal: sudo pide
 // la contraseña ahí mismo, no en un pipe.
 func InstallPackage(name string) (string, error) {
-	if err := cli.Interactive("sudo", "pacman", "-S", "--needed", PackageName(name)); err != nil {
+	if err := system.Interactive("sudo", "pacman", "-S", "--needed", PackageName(name)); err != nil {
 		return "", fmt.Errorf("pacman no pudo instalar %s: %w", PackageName(name), err)
 	}
 	// El binario viejo de ~/.local/bin gana en PATH: si queda, se
 	// ejecuta la versión suelta en vez de la del paquete.
 	if viejo, err := InstallPath(name); err == nil {
-		if owner := cli.PackageOwner(viejo); owner == "" {
+		if owner := system.PackageOwner(viejo); owner == "" {
 			_ = os.Remove(viejo)
 		}
 	}
-	bin := cli.CommandPath(name)
+	bin := system.CommandPath(name)
 	if bin == "" {
 		return "", fmt.Errorf("%s se instaló pero no está en PATH", name)
 	}
@@ -54,7 +54,7 @@ func InstallPackage(name string) (string, error) {
 // RemovePackage quita el paquete, sus dependencias huérfanas y su
 // configuración.
 func RemovePackage(name string) error {
-	if err := cli.Interactive("sudo", "pacman", "-Rns", "--noconfirm", PackageName(name)); err != nil {
+	if err := system.Interactive("sudo", "pacman", "-Rns", "--noconfirm", PackageName(name)); err != nil {
 		return fmt.Errorf("pacman no pudo quitar %s: %w", PackageName(name), err)
 	}
 	return nil

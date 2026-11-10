@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // RegistryCache remembers the last registry check so a stale manifest
@@ -123,7 +123,7 @@ func sameList(a, b []string) bool {
 	return true
 }
 func RenderList(m *Manifest, states map[string]*State, st *RegistryStatus, hw Hardware) {
-	cli.Step("Servicios")
+	output.Step("Servicios")
 	fmt.Printf("  %-10s %-9s %-8s %-10s %s\n", "ID", "ESTADO", "VAR", "IMAGEN", "NOTAS")
 	for i := range m.Services {
 		svc := &m.Services[i]
@@ -164,24 +164,24 @@ func RenderList(m *Manifest, states map[string]*State, st *RegistryStatus, hw Ha
 				}
 			}
 		}
-		fmt.Printf("  %-10s %-9s %-8s %-10s %s\n", svc.ID, status, variant, svc.Image, cli.Dim(notes))
+		fmt.Printf("  %-10s %-9s %-8s %-10s %s\n", svc.ID, status, variant, svc.Image, output.Dim(notes))
 	}
 
 	if st != nil && len(st.Stale) > 0 {
-		cli.Warn("el manifiesto quedó desactualizado respecto del registry:")
+		output.Warn("el manifiesto quedó desactualizado respecto del registry:")
 		for _, s := range st.Stale {
 			fmt.Printf("    %s\n", s)
 		}
 		fmt.Println("    (b3l0w services sync actualiza el manifiesto)")
 	}
 	if st != nil && len(st.Unreachable) > 0 {
-		cli.Warn("no pude consultar el registry para: " + strings.Join(st.Unreachable, ", "))
+		output.Warn("no pude consultar el registry para: " + strings.Join(st.Unreachable, ", "))
 	}
 }
 
 // RenderHardware imprime el hardware y la recomendación.
 func RenderHardware(hw Hardware, m *Manifest, st *RegistryStatus) {
-	cli.Step("Hardware")
+	output.Step("Hardware")
 	fmt.Printf("  CPU        %s", hw.CPUVendor)
 	if len(hw.CPUFlags) > 0 {
 		fmt.Printf(" (%s)", strings.Join(hw.CPUFlags, ", "))
@@ -213,6 +213,6 @@ func RenderHardware(hw Hardware, m *Manifest, st *RegistryStatus) {
 			continue
 		}
 		provider := svc.EP[variant]
-		fmt.Printf("  %-10s %s  %s\n", svc.ID, variant, cli.Dim(fmt.Sprintf("(%s) %s", provider, reason)))
+		fmt.Printf("  %-10s %s  %s\n", svc.ID, variant, output.Dim(fmt.Sprintf("(%s) %s", provider, reason)))
 	}
 }

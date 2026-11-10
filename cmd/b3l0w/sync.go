@@ -7,7 +7,8 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // syncCommand es el "pacman -Sy" del CLI: refresca las DB locales
@@ -35,7 +36,7 @@ func syncCommand(args []string) int {
 			syncUsage()
 			return 0
 		default:
-			cli.Fail(fmt.Sprintf("categoría desconocida: %s", arg))
+			output.Fail(fmt.Sprintf("categoría desconocida: %s", arg))
 			syncUsage()
 			return 1
 		}
@@ -49,15 +50,15 @@ func syncCommand(args []string) int {
 	}
 
 	errores := 0
-	cli.Step("Sincronizando el registry")
+	output.Step("Sincronizando el registry")
 	for _, kind := range kinds {
 		st, err := registry.Sync(kind, embeddedFor(kind))
 		if err != nil {
-			cli.Warn(err.Error())
+			output.Warn(err.Error())
 			errores++
 			continue
 		}
-		cli.Ok(fmt.Sprintf("%s: %d bytes (%s)", kind, st.Size, st.Source))
+		output.Ok(fmt.Sprintf("%s: %d bytes (%s)", kind, st.Size, st.Source))
 	}
 	if errores > 0 {
 		return 1
@@ -67,14 +68,14 @@ func syncCommand(args []string) int {
 
 // syncCheck muestra el estado local sin tocar la red.
 func syncCheck(kinds []registry.Kind) int {
-	cli.Step("Registry")
+	output.Step("Registry")
 	for _, kind := range kinds {
 		st := registry.Stat(kind)
 		switch st.Source {
 		case registry.FromEmbed:
-			cli.Warn(fmt.Sprintf("%s: sin sincronizar (se usa la copia embebida)", kind))
+			output.Warn(fmt.Sprintf("%s: sin sincronizar (se usa la copia embebida)", kind))
 		default:
-			cli.Ok(fmt.Sprintf("%s: %s, %d bytes (sincronizado %s)",
+			output.Ok(fmt.Sprintf("%s: %s, %d bytes (sincronizado %s)",
 				kind, st.Source, st.Size, st.Updated.Format("2006-01-02 15:04")))
 		}
 	}

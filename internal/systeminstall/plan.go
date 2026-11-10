@@ -8,7 +8,8 @@ import (
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // FileStatus es un dotfile: si existe el origen (en el repo) y el destino.
@@ -72,7 +73,7 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 	}
 
 	for _, name := range profile.Own {
-		if cli.CommandPath(name) == "" {
+		if kitsystem.CommandPath(name) == "" {
 			plan.Own = append(plan.Own, name)
 		}
 	}
@@ -95,7 +96,7 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 		if dotfiles != "" && !filepath.IsAbs(src) {
 			src = filepath.Join(dotfiles, file.Src)
 		}
-		dest := cli.ExpandHome(file.Dest)
+		dest := kitsystem.ExpandHome(file.Dest)
 		plan.Files = append(plan.Files, FileStatus{
 			Src:        src,
 			Dest:       dest,
@@ -108,7 +109,7 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 
 func installedPackages() map[string]bool {
 	set := map[string]bool{}
-	out, err := cli.Run("pacman", "-Qq")
+	out, err := kitsystem.Run("pacman", "-Qq")
 	if err != nil {
 		return set
 	}
@@ -122,7 +123,7 @@ func installedPackages() map[string]bool {
 
 func installedFlatpaks() map[string]bool {
 	set := map[string]bool{}
-	out, err := cli.Run("flatpak", "list", "--app", "--columns=application")
+	out, err := kitsystem.Run("flatpak", "list", "--app", "--columns=application")
 	if err != nil {
 		return set
 	}
@@ -136,13 +137,13 @@ func installedFlatpaks() map[string]bool {
 
 func serviceEnabled(name string) bool {
 	// is-enabled devuelve 0 para enabled/enabled-runtime/static.
-	_, err := cli.Run("systemctl", "is-enabled", name)
+	_, err := kitsystem.Run("systemctl", "is-enabled", name)
 	return err == nil
 }
 
 func userGroups() map[string]bool {
 	set := map[string]bool{}
-	out, err := cli.Run("id", "-nG")
+	out, err := kitsystem.Run("id", "-nG")
 	if err != nil {
 		return set
 	}

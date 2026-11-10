@@ -23,7 +23,10 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
+	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Options son las banderas de `b3l0w update`.
@@ -62,7 +65,7 @@ func Run(m *config.Manifest, opts Options) int {
 
 	// Pase lo que pase, la terminal tiene que quedar usable: cachy-update
 	// usa alternate screen y deja el cursor oculto.
-	defer cli.RestoreTTY()
+	defer kitsystem.RestoreTTY()
 
 	// Sin banderas se hacen las tres capas y el CLI; con una sola, esa.
 	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
@@ -76,8 +79,8 @@ func Run(m *config.Manifest, opts Options) int {
 	dotfilesWanted := !anySelector
 
 	if !opts.Yes {
-		if !cli.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted, dotfilesWanted), false, true) {
-			cli.Warn("cancelled")
+		if !confirm.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted, dotfilesWanted), false, true) {
+			output.Warn("cancelled")
 			return 0
 		}
 	}
@@ -122,8 +125,8 @@ func Run(m *config.Manifest, opts Options) int {
 	}
 	code := snapshots.Report(opts.Keep, opts.Yes)
 	if code == 0 {
-		cli.Step("Done")
-		cli.Ok("update complete")
+		output.Step("Done")
+		output.Ok("update complete")
 	}
 	return code
 }
@@ -132,12 +135,12 @@ func Run(m *config.Manifest, opts Options) int {
 // un plugin habilitado no es compatible con el shell, se saltea el
 // source entero y se conserva la versión instalada.
 func updatePlugins() int {
-	cli.Step("Actualizando plugins")
+	output.Step("Actualizando plugins")
 
-	if cli.HaveCommand("noctalia") {
+	if kitsystem.HaveCommand("noctalia") {
 		if sources, err := plugins.Sources(); err == nil && len(sources) > 0 {
 			if err := plugins.UpdateSources(); err != nil {
-				cli.Warn("plugins: " + err.Error())
+				output.Warn("plugins: " + err.Error())
 				return 1
 			}
 			return 0
@@ -146,11 +149,11 @@ func updatePlugins() int {
 
 	m, err := plugins.LoadDefault()
 	if err != nil {
-		cli.Warn("plugins: " + err.Error())
+		output.Warn("plugins: " + err.Error())
 		return 1
 	}
 	if err := plugins.Update(m, "", plugins.DefaultPluginsDir(), false); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
@@ -164,10 +167,10 @@ func updateServices(yes bool) int {
 	if err != nil || len(states) == 0 {
 		return 0
 	}
-	cli.Step("Actualizando servicios")
+	output.Step("Actualizando servicios")
 	m, err := services.LoadDefault()
 	if err != nil {
-		cli.Warn("services: " + err.Error())
+		output.Warn("services: " + err.Error())
 		return 0
 	}
 	in := &services.Installer{
@@ -182,11 +185,11 @@ func updateServices(yes bool) int {
 		}
 		newState, err := in.Update(*svc, state, true, yes)
 		if err != nil {
-			cli.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
 			continue
 		}
 		if newState.UpdatedAt != state.UpdatedAt {
-			cli.Ok(fmt.Sprintf("%s actualizado", state.ID))
+			output.Ok(fmt.Sprintf("%s actualizado", state.ID))
 		}
 	}
 	return 0
@@ -209,37 +212,37 @@ func syncRegistry(systemWanted, servicesWanted, pluginsWanted bool) {
 	}
 	for _, kind := range kinds {
 		if _, err := registry.Sync(kind, nil); err != nil {
-			cli.Warn(err.Error())
+			output.Warn(err.Error())
 		}
 	}
 }
 
 func selfUpdate() int {
-	cli.Step("Actualizando b3l0w")
+	output.Step("Actualizando b3l0w")
 	result, err := selfupdate.Run()
 	if err != nil {
 		// Si el binario es de un paquete, pacman manda: no es fatal.
 		if strings.Contains(err.Error(), "es del paquete") {
-			cli.Warn(err.Error())
+			output.Warn(err.Error())
 			return 0
 		}
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	switch {
 	case result.Changed:
-		cli.Ok(fmt.Sprintf("b3l0w %s -> %s", result.Before, result.After))
+		output.Ok(fmt.Sprintf("b3l0w %s -> %s", result.Before, result.After))
 	case result.Note != "":
-		cli.Warn(result.Note)
+		output.Warn(result.Note)
 	default:
-		cli.Ok(fmt.Sprintf("b3l0w ya está al día (%s)", result.After))
+		output.Ok(fmt.Sprintf("b3l0w ya está al día (%s)", result.After))
 	}
 	return 0
 }
 
 func updateSystem(opts Options) int {
 	if !system.Available() {
-		cli.Warn("no hay cachy-update ni arch-update: se omite el sistema")
+		output.Warn("no hay cachy-update ni arch-update: se omite el sistema")
 		// Si pidió solo el sistema, es un error.
 		if opts.System && !opts.Programs {
 			return 1
@@ -248,24 +251,24 @@ func updateSystem(opts Options) int {
 	}
 
 	// El actualizador pregunta cosas; sin terminal no se puede.
-	if !cli.IsTTY() {
+	if !kitsystem.IsTTY() {
 		if opts.System && !opts.Programs {
-			cli.Fail("sin terminal: la actualización del sistema es interactiva")
-			cli.Fail("corré b3l0w update en una terminal, o usá --programs")
+			output.Fail("sin terminal: la actualización del sistema es interactiva")
+			output.Fail("corré b3l0w update en una terminal, o usá --programs")
 			return 1
 		}
-		cli.Warn("sin terminal: se omite el sistema (es interactivo); usá --programs")
+		output.Warn("sin terminal: se omite el sistema (es interactivo); usá --programs")
 		return 0
 	}
 
-	cli.Step("Actualizando el sistema")
+	output.Step("Actualizando el sistema")
 	if err := system.UpdateInteractive(); err != nil {
-		cli.Fail(fmt.Sprintf("el actualizador del sistema falló: %v", err))
+		output.Fail(fmt.Sprintf("el actualizador del sistema falló: %v", err))
 		return 1
 	}
 	// cachy-update deja la terminal en alternate screen: restaurarla acá
 	// permite leer el resto del update sin arrastrar el estado.
-	cli.RestoreTTY()
+	kitsystem.RestoreTTY()
 	return 0
 }
 
@@ -276,21 +279,21 @@ func updateDotfiles(opts Options) int {
 		dir = defaultDotfilesDir()
 	}
 	if dir == "" {
-		cli.Fail("dotfiles/ not found; pass --dotfiles-dir=<path>")
+		output.Fail("dotfiles/ not found; pass --dotfiles-dir=<path>")
 		return 1
 	}
 
 	// Validar el TOML de Noctalia antes de tocar nada.
 	if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
-		if out, err := cli.RunCombined("noctalia", "config", "validate", path); err != nil {
-			cli.Fail("repo TOML does not validate: " + out)
+		if out, err := kitsystem.RunCombined("noctalia", "config", "validate", path); err != nil {
+			output.Fail("repo TOML does not validate: " + out)
 			return 1
 		}
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	state := filepath.Join(home, ".local", "state", "b3l0w", "dotfiles.json")
@@ -298,17 +301,17 @@ func updateDotfiles(opts Options) int {
 	if opts.Adopt {
 		n, err := dotfiles.Adopt(dir, home, state)
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
-		cli.Ok(fmt.Sprintf("%d files adopted (untouched)", n))
+		output.Ok(fmt.Sprintf("%d files adopted (untouched)", n))
 		return 0
 	}
 
 	// Snapshot antes de tocar el home. Si snapper no tiene config `home`,
 	// el 3-way sigue protegiendo: no se pisa ningún cambio local.
 	if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
-		cli.Warn("no home snapshot: " + err.Error())
+		output.Warn("no home snapshot: " + err.Error())
 	}
 
 	// Detectar conflictos antes de escribir: si los hay, preguntar si
@@ -319,8 +322,8 @@ func updateDotfiles(opts Options) int {
 			for _, f := range preview.Conflicts {
 				fmt.Printf("    %s\n", f)
 			}
-			if cli.Confirm("  Merge automatically? The repo version overwrites your local changes [y/N] ", false, false) {
-				if cli.Confirm(fmt.Sprintf("  This will overwrite %d file(s). Continue? [y/N] ", len(preview.Conflicts)), false, false) {
+			if confirm.Confirm("  Merge automatically? The repo version overwrites your local changes [y/N] ", false, false) {
+				if confirm.Confirm(fmt.Sprintf("  This will overwrite %d file(s). Continue? [y/N] ", len(preview.Conflicts)), false, false) {
 					opts.Force = true
 				}
 			}
@@ -328,32 +331,32 @@ func updateDotfiles(opts Options) int {
 		}
 	}
 
-	cli.Step("Applying dotfiles")
+	output.Step("Applying dotfiles")
 	res, err := dotfiles.Pull(dir, home, state, opts.Force, opts.DryRun)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 
 	for _, f := range res.Updated {
-		cli.Ok(fmt.Sprintf("%s: updated", f))
+		output.Ok(fmt.Sprintf("%s: updated", f))
 	}
 	for _, f := range res.Kept {
-		fmt.Printf("  %s %s: kept (local change)\n", cli.Dim("·"), f)
+		fmt.Printf("  %s %s: kept (local change)\n", output.Dim("·"), f)
 	}
 	for _, f := range res.Missing {
-		cli.Ok(fmt.Sprintf("%s: installed", f))
+		output.Ok(fmt.Sprintf("%s: installed", f))
 	}
 	for _, f := range res.Conflicts {
-		cli.Warn(fmt.Sprintf("%s: conflict, see %s.new", f, f))
+		output.Warn(fmt.Sprintf("%s: conflict, see %s.new", f, f))
 	}
 
 	if opts.DryRun {
-		fmt.Printf("\n  %s\n", cli.Dim("dry-run: nothing written"))
+		fmt.Printf("\n  %s\n", output.Dim("dry-run: nothing written"))
 	}
 	if len(res.Conflicts) > 0 {
-		fmt.Printf("\n  %s\n", cli.Dim("conflicts were not overwritten; merge by hand and run again"))
-		fmt.Printf("  %s\n", cli.Dim("validate with: noctalia config validate  |  umbriel config validate"))
+		fmt.Printf("\n  %s\n", output.Dim("conflicts were not overwritten; merge by hand and run again"))
+		fmt.Printf("  %s\n", output.Dim("validate with: noctalia config validate  |  umbriel config validate"))
 	}
 	return 0
 }
@@ -413,24 +416,24 @@ func confirmPrompt(self, system, programs, pluginsWanted, servicesWanted, dotfil
 // actualizar sin saberlo.
 func updatePrograms(m *config.Manifest) int {
 	if len(m.Programs) == 0 {
-		cli.Warn("no hay programas registrados")
+		output.Warn("no hay programas registrados")
 		return 0
 	}
 
-	cli.Step("Actualizando los programas propios")
+	output.Step("Actualizando los programas propios")
 	failed := 0
 	for _, program := range m.Programs {
 		message, ok := programs.Update(program.Name)
 		if ok {
-			cli.Ok(fmt.Sprintf("%s: %s", program.Name, message))
+			output.Ok(fmt.Sprintf("%s: %s", program.Name, message))
 		} else {
-			cli.Fail(fmt.Sprintf("%s: %s", program.Name, message))
+			output.Fail(fmt.Sprintf("%s: %s", program.Name, message))
 			failed++
 		}
 	}
 
 	if failed > 0 {
-		cli.Fail(fmt.Sprintf("%d de %d programas fallaron", failed, len(m.Programs)))
+		output.Fail(fmt.Sprintf("%d de %d programas fallaron", failed, len(m.Programs)))
 		return 1
 	}
 	return 0
@@ -438,40 +441,40 @@ func updatePrograms(m *config.Manifest) int {
 
 // check reporta qué hay pendiente sin tocar nada.
 func check(m *config.Manifest) int {
-	cli.Step("b3l0w")
-	cli.Ok(fmt.Sprintf("versión: %s", version.Version))
+	output.Step("b3l0w")
+	output.Ok(fmt.Sprintf("versión: %s", version.Version))
 	if !strings.Contains(version.Version, "dev") {
 		if latest, err := selfupdate.Check(); err == nil && latest != "" && latest != version.Version {
-			cli.Warn(fmt.Sprintf("b3l0w: %s -> %s", version.Version, latest))
+			output.Warn(fmt.Sprintf("b3l0w: %s -> %s", version.Version, latest))
 		}
 	}
 
-	cli.Step("Estado de las actualizaciones")
+	output.Step("Estado de las actualizaciones")
 
 	if system.Available() {
 		list, err := system.List()
 		if err != nil && list == "" {
-			cli.Fail(fmt.Sprintf("no se pudo consultar el sistema: %v", err))
+			output.Fail(fmt.Sprintf("no se pudo consultar el sistema: %v", err))
 			return 1
 		}
 		repo, aur := system.Pending(list)
 		if repo+aur == 0 {
-			cli.Ok("sistema base: al día")
+			output.Ok("sistema base: al día")
 		} else {
-			cli.Ok(fmt.Sprintf("sistema base: %d del repo, %d de AUR", repo, aur))
+			output.Ok(fmt.Sprintf("sistema base: %d del repo, %d de AUR", repo, aur))
 		}
 	} else {
-		cli.Warn("sistema base: no hay cachy-update ni arch-update")
+		output.Warn("sistema base: no hay cachy-update ni arch-update")
 	}
 
 	for _, status := range programs.Statuses(m) {
 		switch {
 		case !status.Installed:
-			cli.Warn(fmt.Sprintf("%s: no instalado", status.Name))
+			output.Warn(fmt.Sprintf("%s: no instalado", status.Name))
 		case status.Err != "":
-			cli.Fail(fmt.Sprintf("%s: %s", status.Name, status.Err))
+			output.Fail(fmt.Sprintf("%s: %s", status.Name, status.Err))
 		default:
-			cli.Ok(fmt.Sprintf("%s: %s", status.Name, status.Version))
+			output.Ok(fmt.Sprintf("%s: %s", status.Name, status.Version))
 		}
 	}
 
@@ -481,7 +484,7 @@ func check(m *config.Manifest) int {
 	// Un release sin firma rompe install y update --self. Este es el
 	// chequeo previo, así que se avisa acá y no al fallar la descarga.
 	if sinFirma := releases.Render(releases.Check(m)); sinFirma > 0 {
-		cli.Warn(fmt.Sprintf("%d release(s) sin firma", sinFirma))
+		output.Warn(fmt.Sprintf("%d release(s) sin firma", sinFirma))
 	}
 	return 0
 }
@@ -491,18 +494,18 @@ func check(m *config.Manifest) int {
 func checkPlugins() {
 	m, err := plugins.LoadDefault()
 	if err != nil {
-		cli.Warn("plugins: " + err.Error())
+		output.Warn("plugins: " + err.Error())
 		return
 	}
 	for _, entry := range m.Plugins {
 		local := plugins.InstalledVersion(plugins.DefaultPluginsDir(), entry)
 		switch {
 		case local == "":
-			cli.Warn(fmt.Sprintf("%s: no instalado", entry.ID))
+			output.Warn(fmt.Sprintf("%s: no instalado", entry.ID))
 		case local == entry.Version:
-			cli.Ok(fmt.Sprintf("%s: %s", entry.ID, local))
+			output.Ok(fmt.Sprintf("%s: %s", entry.ID, local))
 		default:
-			cli.Warn(fmt.Sprintf("%s: %s -> %s", entry.ID, local, entry.Version))
+			output.Warn(fmt.Sprintf("%s: %s -> %s", entry.ID, local, entry.Version))
 		}
 	}
 	if names, err := plugins.Scripts(); err == nil {
@@ -517,20 +520,20 @@ func checkDesktop() {
 	ch := channel.Current()
 	remote, err := versioncheck.AUR([]string{"umbriel-git", "noctalia-git"})
 	if err != nil {
-		cli.Warn("escritorio: no se pudo consultar AUR")
+		output.Warn("escritorio: no se pudo consultar AUR")
 		return
 	}
 	for _, pkg := range remote {
 		local := localVersion(pkg.Name)
 		switch {
 		case local == "":
-			cli.Warn(fmt.Sprintf("%s: no instalado (%s)", pkg.Name, ch))
+			output.Warn(fmt.Sprintf("%s: no instalado (%s)", pkg.Name, ch))
 		case compareVersions(local, pkg.Version) == 0:
-			cli.Ok(fmt.Sprintf("%s: %s (%s)", pkg.Name, local, ch))
+			output.Ok(fmt.Sprintf("%s: %s (%s)", pkg.Name, local, ch))
 		case compareVersions(local, pkg.Version) > 0:
-			cli.Ok(fmt.Sprintf("%s: %s (local más nuevo que AUR; %s)", pkg.Name, local, ch))
+			output.Ok(fmt.Sprintf("%s: %s (local más nuevo que AUR; %s)", pkg.Name, local, ch))
 		default:
-			cli.Warn(fmt.Sprintf("%s: %s -> %s (%s)", pkg.Name, local, pkg.Version, ch))
+			output.Warn(fmt.Sprintf("%s: %s -> %s (%s)", pkg.Name, local, pkg.Version, ch))
 		}
 	}
 }
@@ -542,7 +545,7 @@ func desktopUpdate() int {
 	if ch == channel.Stable {
 		pkgs = []string{"umbriel", "noctalia"}
 	}
-	cli.Step("Escritorio")
+	output.Step("Escritorio")
 	fmt.Printf("  canal: %s\n", ch)
 	fmt.Printf("  b3l0w todavía no ejecuta pacman.\n\n")
 	fmt.Printf("  para actualizar:\n    sudo pacman -S %s\n", strings.Join(pkgs, " "))
@@ -550,7 +553,7 @@ func desktopUpdate() int {
 }
 
 func localVersion(pkg string) string {
-	out, err := cli.Run("pacman", "-Q", pkg)
+	out, err := kitsystem.Run("pacman", "-Q", pkg)
 	if err != nil {
 		return ""
 	}
@@ -564,7 +567,7 @@ func localVersion(pkg string) string {
 // compareVersions usa vercmp (pacman): -1 local < remoto, 0 igual,
 // 1 local > remoto. Sin vercmp asume igual para no inventar updates.
 func compareVersions(local, remote string) int {
-	out, err := cli.Run("vercmp", local, remote)
+	out, err := kitsystem.Run("vercmp", local, remote)
 	if err != nil {
 		return 0
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 const (
@@ -20,10 +20,10 @@ const (
 
 // Binary devuelve la ruta del actualizador, o "" si no hay ninguno.
 func Binary() string {
-	if path := cli.CommandPath(cachyName); path != "" {
+	if path := system.CommandPath(cachyName); path != "" {
 		return path
 	}
-	return cli.CommandPath(upstreamName)
+	return system.CommandPath(upstreamName)
 }
 
 // Available dice si hay actualizador del sistema.
@@ -35,7 +35,7 @@ func List() (string, error) {
 	if bin == "" {
 		return "", fmt.Errorf("no hay %s ni %s en el PATH", cachyName, upstreamName)
 	}
-	out, err := cli.RunTimeout(5*time.Minute, bin, "-l")
+	out, err := system.RunTimeout(5*time.Minute, bin, "-l")
 	if err != nil {
 		return out, err
 	}
@@ -78,5 +78,5 @@ func UpdateInteractive() error {
 	if bin == "" {
 		return fmt.Errorf("no hay actualizador del sistema")
 	}
-	return cli.Interactive(bin)
+	return system.Interactive(bin)
 }

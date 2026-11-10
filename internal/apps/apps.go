@@ -17,7 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // MaxAge es cuánto puede tener la DB de pacman antes de negarse a
@@ -44,14 +45,14 @@ func Run(args []string) int {
 	flag := pacmanArgs[0]
 
 	if partialUpgrade(flag) {
-		cli.Fail("eso es un partial upgrade: sincroniza la DB sin actualizar y deja el sistema a medias")
+		output.Fail("eso es un partial upgrade: sincroniza la DB sin actualizar y deja el sistema a medias")
 		fmt.Println("  usá: b3l0w apps -Syu")
 		return 1
 	}
 
 	if instala(flag) && !allowStale {
 		if edad, db, err := OldestSyncDB(); err == nil && edad > MaxAge {
-			cli.Fail(fmt.Sprintf("la base de datos de pacman tiene %s (%s)", humanizar(edad), db))
+			output.Fail(fmt.Sprintf("la base de datos de pacman tiene %s (%s)", humanizar(edad), db))
 			fmt.Println("  actualizá antes de instalar: b3l0w apps -Syu")
 			fmt.Println("  o forzá con --allow-stale")
 			return 1
@@ -74,7 +75,7 @@ func exec(root bool, args ...string) int {
 		nombre = "sudo"
 		full = append([]string{"pacman"}, args...)
 	}
-	if err := cli.Interactive(nombre, full...); err != nil {
+	if err := system.Interactive(nombre, full...); err != nil {
 		return 1
 	}
 	return 0

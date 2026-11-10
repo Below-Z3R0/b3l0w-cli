@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Remove borra un plugin local. Si viene del source de Noctalia, no se
@@ -49,7 +49,7 @@ func Remove(manifestPath, id, pluginsDir string, dryRun bool) error {
 			fmt.Printf("  → deshabilitar %s en Noctalia\n", id)
 			return nil
 		}
-		out, err := cli.RunCombined("noctalia", "msg", "plugins", "disable", id)
+		out, err := system.RunCombined("noctalia", "msg", "plugins", "disable", id)
 		if err != nil {
 			return fmt.Errorf("noctalia disable: %v: %s", err, out)
 		}

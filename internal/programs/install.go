@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
 	"github.com/Below-Z3R0/b3l0w-kit/fetch"
 	"github.com/Below-Z3R0/b3l0w-kit/verify"
+
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // AssetURL arma la URL del asset del último release a partir de la
@@ -84,7 +85,7 @@ func InstallVerified(p config.Program, requireSignature bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := cli.ReplaceFile(tmp, dest); err != nil {
+	if err := system.ReplaceFile(tmp, dest); err != nil {
 		return "", fmt.Errorf("no se pudo escribir %s: %w", dest, err)
 	}
 	return version, nil

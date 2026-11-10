@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // registryTarball es el repo del registry comprimido. Se usa el tarball
@@ -86,7 +86,7 @@ func installFromSource(targets []Entry, dryRun bool) error {
 	}
 	for _, entry := range targets {
 		if !Enabled(entry.ID) {
-			out, err := cli.RunCombined("noctalia", "msg", "plugins", "enable", entry.ID)
+			out, err := system.RunCombined("noctalia", "msg", "plugins", "enable", entry.ID)
 			if err != nil {
 				return fmt.Errorf("noctalia enable %s: %v: %s", entry.ID, err, out)
 			}
@@ -118,10 +118,10 @@ func sourceMeta(entry Entry) (pluginMeta, bool) {
 
 // Enabled lee la salida de `noctalia msg plugins list`.
 func Enabled(id string) bool {
-	if !cli.HaveCommand("noctalia") {
+	if !system.HaveCommand("noctalia") {
 		return false
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", "list")
+	out, err := system.RunCombined("noctalia", "msg", "plugins", "list")
 	if err != nil {
 		return false
 	}

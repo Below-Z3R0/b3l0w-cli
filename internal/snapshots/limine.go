@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Entries lee "Snapshot entries : N" de limine-snapper-info.
 func Entries() (int, error) {
-	out, err := cli.Run("limine-snapper-info")
+	out, err := system.Run("limine-snapper-info")
 	if err != nil {
 		return 0, err
 	}
@@ -47,7 +47,7 @@ func parseEntries(out string) (int, error) {
 
 // IDs devuelve los IDs de limine-snapper-list, de viejo a nuevo.
 func IDs() ([]int, error) {
-	out, err := cli.Run("limine-snapper-list")
+	out, err := system.Run("limine-snapper-list")
 	if err != nil {
 		return nil, err
 	}
@@ -85,10 +85,10 @@ func Prune(keep int) (int, error) {
 	for _, id := range old {
 		args = append(args, strconv.Itoa(id))
 	}
-	if out, err := cli.RunCombined("sudo", args...); err != nil {
+	if out, err := system.RunCombined("sudo", args...); err != nil {
 		return 0, fmt.Errorf("%v: %s", err, out)
 	}
-	if out, err := cli.RunCombined("sudo", "limine-snapper-sync"); err != nil {
+	if out, err := system.RunCombined("sudo", "limine-snapper-sync"); err != nil {
 		return 0, fmt.Errorf("sync: %v: %s", err, out)
 	}
 	return len(old), nil

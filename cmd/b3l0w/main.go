@@ -25,7 +25,11 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-kit/paths"
+	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 func main() {
@@ -88,13 +92,13 @@ func run(args []string) int {
 	// Extensión: b3l0w <nombre> -> b3l0w-<nombre> del directorio privado.
 	if plugins.Find(command) != "" {
 		if err := plugins.Run(command, rest); err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
 		return 0
 	}
 
-	cli.Fail(fmt.Sprintf("comando desconocido: %s", command))
+	output.Fail(fmt.Sprintf("comando desconocido: %s", command))
 	fmt.Println()
 	usage()
 	return 1
@@ -102,9 +106,9 @@ func run(args []string) int {
 
 // withManifest carga el manifiesto una vez y se lo pasa al comando.
 func withManifest(fn func(*config.Manifest) int) int {
-	manifest, err := config.Load(cli.ManifestPath())
+	manifest, err := config.Load(paths.ManifestPath())
 	if err != nil {
-		cli.Fail(fmt.Sprintf("no se pudo leer %s: %v", cli.ManifestPath(), err))
+		output.Fail(fmt.Sprintf("no se pudo leer %s: %v", paths.ManifestPath(), err))
 		return 1
 	}
 	return fn(manifest)
@@ -152,12 +156,12 @@ func updateCommand(args []string) int {
 			fmt.Println("uso: b3l0w update [--self] [--system|--programs|--plugins|--services|--dotfiles] [--check] [--yes] [--dry-run] [--force]")
 			return 0
 		default:
-			cli.Fail(fmt.Sprintf("opción desconocida: %s", arg))
+			output.Fail(fmt.Sprintf("opción desconocida: %s", arg))
 			return 1
 		}
 	}
 	if opts.System && opts.Programs {
-		cli.Fail("--system y --programs son excluyentes; sin banderas se hacen las dos")
+		output.Fail("--system y --programs son excluyentes; sin banderas se hacen las dos")
 		return 1
 	}
 	return withManifest(func(m *config.Manifest) int { return update.Run(m, opts) })
@@ -165,7 +169,7 @@ func updateCommand(args []string) int {
 
 func list() int {
 	code := withManifest(func(m *config.Manifest) int {
-		cli.Step("Programas registrados")
+		output.Step("Programas registrados")
 		if len(m.Programs) == 0 {
 			fmt.Println("  (ninguno)")
 			return 0
@@ -173,11 +177,11 @@ func list() int {
 		for _, status := range programs.Statuses(m) {
 			switch {
 			case !status.Installed:
-				fmt.Printf("  %-14s %s\n", status.Name, cli.Dim("no instalado"))
+				fmt.Printf("  %-14s %s\n", status.Name, output.Dim("no instalado"))
 			case status.Err != "":
-				fmt.Printf("  %-14s %s\n", status.Name, cli.Dim("error: "+status.Err))
+				fmt.Printf("  %-14s %s\n", status.Name, output.Dim("error: "+status.Err))
 			default:
-				fmt.Printf("  %-14s %-8s %s\n", status.Name, status.Version, cli.Dim(status.Bin))
+				fmt.Printf("  %-14s %-8s %s\n", status.Name, status.Version, output.Dim(status.Bin))
 			}
 		}
 		return 0
@@ -191,7 +195,7 @@ func list() int {
 
 func uninstallCommand(args []string) int {
 	if len(args) == 0 {
-		cli.Fail("falta el programa: b3l0w uninstall <nombre>")
+		output.Fail("falta el programa: b3l0w uninstall <nombre>")
 		return 1
 	}
 	name := args[0]
@@ -209,10 +213,10 @@ func uninstallCommand(args []string) int {
 		}
 		path, err := programs.Uninstall(name, m)
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
-		cli.Ok(fmt.Sprintf("%s desinstalado (%s)", name, path))
+		output.Ok(fmt.Sprintf("%s desinstalado (%s)", name, path))
 		return 0
 	})
 }
@@ -222,7 +226,7 @@ func uninstallCommand(args []string) int {
 // programa (por ejemplo `kitty-shapes install`).
 func installCommand(args []string) int {
 	if len(args) == 0 {
-		cli.Fail("falta el programa: b3l0w install <nombre>  (o `b3l0w install system`)")
+		output.Fail("falta el programa: b3l0w install <nombre>  (o `b3l0w install system`)")
 		return 1
 	}
 	if args[0] == "system" {
@@ -245,28 +249,28 @@ func installCommand(args []string) int {
 		program := m.Get(name)
 		if program == nil {
 			if source == "" {
-				cli.Fail(fmt.Sprintf("%s no está registrado (b3l0w install %s --source=github:owner/repo --asset=archivo)", name, name))
+				output.Fail(fmt.Sprintf("%s no está registrado (b3l0w install %s --source=github:owner/repo --asset=archivo)", name, name))
 				return 1
 			}
 			m.AddProgram(config.Program{Name: name, Source: source, Asset: asset})
-			if err := m.Save(cli.ManifestPath()); err != nil {
-				cli.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
+			if err := m.Save(paths.ManifestPath()); err != nil {
+				output.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
 				return 1
 			}
 			program = m.Get(name)
-			cli.Ok(fmt.Sprintf("%s registrado", name))
+			output.Ok(fmt.Sprintf("%s registrado", name))
 		}
-		cli.Step(fmt.Sprintf("Instalando %s", name))
+		output.Step(fmt.Sprintf("Instalando %s", name))
 		if insecure {
-			cli.Warn("--insecure: se salta la verificación de firma")
+			output.Warn("--insecure: se salta la verificación de firma")
 		}
 		version, err := programs.InstallVerified(*program, !insecure)
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
 		dest, _ := programs.InstallPath(name)
-		cli.Ok(fmt.Sprintf("%s %s en %s", name, version, dest))
+		output.Ok(fmt.Sprintf("%s %s en %s", name, version, dest))
 		return 0
 	})
 }
@@ -307,26 +311,26 @@ func installSystemCommand(args []string) int {
 		case arg == "--profile" || strings.HasPrefix(arg, "--profile="):
 			v, ok := value()
 			if !ok {
-				cli.Fail("--profile necesita un valor")
+				output.Fail("--profile necesita un valor")
 				return 1
 			}
 			profiles = strings.Split(v, ",")
 		case arg == "--file" || strings.HasPrefix(arg, "--file="):
 			v, ok := value()
 			if !ok {
-				cli.Fail("--file necesita un valor")
+				output.Fail("--file necesita un valor")
 				return 1
 			}
 			file = v
 		case arg == "--dotfiles" || strings.HasPrefix(arg, "--dotfiles="):
 			v, ok := value()
 			if !ok {
-				cli.Fail("--dotfiles necesita un valor")
+				output.Fail("--dotfiles necesita un valor")
 				return 1
 			}
 			dotfiles = v
 		default:
-			cli.Fail(fmt.Sprintf("opción desconocida: %s", arg))
+			output.Fail(fmt.Sprintf("opción desconocida: %s", arg))
 			return 1
 		}
 	}
@@ -339,13 +343,13 @@ func installSystemCommand(args []string) int {
 		def, err = systemdef.LoadRemote()
 	}
 	if err != nil {
-		cli.Fail(fmt.Sprintf("no se pudo leer la definición: %v", err))
+		output.Fail(fmt.Sprintf("no se pudo leer la definición: %v", err))
 		return 1
 	}
 
 	profile, err := def.Merge(profiles)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 
@@ -359,21 +363,21 @@ func installSystemCommand(args []string) int {
 	printPlan(profiles, plan)
 
 	if !apply {
-		fmt.Printf("\n  %s\n", cli.Dim("simulación: no se cambió nada. Para aplicarlo: b3l0w install system --apply"))
+		fmt.Printf("\n  %s\n", output.Dim("simulación: no se cambió nada. Para aplicarlo: b3l0w install system --apply"))
 		return 0
 	}
 
-	cli.Step("Aplicando")
+	output.Step("Aplicando")
 	if err := systeminstall.Apply(plan, systeminstall.Options{Yes: yes}); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Ok("sistema al día")
+	output.Ok("sistema al día")
 	return 0
 }
 
 func printPlan(profiles []string, plan *systeminstall.Plan) {
-	cli.Step(fmt.Sprintf("Sistema · perfil %s", strings.Join(profiles, "+")))
+	output.Step(fmt.Sprintf("Sistema · perfil %s", strings.Join(profiles, "+")))
 
 	list := func(title string, items []string) {
 		if len(items) == 0 {
@@ -429,7 +433,7 @@ func programCommand(args []string) int {
 		}
 	}
 	if name == "" {
-		cli.Fail("falta el nombre del programa")
+		output.Fail("falta el nombre del programa")
 		return 1
 	}
 
@@ -437,24 +441,24 @@ func programCommand(args []string) int {
 		switch action {
 		case "add":
 			if !m.AddProgram(config.Program{Name: name, Source: source, Asset: asset}) {
-				cli.Warn(fmt.Sprintf("%s ya estaba registrado", name))
+				output.Warn(fmt.Sprintf("%s ya estaba registrado", name))
 				return 0
 			}
 		case "remove":
 			if !m.Remove(name) {
-				cli.Fail(fmt.Sprintf("%s no está registrado", name))
+				output.Fail(fmt.Sprintf("%s no está registrado", name))
 				return 1
 			}
 		default:
-			cli.Fail(fmt.Sprintf("acción desconocida: %s", action))
+			output.Fail(fmt.Sprintf("acción desconocida: %s", action))
 			return 1
 		}
 
-		if err := m.Save(cli.ManifestPath()); err != nil {
-			cli.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
+		if err := m.Save(paths.ManifestPath()); err != nil {
+			output.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
 			return 1
 		}
-		cli.Ok(fmt.Sprintf("%s: %s", action, name))
+		output.Ok(fmt.Sprintf("%s: %s", action, name))
 		return 0
 	})
 }
@@ -467,36 +471,36 @@ func systemCommand(args []string) int {
 	case "diff":
 		remote, err := systemdef.RemoteBytes()
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
 		local := systemdef.BuiltinBytes()
 		if sha256.Sum256(remote) == sha256.Sum256(local) {
-			cli.Ok("system.json: embed y remoto iguales")
+			output.Ok("system.json: embed y remoto iguales")
 			return 0
 		}
-		cli.Warn(fmt.Sprintf("system.json: embed %d bytes, remoto %d bytes (distintos)", len(local), len(remote)))
-		cli.Warn("corré `b3l0w system pull` en el repo y reconstruí el binario")
+		output.Warn(fmt.Sprintf("system.json: embed %d bytes, remoto %d bytes (distintos)", len(local), len(remote)))
+		output.Warn("corré `b3l0w system pull` en el repo y reconstruí el binario")
 		return 1
 	case "pull":
 		remote, err := systemdef.RemoteBytes()
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
 		path := filepath.Join("internal", "systemdef", "system.json")
 		if _, err := os.Stat(filepath.Dir(path)); err != nil {
-			cli.Fail("system pull solo funciona dentro del repo b3l0w-cli")
+			output.Fail("system pull solo funciona dentro del repo b3l0w-cli")
 			return 1
 		}
 		if err := os.WriteFile(path, remote, 0o644); err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
-		cli.Ok("system.json actualizado; reconstruí el binario")
+		output.Ok("system.json actualizado; reconstruí el binario")
 		return 0
 	default:
-		cli.Fail("uso: b3l0w system diff|pull")
+		output.Fail("uso: b3l0w system diff|pull")
 		return 1
 	}
 }
@@ -529,20 +533,20 @@ func channelCommand(args []string) int {
 		return 0
 	}
 	if err := channel.Set(args[0]); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Ok("canal: " + args[0])
+	output.Ok("canal: " + args[0])
 	return 0
 }
 
 func pluginExecCommand(args []string) int {
 	if len(args) == 0 {
-		cli.Fail("falta el script: b3l0w plugin-exec <script> [args...]")
+		output.Fail("falta el script: b3l0w plugin-exec <script> [args...]")
 		return 1
 	}
 	if err := plugins.ExecScript(args[0], args[1:]); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
@@ -603,21 +607,21 @@ func servicesInstall(args []string) int {
 	manifest, stateDir, rest, dryRun := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	id := firstPositional(rest)
 	if id == "" {
-		cli.Fail("falta el servicio: b3l0w services install <id>")
+		output.Fail("falta el servicio: b3l0w services install <id>")
 		return 1
 	}
 	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + id)
+		output.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	if svc.State == "planned" {
-		cli.Fail(svc.ID + " todavía no está listo")
+		output.Fail(svc.ID + " todavía no está listo")
 		return 1
 	}
 	variant := ""
@@ -628,7 +632,7 @@ func servicesInstall(args []string) int {
 		case strings.HasPrefix(arg, "--variant="):
 			variant = strings.TrimPrefix(arg, "--variant=")
 		case strings.HasPrefix(arg, "-"):
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		}
 	}
@@ -639,18 +643,18 @@ func servicesInstall(args []string) int {
 	}
 	state, err := in.Install(*svc, variant, dryRun)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if state == nil || dryRun {
 		return 0
 	}
-	cli.Ok(fmt.Sprintf("%s instalado (%s, %s)", state.ID, state.Variant, state.Health))
+	output.Ok(fmt.Sprintf("%s instalado (%s, %s)", state.ID, state.Variant, state.Health))
 	if state.Provider != "" {
 		fmt.Printf("  provider: %s\n", state.Provider)
 	}
 	if svc.Models != "" {
-		fmt.Printf("  modelos: %s\n", cli.Dim("correr "+svc.Models))
+		fmt.Printf("  modelos: %s\n", output.Dim("correr "+svc.Models))
 	}
 	return 0
 }
@@ -660,7 +664,7 @@ func servicesUpdate(args []string) int {
 	manifest, stateDir, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	yes := false
@@ -679,7 +683,7 @@ func servicesUpdate(args []string) int {
 				only = arg
 				continue
 			}
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		}
 	}
@@ -690,10 +694,10 @@ func servicesUpdate(args []string) int {
 		StateDir: stateDir,
 	}
 	if len(states) == 0 {
-		cli.Warn("no hay servicios instalados")
+		output.Warn("no hay servicios instalados")
 		return 0
 	}
-	cli.Step("Actualizando servicios")
+	output.Step("Actualizando servicios")
 	for _, state := range states {
 		if only != "" && state.ID != only {
 			continue
@@ -704,11 +708,11 @@ func servicesUpdate(args []string) int {
 		}
 		newState, err := in.Update(*svc, state, rebuild, yes)
 		if err != nil {
-			cli.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
 			continue
 		}
 		if newState.UpdatedAt != state.UpdatedAt {
-			cli.Ok(fmt.Sprintf("%s actualizado", state.ID))
+			output.Ok(fmt.Sprintf("%s actualizado", state.ID))
 		}
 	}
 	return 0
@@ -719,23 +723,23 @@ func servicesStatus(args []string) int {
 	manifest, stateDir, _, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	states, _ := services.ListStates(stateDir)
 	if len(states) == 0 {
-		cli.Warn("no hay servicios instalados")
+		output.Warn("no hay servicios instalados")
 		return 0
 	}
 	docker := services.NewDocker()
-	cli.Step("Estado de los servicios")
+	output.Step("Estado de los servicios")
 	for _, state := range states {
 		svc := m.Find(state.ID)
 		name := state.ID
 		if svc != nil {
 			name = svc.Name
 		}
-		fmt.Printf("  %-10s %-8s %-10s %s\n", state.ID, state.Variant, state.Health, cli.Dim(name))
+		fmt.Printf("  %-10s %-8s %-10s %s\n", state.ID, state.Variant, state.Health, output.Dim(name))
 		if state.Provider != "" {
 			fmt.Printf("  %-10s provider: %s\n", "", state.Provider)
 		}
@@ -752,7 +756,7 @@ func servicesStatus(args []string) int {
 			continue
 		}
 		for _, p := range ps {
-			fmt.Printf("  %-10s %-12s %s\n", "", p.Name, cli.Dim(p.State+" "+p.Health))
+			fmt.Printf("  %-10s %-12s %s\n", "", p.Name, output.Dim(p.State+" "+p.Health))
 		}
 	}
 	return 0
@@ -812,7 +816,7 @@ func servicesCommand(args []string) int {
 	case "prune":
 		return servicesPrune(args[1:])
 	}
-	cli.Fail("uso: b3l0w services [list|search|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]\n" +
+	output.Fail("uso: b3l0w services [list|search|hardware|images|sync|install|update|status|doctor|logs|restart|stop|remove|variant|rollback|prune]\n" +
 		aliasHelp("services"))
 	return 1
 }
@@ -822,22 +826,22 @@ func servicesRollback(args []string) int {
 	manifest, stateDir, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	id := firstPositional(rest)
 	if id == "" {
-		cli.Fail("falta el servicio: b3l0w services rollback <id>")
+		output.Fail("falta el servicio: b3l0w services rollback <id>")
 		return 1
 	}
 	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + id)
+		output.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	state, err := services.LoadState(stateDir, svc.ID)
 	if err != nil {
-		cli.Fail(svc.ID + " no está instalado")
+		output.Fail(svc.ID + " no está instalado")
 		return 1
 	}
 	in := &services.Installer{
@@ -847,10 +851,10 @@ func servicesRollback(args []string) int {
 	}
 	newState, err := in.Rollback(*svc, state)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%s volvió a %s (%s)", newState.ID, newState.Tag, newState.Health))
+	output.Ok(fmt.Sprintf("%s volvió a %s (%s)", newState.ID, newState.Tag, newState.Health))
 	return 0
 }
 
@@ -858,11 +862,11 @@ func servicesRollback(args []string) int {
 func servicesPrune(args []string) int {
 	out, err := services.NewDocker().PruneImages()
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if out == "" {
-		cli.Ok("no hay imágenes colgantes")
+		output.Ok("no hay imágenes colgantes")
 		return 0
 	}
 	fmt.Println(out)
@@ -874,7 +878,7 @@ func servicesDoctor(args []string) int {
 	manifest, stateDir, _, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	states, _ := services.ListStates(stateDir)
@@ -891,17 +895,17 @@ func servicesLogs(args []string) int {
 	manifest, _, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	id := firstPositional(rest)
 	if id == "" {
-		cli.Fail("falta el servicio: b3l0w services logs <id>")
+		output.Fail("falta el servicio: b3l0w services logs <id>")
 		return 1
 	}
 	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + id)
+		output.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	tail := 100
@@ -911,12 +915,12 @@ func servicesLogs(args []string) int {
 		case strings.HasPrefix(arg, "--tail="):
 			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--tail="))
 			if err != nil || n < 1 {
-				cli.Fail("--tail debe ser un entero positivo")
+				output.Fail("--tail debe ser un entero positivo")
 				return 1
 			}
 			tail = n
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		default:
 			service = arg
@@ -925,7 +929,7 @@ func servicesLogs(args []string) int {
 	dir := serviceDir(*svc)
 	out, err := services.NewDocker().Logs(dir, services.ComposeFiles(*svc, ""), service, tail)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	fmt.Print(out)
@@ -937,16 +941,16 @@ func servicesSimple(args []string, action string) int {
 	manifest, _, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if len(rest) == 0 {
-		cli.Fail("falta el servicio: b3l0w services " + action + " <id>")
+		output.Fail("falta el servicio: b3l0w services " + action + " <id>")
 		return 1
 	}
 	svc := m.Find(rest[0])
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + rest[0])
+		output.Fail("servicio desconocido: " + rest[0])
 		return 1
 	}
 	dir := serviceDir(*svc)
@@ -959,10 +963,10 @@ func servicesSimple(args []string, action string) int {
 		err2 = docker.Stop(dir, files)
 	}
 	if err2 != nil {
-		cli.Fail(err2.Error())
+		output.Fail(err2.Error())
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%s: %s", svc.ID, action))
+	output.Ok(fmt.Sprintf("%s: %s", svc.ID, action))
 	return 0
 }
 
@@ -971,17 +975,17 @@ func servicesRemove(args []string) int {
 	manifest, stateDir, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	id := firstPositional(rest)
 	if id == "" {
-		cli.Fail("falta el servicio: b3l0w services remove <id>")
+		output.Fail("falta el servicio: b3l0w services remove <id>")
 		return 1
 	}
 	svc := m.Find(id)
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + id)
+		output.Fail("servicio desconocido: " + id)
 		return 1
 	}
 	purge := false
@@ -990,24 +994,24 @@ func servicesRemove(args []string) int {
 		case arg == "--purge":
 			purge = true
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		default:
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		}
 	}
 	dir := serviceDir(*svc)
 	files := services.ComposeFiles(*svc, "")
 	if err := services.NewDocker().Remove(dir, files, purge); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	os.Remove(filepath.Join(stateDir, svc.ID+".json"))
 	if purge {
-		cli.Ok(fmt.Sprintf("%s removido con sus volúmenes", svc.ID))
+		output.Ok(fmt.Sprintf("%s removido con sus volúmenes", svc.ID))
 	} else {
-		cli.Ok(fmt.Sprintf("%s removido (los volúmenes quedan)", svc.ID))
+		output.Ok(fmt.Sprintf("%s removido (los volúmenes quedan)", svc.ID))
 	}
 	return 0
 }
@@ -1017,16 +1021,16 @@ func servicesVariant(args []string) int {
 	manifest, stateDir, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if len(rest) < 2 {
-		cli.Fail("uso: b3l0w services variant <id> <variante>")
+		output.Fail("uso: b3l0w services variant <id> <variante>")
 		return 1
 	}
 	svc := m.Find(firstPositional(rest))
 	if svc == nil {
-		cli.Fail("servicio desconocido: " + firstPositional(rest))
+		output.Fail("servicio desconocido: " + firstPositional(rest))
 		return 1
 	}
 	want := ""
@@ -1038,12 +1042,12 @@ func servicesVariant(args []string) int {
 	}
 	state, err := services.LoadState(stateDir, svc.ID)
 	if err != nil {
-		cli.Fail(svc.ID + " no está instalado")
+		output.Fail(svc.ID + " no está instalado")
 		return 1
 	}
 	tags, err := services.NewRegistry("").Tags(svc.Image)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	published := services.AvailableVariants(tags, svc.Variants)
@@ -1055,16 +1059,16 @@ func servicesVariant(args []string) int {
 		}
 	}
 	if !found {
-		cli.Fail(fmt.Sprintf("%s: la variante %q no está publicada (hay: %s)", svc.ID, want, strings.Join(published, ", ")))
+		output.Fail(fmt.Sprintf("%s: la variante %q no está publicada (hay: %s)", svc.ID, want, strings.Join(published, ", ")))
 		return 1
 	}
 	tag := services.TagFor(*svc, want, tags)
 	image := svc.Image + ":" + tag
-	cli.Step(fmt.Sprintf("%s → %s", svc.ID, want))
+	output.Step(fmt.Sprintf("%s → %s", svc.ID, want))
 	fmt.Printf("  imagen: %s\n", image)
 	fmt.Println("  → pull y recreate del stack")
 	if err := services.NewDocker().Pull(svc.Image, tag); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	digest, _ := services.NewDocker().ImageDigest(image)
@@ -1076,10 +1080,10 @@ func servicesVariant(args []string) int {
 	state.Digest = digest
 	state.UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := state.Save(stateDir); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%s ahora usa %s (%s)", svc.ID, want, tag))
+	output.Ok(fmt.Sprintf("%s ahora usa %s (%s)", svc.ID, want, tag))
 	return 0
 }
 
@@ -1097,26 +1101,26 @@ func servicesSync(args []string) int {
 	// Primero el "pacman -Sy": bajar la DB remota al caché.
 	if explicit == "" {
 		if _, err := registry.Sync(registry.Services, services.Embedded()); err != nil {
-			cli.Warn(err.Error())
+			output.Warn(err.Error())
 		}
 		explicit = registry.CachePath(registry.Services)
 	}
 	manifest := explicit
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	changed, err := services.Sync(m, manifest, services.NewRegistry(""))
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if changed == 0 {
-		cli.Ok("manifiesto al día")
+		output.Ok("manifiesto al día")
 		return 0
 	}
-	cli.Ok(fmt.Sprintf("manifiesto actualizado (%d servicios)", changed))
+	output.Ok(fmt.Sprintf("manifiesto actualizado (%d servicios)", changed))
 	return 0
 }
 
@@ -1124,7 +1128,7 @@ func servicesList(args []string) int {
 	manifest, stateDir, _, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	states, _ := services.ListStates(stateDir)
@@ -1143,7 +1147,7 @@ func servicesSearch(args []string) int {
 	manifest, _, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return services.RenderSearch(m, strings.Join(rest, " "))
@@ -1153,7 +1157,7 @@ func servicesHardware(args []string) int {
 	manifest, _, _, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	st := services.CheckRegistry(m, services.NewRegistry(""))
@@ -1165,7 +1169,7 @@ func servicesImages(args []string) int {
 	manifest, _, rest, _ := servicePaths(args)
 	m, err := services.LoadManifest(manifest)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	reg := services.NewRegistry("")
@@ -1177,10 +1181,10 @@ func servicesImages(args []string) int {
 		if svc.Image == "" {
 			continue
 		}
-		cli.Step(svc.ID + " · " + svc.Image)
+		output.Step(svc.ID + " · " + svc.Image)
 		tags, err := reg.Tags(svc.Image)
 		if err != nil {
-			cli.Warn(err.Error())
+			output.Warn(err.Error())
 			continue
 		}
 		for _, t := range tags {
@@ -1202,7 +1206,7 @@ func pluginsCommand(args []string) int {
 	}
 	switch args[0] {
 	case "sync":
-		cli.Fail("plugins sync fue eliminado; usá b3l0w plugins build")
+		output.Fail("plugins sync fue eliminado; usá b3l0w plugins build")
 		return 1
 	case "build":
 		return pluginsBuild(args[1:])
@@ -1225,7 +1229,7 @@ func pluginsCommand(args []string) int {
 	case "search":
 		return pluginsSearch(args[1:])
 	}
-	cli.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]\n" +
+	output.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]\n" +
 		aliasHelp("plugins"))
 	return 1
 }
@@ -1237,9 +1241,9 @@ func pluginsCommand(args []string) int {
 // de Noctalia) son cosas distintas. Por eso tienen su propio comando.
 func pluginsExtensions() int {
 	names := plugins.Discover()
-	cli.Step("Extensiones del CLI")
+	output.Step("Extensiones del CLI")
 	if len(names) == 0 {
-		fmt.Printf("  (ninguna en %s)\n", cli.PluginsDir())
+		fmt.Printf("  (ninguna en %s)\n", paths.PluginsDir())
 		return 0
 	}
 	sort.Strings(names)
@@ -1286,7 +1290,7 @@ func loadPluginManifest(path string) (*plugins.Manifest, int) {
 		if origen == "" {
 			origen = "el registry"
 		}
-		cli.Fail(fmt.Sprintf("no se pudo leer %s: %v", origen, err))
+		output.Fail(fmt.Sprintf("no se pudo leer %s: %v", origen, err))
 		return nil, 1
 	}
 	return m, 0
@@ -1302,27 +1306,27 @@ func pluginsBuild(args []string) int {
 	}
 	entries, err := plugins.Collect(registry)
 	if err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	if check {
 		ok, err := plugins.CheckCatalog(registry, entries)
 		if err != nil {
-			cli.Fail(err.Error())
+			output.Fail(err.Error())
 			return 1
 		}
 		if !ok {
-			cli.Fail("catalog.toml desactualizado; corré b3l0w plugins build")
+			output.Fail("catalog.toml desactualizado; corré b3l0w plugins build")
 			return 1
 		}
-		cli.Ok("catalog.toml al día")
+		output.Ok("catalog.toml al día")
 		return 0
 	}
 	if err := plugins.Build(registry, manifest, entries); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%d plugins: catalog.toml y plugins.json actualizados", len(entries)))
+	output.Ok(fmt.Sprintf("%d plugins: catalog.toml y plugins.json actualizados", len(entries)))
 	return 0
 }
 
@@ -1341,20 +1345,20 @@ func pluginsRelease(args []string) int {
 		case strings.HasPrefix(arg, "--api="):
 			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--api="))
 			if err != nil || n < 1 {
-				cli.Fail("--api debe ser un entero positivo")
+				output.Fail("--api debe ser un entero positivo")
 				return 1
 			}
 			targetAPI = n
 		case strings.HasPrefix(arg, "--plugin="):
 			slugs = append(slugs, strings.TrimPrefix(arg, "--plugin="))
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("flag desconocido: " + arg)
+			output.Fail("flag desconocido: " + arg)
 			return 1
 		default:
 			slugs = append(slugs, arg)
 		}
 	}
-	if !yes && !dryRun && !cli.Confirm("Release plugins a main? [Y/n]", yes, true) {
+	if !yes && !dryRun && !confirm.Confirm("Release plugins a main? [Y/n]", yes, true) {
 		return 0
 	}
 	if err := plugins.Release(plugins.ReleaseOptions{
@@ -1365,7 +1369,7 @@ func pluginsRelease(args []string) int {
 		DryRun:       dryRun,
 		Push:         push,
 	}); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
@@ -1382,7 +1386,7 @@ func pluginsDisable(args []string) int {
 func pluginsToggle(args []string, enable bool) int {
 	_, _, manifest, _, rest, dryRun := pluginPaths(args)
 	if len(rest) == 0 {
-		cli.Fail("falta el id: b3l0w plugins enable|disable <autor/nombre>")
+		output.Fail("falta el id: b3l0w plugins enable|disable <autor/nombre>")
 		return 1
 	}
 	id := rest[0]
@@ -1398,7 +1402,7 @@ func pluginsToggle(args []string, enable bool) int {
 		}
 	}
 	if !found {
-		cli.Fail("plugin no encontrado: " + id)
+		output.Fail("plugin no encontrado: " + id)
 		return 1
 	}
 	action := "disable"
@@ -1409,16 +1413,16 @@ func pluginsToggle(args []string, enable bool) int {
 		fmt.Printf("  → %s %s\n", action, id)
 		return 0
 	}
-	if !cli.HaveCommand("noctalia") {
-		cli.Fail("noctalia no está en PATH")
+	if !kitsystem.HaveCommand("noctalia") {
+		output.Fail("noctalia no está en PATH")
 		return 1
 	}
-	out, err := cli.RunCombined("noctalia", "msg", "plugins", action, id)
+	out, err := kitsystem.RunCombined("noctalia", "msg", "plugins", action, id)
 	if err != nil {
-		cli.Fail(fmt.Sprintf("noctalia %s: %v: %s", action, err, out))
+		output.Fail(fmt.Sprintf("noctalia %s: %v: %s", action, err, out))
 		return 1
 	}
-	cli.Ok(fmt.Sprintf("%s %s", action, id))
+	output.Ok(fmt.Sprintf("%s %s", action, id))
 	return 0
 }
 
@@ -1433,7 +1437,7 @@ func pluginsInstall(args []string) int {
 		id = rest[0]
 	}
 	if err := plugins.Install(m, id, noctalia, dryRun); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
@@ -1450,34 +1454,34 @@ func pluginsUpdate(args []string) int {
 		id = rest[0]
 	}
 	if err := plugins.Update(m, id, noctalia, dryRun); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
 }
 
 func setupCommand() int {
-	cli.Step("Setup de b3l0w")
+	output.Step("Setup de b3l0w")
 	ensureRepo()
 	ensureKeyring()
 	avisarBinarioViejo()
 	ensureLauncher()
 	if err := plugins.EnsureSource(); err != nil {
-		cli.Warn("source: " + err.Error())
+		output.Warn("source: " + err.Error())
 	} else {
-		cli.Ok("source " + plugins.SourceName)
+		output.Ok("source " + plugins.SourceName)
 	}
 	if plugins.HasSource(plugins.SourceName) {
 		if err := plugins.UpdateSource(plugins.SourceName); err != nil {
-			cli.Warn("plugins: " + err.Error())
+			output.Warn("plugins: " + err.Error())
 		} else {
-			cli.Ok("plugins actualizados")
+			output.Ok("plugins actualizados")
 		}
 	}
 	if names, err := plugins.Scripts(); err != nil {
-		cli.Warn("backends: " + err.Error())
+		output.Warn("backends: " + err.Error())
 	} else {
-		cli.Ok(fmt.Sprintf("%d backends embebidos", len(names)))
+		output.Ok(fmt.Sprintf("%d backends embebidos", len(names)))
 	}
 	return withManifest(doctor.Run)
 }
@@ -1485,7 +1489,7 @@ func setupCommand() int {
 func pluginsInfo(args []string) int {
 	_, _, manifest, noctalia, rest, _ := pluginPaths(args)
 	if len(rest) == 0 {
-		cli.Fail("falta el id: b3l0w plugins info <autor/nombre>")
+		output.Fail("falta el id: b3l0w plugins info <autor/nombre>")
 		return 1
 	}
 	m, code := loadPluginManifest(manifest)
@@ -1496,7 +1500,7 @@ func pluginsInfo(args []string) int {
 		if entry.ID != rest[0] {
 			continue
 		}
-		cli.Step(entry.ID)
+		output.Step(entry.ID)
 		fmt.Printf("  nombre:     %s\n", entry.Name)
 		fmt.Printf("  versión:    %s\n", entry.Version)
 		fmt.Printf("  plugin_api: %d\n", entry.PluginAPI)
@@ -1514,7 +1518,7 @@ func pluginsInfo(args []string) int {
 		}
 		return 0
 	}
-	cli.Fail("plugin no encontrado: " + rest[0])
+	output.Fail("plugin no encontrado: " + rest[0])
 	return 1
 }
 
@@ -1522,7 +1526,7 @@ func pluginsSearch(args []string) int {
 	_, _, manifest, _, rest, _ := pluginPaths(args)
 	q := strings.ToLower(strings.Join(rest, " "))
 	if q == "" {
-		cli.Fail("falta la búsqueda: b3l0w plugins search <texto>")
+		output.Fail("falta la búsqueda: b3l0w plugins search <texto>")
 		return 1
 	}
 	m, code := loadPluginManifest(manifest)
@@ -1537,7 +1541,7 @@ func pluginsSearch(args []string) int {
 		}
 	}
 	if found == 0 {
-		cli.Warn("sin resultados")
+		output.Warn("sin resultados")
 	}
 	return 0
 }
@@ -1545,11 +1549,11 @@ func pluginsSearch(args []string) int {
 func pluginsRemove(args []string) int {
 	_, _, manifest, noctalia, rest, dryRun := pluginPaths(args)
 	if len(rest) == 0 {
-		cli.Fail("falta el id: b3l0w plugins remove <autor/nombre>")
+		output.Fail("falta el id: b3l0w plugins remove <autor/nombre>")
 		return 1
 	}
 	if err := plugins.Remove(manifest, rest[0], noctalia, dryRun); err != nil {
-		cli.Fail(err.Error())
+		output.Fail(err.Error())
 		return 1
 	}
 	return 0
@@ -1561,7 +1565,7 @@ func pluginsList(args []string) int {
 	if m == nil {
 		return code
 	}
-	cli.Step("Plugins del registry")
+	output.Step("Plugins del registry")
 	for _, entry := range m.Plugins {
 		local := plugins.InstalledVersion(noctalia, entry)
 		origin := plugins.Origin(noctalia, entry)
@@ -1571,13 +1575,13 @@ func pluginsList(args []string) int {
 		}
 		switch {
 		case local == "":
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim("no instalado"))
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, output.Dim("no instalado"))
 		case local != entry.Version:
 			// La versión instalada difiere de la del catálogo: Noctalia
 			// chose una revisión compatible con su rango de API.
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, local, cli.Dim(fmt.Sprintf("%s/%s (catálogo %s)", origin, state, entry.Version)))
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, local, output.Dim(fmt.Sprintf("%s/%s (catálogo %s)", origin, state, entry.Version)))
 		default:
-			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, cli.Dim(fmt.Sprintf("ok %s/%s", origin, state)))
+			fmt.Printf("  %-24s %-8s %s\n", entry.ID, entry.Version, output.Dim(fmt.Sprintf("ok %s/%s", origin, state)))
 		}
 	}
 	return 0
@@ -1638,5 +1642,5 @@ b3l0w program, b3l0w system, b3l0w extensions.
 
 Las extensiones son b3l0w-<nombre> en %s
 (no se ejecutan desde el PATH).
-`, version.Version, cli.PluginsDir())
+`, version.Version, paths.PluginsDir())
 }

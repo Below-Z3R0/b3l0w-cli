@@ -7,7 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // Installer instala un servicio: pull de la imagen, up del stack,
@@ -91,8 +92,8 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 	tag := TagFor(svc, chosen, tags)
 	image := svc.Image + ":" + tag
 
-	cli.Step(fmt.Sprintf("%s · %s", svc.ID, chosen))
-	fmt.Printf("  %s\n", cli.Dim(reason))
+	output.Step(fmt.Sprintf("%s · %s", svc.ID, chosen))
+	fmt.Printf("  %s\n", output.Dim(reason))
 	fmt.Printf("  imagen: %s\n", image)
 	if len(published) > 1 {
 		fmt.Printf("  variantes: %s\n", strings.Join(published, ", "))
@@ -107,7 +108,7 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 		fmt.Printf("  compose: %s\n", strings.Join(files, " + "))
 	}
 	if svc.Models != "" {
-		fmt.Printf("  modelos: %s\n", cli.Dim("los instala "+svc.Models))
+		fmt.Printf("  modelos: %s\n", output.Dim("los instala "+svc.Models))
 	}
 
 	if dryRun {
@@ -246,7 +247,7 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	localDigest := NormalizeDigest(state.Digest)
 	remoteDigest = NormalizeDigest(remoteDigest)
 	if remoteDigest == "" || remoteDigest == localDigest {
-		cli.Ok(fmt.Sprintf("%s: al día (%s)", svc.ID, tag))
+		output.Ok(fmt.Sprintf("%s: al día (%s)", svc.ID, tag))
 		return state, nil
 	}
 
@@ -256,8 +257,8 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	} else {
 		fmt.Println("  → solo actualizo: recreate con la imagen actual")
 	}
-	if !yes && !cli.Confirm(fmt.Sprintf("Actualizar %s? [Y/n]", svc.ID), yes, true) {
-		cli.Warn("cancelado")
+	if !yes && !confirm.Confirm(fmt.Sprintf("Actualizar %s? [Y/n]", svc.ID), yes, true) {
+		output.Warn("cancelado")
 		return state, nil
 	}
 
@@ -285,7 +286,7 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	}
 	if err := in.verify(state, svc, dir, files); err != nil {
 		// Rollback: volver a la imagen anterior.
-		cli.Warn("el servicio no arrancó: vuelvo a la imagen anterior")
+		output.Warn("el servicio no arrancó: vuelvo a la imagen anterior")
 		rollbackEnv := map[string]string{}
 		if previous.Tag != "" {
 			rollbackEnv["IMAGE"] = previous.Tag

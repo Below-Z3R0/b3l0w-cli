@@ -7,15 +7,15 @@ package snapshot
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Create intenta una snapshot del subvolume home.
 func Create(label string) error {
-	if cli.CommandPath("snapper") == "" {
+	if system.CommandPath("snapper") == "" {
 		return fmt.Errorf("snapper no está instalado")
 	}
-	out, err := cli.RunCombined("snapper", "-c", "home", "create", "-d", label)
+	out, err := system.RunCombined("snapper", "-c", "home", "create", "-d", label)
 	if err != nil {
 		return fmt.Errorf("snapper -c home: %s", out)
 	}

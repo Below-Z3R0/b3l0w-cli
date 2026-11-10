@@ -12,96 +12,99 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/releases"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-kit/paths"
+	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Run devuelve 0 si no hay errores (los avisos no cuentan).
 func Run(m *config.Manifest) int {
-	cli.Step("Chequeos")
+	output.Step("Chequeos")
 
 	errors := 0
 
 	// El actualizador del sistema: sin él, media herramienta no sirve.
 	if bin := system.Binary(); bin != "" {
-		cli.Ok(fmt.Sprintf("actualizador del sistema: %s", bin))
+		output.Ok(fmt.Sprintf("actualizador del sistema: %s", bin))
 	} else {
-		cli.Fail("no hay cachy-update ni arch-update")
+		output.Fail("no hay cachy-update ni arch-update")
 		errors++
 	}
 
 	// pacman: lo necesita el chequeo de "es de un paquete".
-	if path := cli.CommandPath("pacman"); path != "" {
-		cli.Ok(fmt.Sprintf("pacman: %s", path))
+	if path := kitsystem.CommandPath("pacman"); path != "" {
+		output.Ok(fmt.Sprintf("pacman: %s", path))
 	} else {
-		cli.Fail("no hay pacman: esto no es un sistema Arch")
+		output.Fail("no hay pacman: esto no es un sistema Arch")
 		errors++
 	}
 
 	// Terminal: el update del sistema la necesita.
-	if cli.IsTTY() {
-		cli.Ok("terminal interactiva")
+	if kitsystem.IsTTY() {
+		output.Ok("terminal interactiva")
 	} else {
-		cli.Warn("sin terminal: b3l0w update solo podrá actualizar programas")
+		output.Warn("sin terminal: b3l0w update solo podrá actualizar programas")
 	}
 
 	// Programas del manifiesto.
 	statuses := programs.Statuses(m)
 	if len(statuses) == 0 {
-		cli.Warn("el manifiesto no tiene programas")
+		output.Warn("el manifiesto no tiene programas")
 	}
 	for _, status := range statuses {
 		switch {
 		case !status.Installed:
-			cli.Warn(fmt.Sprintf("%s: no instalado", status.Name))
+			output.Warn(fmt.Sprintf("%s: no instalado", status.Name))
 		case status.Err != "":
-			cli.Fail(fmt.Sprintf("%s: %s", status.Name, status.Err))
+			output.Fail(fmt.Sprintf("%s: %s", status.Name, status.Err))
 			errors++
 		default:
-			cli.Ok(fmt.Sprintf("%s: %s", status.Name, status.Version))
+			output.Ok(fmt.Sprintf("%s: %s", status.Name, status.Version))
 		}
 	}
 
 	// Directorio de extensiones: si existe, tiene que ser privado.
-	dir := cli.PluginsDir()
+	dir := paths.PluginsDir()
 	info, err := os.Stat(dir)
 	switch {
 	case os.IsNotExist(err):
-		cli.Warn(fmt.Sprintf("plugins: %s todavía no existe", dir))
+		output.Warn(fmt.Sprintf("plugins: %s todavía no existe", dir))
 	case err != nil:
-		cli.Fail(fmt.Sprintf("plugins: %v", err))
+		output.Fail(fmt.Sprintf("plugins: %v", err))
 		errors++
 	case info.Mode().Perm()&0o077 != 0:
-		cli.Fail(fmt.Sprintf("plugins: %s es accesible por otros (modo %o)", dir, info.Mode().Perm()))
+		output.Fail(fmt.Sprintf("plugins: %s es accesible por otros (modo %o)", dir, info.Mode().Perm()))
 		errors++
 	default:
-		cli.Ok(fmt.Sprintf("plugins: %s (privado)", dir))
+		output.Ok(fmt.Sprintf("plugins: %s (privado)", dir))
 	}
 
 	// Backends embebidos: viven en el binario, no hay copia que chequear.
 	if names, err := plugins.Scripts(); err == nil {
 		for _, name := range names {
-			cli.Ok(fmt.Sprintf("backend embebido: %s", name))
+			output.Ok(fmt.Sprintf("backend embebido: %s", name))
 		}
 	}
 
 	// Noctalia y su source de plugins.
-	if cli.HaveCommand("noctalia") {
+	if kitsystem.HaveCommand("noctalia") {
 		if plugins.HasSource(plugins.SourceName) {
-			cli.Ok("noctalia: source " + plugins.SourceName + " presente")
+			output.Ok("noctalia: source " + plugins.SourceName + " presente")
 		} else {
-			cli.Warn("noctalia: falta el source " + plugins.SourceName + " (b3l0w update --plugins)")
+			output.Warn("noctalia: falta el source " + plugins.SourceName + " (b3l0w update --plugins)")
 		}
 		switch v := plugins.AutoUpdate(); v {
 		case "none":
-			cli.Ok("plugins: auto-update off (lo controla b3l0w)")
+			output.Ok("plugins: auto-update off (lo controla b3l0w)")
 		case "":
-			cli.Warn("plugins: no pude leer auto_update")
+			output.Warn("plugins: no pude leer auto_update")
 		default:
-			cli.Fail(fmt.Sprintf("plugins: auto_update=%q; poné \"none\" para que b3l0w controle las actualizaciones", v))
+			output.Fail(fmt.Sprintf("plugins: auto_update=%q; poné \"none\" para que b3l0w controle las actualizaciones", v))
 			errors++
 		}
 	} else {
-		cli.Warn("noctalia no está en PATH: los plugins no se actualizan")
+		output.Warn("noctalia no está en PATH: los plugins no se actualizan")
 	}
 
 	// Dependencias declaradas por los plugins (gh, mpv, etc.).
@@ -114,7 +117,7 @@ func Run(m *config.Manifest) int {
 		for _, id := range ids {
 			for _, dep := range deps[id] {
 				if !hasDependency(dep) {
-					cli.Warn(fmt.Sprintf("%s: falta dependencia %s", id, dep))
+					output.Warn(fmt.Sprintf("%s: falta dependencia %s", id, dep))
 				}
 			}
 		}
@@ -125,7 +128,7 @@ func Run(m *config.Manifest) int {
 	errors += releases.Render(releases.Check(m))
 
 	if errors > 0 {
-		cli.Fail(fmt.Sprintf("%d chequeos fallaron", errors))
+		output.Fail(fmt.Sprintf("%d chequeos fallaron", errors))
 		return 1
 	}
 	return 0
@@ -133,7 +136,7 @@ func Run(m *config.Manifest) int {
 
 // hasDependency busca un comando en PATH o un paquete instalado.
 func hasDependency(name string) bool {
-	if cli.CommandPath(name) != "" {
+	if kitsystem.CommandPath(name) != "" {
 		return true
 	}
 	return exec.Command("pacman", "-Q", name).Run() == nil

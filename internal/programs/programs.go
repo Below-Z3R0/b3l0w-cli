@@ -16,7 +16,8 @@ import (
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // versionRe acepta "v1.2.3" y "1.2.3". Es la única forma de leer una
@@ -47,7 +48,7 @@ func ParseVersion(out string) string {
 // error: mostrar "exit status 1" no dice nada, así que se usa su primera
 // línea, que sí explica qué pasó.
 func Current(bin string) (string, error) {
-	out, err := cli.RunTimeout(10*time.Second, bin, "version")
+	out, err := system.RunTimeout(10*time.Second, bin, "version")
 	if err != nil {
 		message := strings.TrimSpace(out)
 		if message == "" {
@@ -77,7 +78,7 @@ func Statuses(m *config.Manifest) []Status {
 	list := make([]Status, 0, len(m.Programs))
 	for _, program := range m.Programs {
 		status := Status{Name: program.Name}
-		bin := cli.CommandPath(program.Name)
+		bin := system.CommandPath(program.Name)
 		if bin == "" {
 			list = append(list, status)
 			continue
@@ -101,17 +102,17 @@ func Statuses(m *config.Manifest) []Status {
 // Devuelve su salida y si salió bien. No aborta: el llamador decide si
 // sigue con el resto.
 func Update(name string) (string, bool) {
-	bin := cli.CommandPath(name)
+	bin := system.CommandPath(name)
 	if bin == "" {
 		return "no está instalado", false
 	}
 
 	// Si es de un paquete, no se auto-actualiza: eso lo hace el sistema.
-	if owner := cli.PackageOwner(bin); owner != "" {
+	if owner := system.PackageOwner(bin); owner != "" {
 		return fmt.Sprintf("es del paquete %s: se actualiza con b3l0w update", owner), true
 	}
 
-	out, err := cli.RunTimeout(10*time.Minute, bin, "update")
+	out, err := system.RunTimeout(10*time.Minute, bin, "update")
 	if err != nil {
 		message := strings.TrimSpace(out)
 		if message == "" {

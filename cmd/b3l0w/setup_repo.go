@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // repoSection es la sección que se agrega a pacman.conf.
@@ -26,19 +27,19 @@ var pacmanConf = "/etc/pacman.conf"
 // archivo del sistema. Si no hay TTY, se omite.
 func ensureRepo() {
 	if repoConfigurado() {
-		cli.Ok("repo: [b3l0w] ya está en pacman.conf")
+		output.Ok("repo: [b3l0w] ya está en pacman.conf")
 		return
 	}
 
-	cli.Step("Configurando el repo [b3l0w]")
+	output.Step("Configurando el repo [b3l0w]")
 	fmt.Printf("  Se agrega a %s:\n\n", pacmanConf)
 	for _, line := range strings.Split(strings.TrimSpace(repoSection), "\n") {
 		fmt.Printf("    %s\n", line)
 	}
 	fmt.Println()
 
-	if !cli.Confirm("¿Agregar el repo?", true, false) {
-		cli.Warn("repo: se omite")
+	if !confirm.Confirm("¿Agregar el repo?", true, false) {
+		output.Warn("repo: se omite")
 		return
 	}
 
@@ -49,16 +50,16 @@ func ensureRepo() {
 	cmd.Stdout = nil
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		cli.Warn("repo: no se pudo escribir " + pacmanConf)
+		output.Warn("repo: no se pudo escribir " + pacmanConf)
 		return
 	}
 
 	if repoConfigurado() {
-		cli.Ok("repo: [b3l0w] agregado")
+		output.Ok("repo: [b3l0w] agregado")
 		fmt.Println("  Para sincronizar: sudo pacman -Sy")
 		return
 	}
-	cli.Warn("repo: no se pudo verificar el cambio")
+	output.Warn("repo: no se pudo verificar el cambio")
 }
 
 // repoConfigurado dice si la sección ya está.
@@ -85,6 +86,6 @@ func avisarBinarioViejo() {
 	if _, err := os.Stat("/usr/bin/b3l0w"); err != nil {
 		return
 	}
-	cli.Warn("hay dos b3l0w: el paquete y " + viejo)
+	output.Warn("hay dos b3l0w: el paquete y " + viejo)
 	fmt.Printf("  borrá el viejo: rm %s\n", viejo)
 }

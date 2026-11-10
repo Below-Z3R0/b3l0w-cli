@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 
 // Match filtra los servicios por id, nombre, descripción o variante.
@@ -55,10 +55,10 @@ func recortar(s string, ancho int) string {
 func RenderSearch(m *Manifest, query string) int {
 	resultados := Match(m, query)
 	if len(resultados) == 0 {
-		cli.Warn(fmt.Sprintf("ningún servicio coincide con %q", query))
+		output.Warn(fmt.Sprintf("ningún servicio coincide con %q", query))
 		return 1
 	}
-	cli.Step(fmt.Sprintf("Servicios: %d de %d", len(resultados), len(m.Services)))
+	output.Step(fmt.Sprintf("Servicios: %d de %d", len(resultados), len(m.Services)))
 	fmt.Printf("  %-10s %-26s %-8s %s\n", "ID", "VARIANTES", "DISCO", "DESCRIPCIÓN")
 	for _, s := range resultados {
 		variantes := strings.Join(s.Variants, ", ")

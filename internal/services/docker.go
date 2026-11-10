@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // DockerAdapter habla con Docker. Todo pasa por compose v2.
@@ -22,7 +22,7 @@ type DockerAdapter struct {
 
 // NewDocker devuelve un adapter con los defaults del sistema.
 func NewDocker() *DockerAdapter {
-	return &DockerAdapter{Runner: cli.RunCombined}
+	return &DockerAdapter{Runner: system.RunCombined}
 }
 
 func (d *DockerAdapter) run(args ...string) (string, error) {
@@ -32,7 +32,7 @@ func (d *DockerAdapter) run(args ...string) (string, error) {
 	if d.Runner != nil {
 		return d.Runner(args[0], args[1:]...)
 	}
-	return cli.RunCombined(args[0], args[1:]...)
+	return system.RunCombined(args[0], args[1:]...)
 }
 
 // composeFiles devuelve los compose con path completo. El `-f` de

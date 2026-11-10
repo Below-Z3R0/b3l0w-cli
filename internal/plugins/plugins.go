@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/cli"
+	"github.com/Below-Z3R0/b3l0w-kit/paths"
 )
 
 // Prefix es el prefijo de los binarios de extensión.
@@ -21,7 +21,7 @@ const Prefix = "b3l0w-"
 
 // Discover devuelve los nombres de las extensiones instaladas.
 func Discover() []string {
-	entries, err := os.ReadDir(cli.PluginsDir())
+	entries, err := os.ReadDir(paths.PluginsDir())
 	if err != nil {
 		return nil
 	}
@@ -45,7 +45,7 @@ func Discover() []string {
 
 // Find devuelve la ruta de una extensión, o "" si no existe.
 func Find(name string) string {
-	path := filepath.Join(cli.PluginsDir(), Prefix+name)
+	path := filepath.Join(paths.PluginsDir(), Prefix+name)
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
 		return ""
