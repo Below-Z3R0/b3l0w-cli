@@ -6,7 +6,6 @@
 package releases
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,16 +15,14 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 
 	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-kit/releases"
 )
 
 // Inyectables para los tests.
 var (
-	apiBase      = "https://api.github.com"
-	downloadBase = "https://github.com"
-	client       = &http.Client{Timeout: 8 * time.Second}
+	client = &http.Client{Timeout: 8 * time.Second}
 	// Un 404 del CDN justo después de publicar es transitorio: sin
 	// reintento, doctor marca SIN FIRMA un release que sí está firmado.
-	retryDelay = 300 * time.Millisecond
 	// El CLI no está en el manifiesto y su release se busca con la
 	// convención v*, no con /releases/latest.
 	cliTag  = selfupdate.Check
@@ -41,80 +38,6 @@ type Status struct {
 	Err    string
 }
 
-// LatestTag devuelve el tag del último release de un repo.
-func LatestTag(repo string) (string, error) {
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", apiBase, repo)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "b3l0w")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("sin releases")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub: HTTP %d", resp.StatusCode)
-	}
-	var body struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	return body.TagName, nil
-}
-
-// HasSignature dice si el release publica SHA256SUMS.asc.
-//
-// Usa HEAD sobre la URL de descarga en vez de la API: no gasta cuota y
-// responde lo mismo.
-//
-// Reintenta ante 404 y errores de red: el CDN de GitHub tarda unos
-// segundos en ver un asset recién subido, y un falso "sin firma" en
-// doctor es peor que esperar un segundo.
-func HasSignature(repo, tag string) (bool, error) {
-	url := fmt.Sprintf("%s/%s/releases/download/%s/SHA256SUMS.asc", downloadBase, repo, tag)
-	var ultimo error
-	for intento := 0; intento < 3; intento++ {
-		if intento > 0 {
-			time.Sleep(time.Duration(intento) * retryDelay)
-		}
-		presente, err := headSignature(url)
-		if err != nil {
-			ultimo = err
-			continue
-		}
-		if presente {
-			return true, nil
-		}
-		// 404: puede ser transitorio (el CDN tarda en ver el asset).
-		// Se agotan los intentos antes de decir "no está".
-	}
-	return false, ultimo
-}
-
-// headSignature hace un intento. Un 404 no es error: es "no está".
-func headSignature(url string) (bool, error) {
-	resp, err := client.Head(url)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusFound:
-		return true, nil
-	case http.StatusNotFound:
-		return false, nil
-	default:
-		return false, fmt.Errorf("GitHub: HTTP %d", resp.StatusCode)
-	}
-}
-
 // Check revisa los programas del manifiesto y el propio CLI.
 //
 // El CLI se chequea aparte porque no está en el manifiesto: si se
@@ -128,14 +51,14 @@ func Check(m *config.Manifest) []Status {
 			continue
 		}
 		st := Status{Name: p.Name, Repo: repo}
-		tag, err := LatestTag(repo)
+		tag, err := releases.LatestTag(repo)
 		if err != nil {
 			st.Err = err.Error()
 			out = append(out, st)
 			continue
 		}
 		st.Tag = tag
-		signed, err := HasSignature(repo, tag)
+		signed, err := releases.HasSignature(repo, tag)
 		if err != nil {
 			st.Err = err.Error()
 		} else {
@@ -156,7 +79,7 @@ func checkCLI() Status {
 		return st
 	}
 	st.Tag = tag
-	signed, err := HasSignature(repo, tag)
+	signed, err := releases.HasSignature(repo, tag)
 	if err != nil {
 		st.Err = err.Error()
 		return st

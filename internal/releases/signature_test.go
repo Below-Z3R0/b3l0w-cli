@@ -6,138 +6,11 @@ import (
 	"testing"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	kitreleases "github.com/Below-Z3R0/b3l0w-kit/releases"
 )
 
-func usarServidor(t *testing.T, h http.HandlerFunc) {
-	t.Helper()
-	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
-	viejoAPI, viejoDown := apiBase, downloadBase
-	viejoTag, viejoRepo := cliTag, cliRepo
-	viejoDelay := retryDelay
-	retryDelay = 0
-	apiBase, downloadBase = srv.URL, srv.URL
-	cliTag = func() (string, error) { return "v1.0.0", nil }
-	cliRepo = func() string { return "owner/cli" }
-	t.Cleanup(func() {
-		apiBase, downloadBase = viejoAPI, viejoDown
-		cliTag, cliRepo = viejoTag, viejoRepo
-		retryDelay = viejoDelay
-	})
-}
-
-func TestLatestTag(t *testing.T) {
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/owner/repo/releases/latest" {
-			t.Errorf("path = %s", r.URL.Path)
-		}
-		if r.Header.Get("User-Agent") != "b3l0w" {
-			t.Error("falta User-Agent")
-		}
-		w.Write([]byte(`{"tag_name":"v1.2.3"}`))
-	})
-
-	tag, err := LatestTag("owner/repo")
-	if err != nil {
-		t.Fatalf("LatestTag: %v", err)
-	}
-	if tag != "v1.2.3" {
-		t.Errorf("tag = %q", tag)
-	}
-}
-
-func TestLatestTagSinReleases(t *testing.T) {
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-	if _, err := LatestTag("owner/repo"); err == nil {
-		t.Fatal("esperaba error")
-	}
-}
-
-func TestHasSignatureSi(t *testing.T) {
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodHead {
-			t.Errorf("método = %s, quería HEAD", r.Method)
-		}
-		if r.URL.Path != "/owner/repo/releases/download/v1.0.0/SHA256SUMS.asc" {
-			t.Errorf("path = %s", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-
-	ok, err := HasSignature("owner/repo", "v1.0.0")
-	if err != nil {
-		t.Fatalf("HasSignature: %v", err)
-	}
-	if !ok {
-		t.Error("esperaba firmado")
-	}
-}
-
-func TestHasSignatureNo(t *testing.T) {
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	ok, err := HasSignature("owner/repo", "v1.0.0")
-	if err != nil {
-		t.Fatalf("HasSignature: %v", err)
-	}
-	if ok {
-		t.Error("esperaba sin firma")
-	}
-}
-
-// TestHasSignatureTolera404Transitorio cubre el caso que hacía que
-// doctor marcara como sin firma un release recién publicado: el CDN
-// devuelve 404 las primeras veces y 200 después.
-func TestHasSignatureTolera404Transitorio(t *testing.T) {
-	intentos := 0
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		intentos++
-		if intentos < 3 {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-
-	ok, err := HasSignature("owner/repo", "v1.0.0")
-	if err != nil {
-		t.Fatalf("HasSignature: %v", err)
-	}
-	if !ok {
-		t.Error("debería haber encontrado la firma tras los reintentos")
-	}
-	if intentos != 3 {
-		t.Errorf("intentos = %d, quería 3", intentos)
-	}
-}
-
-// TestHasSignatureFallaTrasLosReintentos: si de verdad no está, se
-// agotan los intentos y se informa sin firma.
-func TestHasSignatureFallaTrasLosReintentos(t *testing.T) {
-	intentos := 0
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
-		intentos++
-		w.WriteHeader(http.StatusNotFound)
-	})
-
-	ok, err := HasSignature("owner/repo", "v1.0.0")
-	if err != nil {
-		t.Fatalf("HasSignature: %v", err)
-	}
-	if ok {
-		t.Error("no debería estar firmado")
-	}
-	if intentos != 3 {
-		t.Errorf("intentos = %d, quería 3", intentos)
-	}
-}
-
 func TestCheckSoloProgramasDeGitHub(t *testing.T) {
-	usarServidor(t, func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/repos/owner/firmado/releases/latest":
 			w.Write([]byte(`{"tag_name":"v1.0.0"}`))
@@ -148,7 +21,16 @@ func TestCheckSoloProgramasDeGitHub(t *testing.T) {
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
-	})
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(kitreleases.SetBases(srv.URL, srv.URL))
+
+	// El CLI propio no usa /releases/latest: se busca con la
+	// convención v*, que inyectan cliTag y cliRepo.
+	viejoTag, viejoRepo := cliTag, cliRepo
+	cliTag = func() (string, error) { return "v1.0.0", nil }
+	cliRepo = func() string { return "owner/cli" }
+	t.Cleanup(func() { cliTag, cliRepo = viejoTag, viejoRepo })
 
 	m := &config.Manifest{Programs: []config.Program{
 		{Name: "firmado", Source: "github:owner/firmado"},
