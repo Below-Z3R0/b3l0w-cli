@@ -70,15 +70,19 @@ func updateCommand(args []string) int {
 func checkCommand(args []string) int {
 	keep := 20
 	yes := false
-	for _, arg := range args {
-		switch {
-		case strings.HasPrefix(arg, "--keep="):
-			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--keep=")); err == nil && n > 0 {
-				keep = n
-			}
-		case arg == "--yes" || arg == "-y":
-			yes = true
+	f := parsearFlags(args)
+	if v := f.valor("--keep"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			output.Fail("--keep debe ser un entero positivo")
+			return 1
 		}
+		keep = n
+	}
+	yes = f.presente("--yes") || f.presente("-y")
+	for _, d := range f.desconocidos {
+		output.Fail("flag desconocido: " + d)
+		return 1
 	}
 	code := withManifest(func(m *config.Manifest) int {
 		return update.Run(m, update.Options{Check: true})
