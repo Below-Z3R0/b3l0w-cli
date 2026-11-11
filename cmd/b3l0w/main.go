@@ -189,8 +189,9 @@ func list() int {
 	if code != 0 {
 		return code
 	}
-	pluginsList(nil)
-	return 0
+	// El error del manifiesto de plugins tiene que verse en el exit
+	// code: si no, un script no se entera de que algo esta roto.
+	return pluginsList(nil)
 }
 
 func uninstallCommand(args []string) int {
@@ -445,6 +446,12 @@ func programCommand(args []string) int {
 			asset = strings.TrimPrefix(arg, "--asset=")
 			continue
 		}
+		if strings.HasPrefix(arg, "-") {
+			// Un flag no es un nombre: antes "--unknown-flag myprog"
+			// registraba un programa llamado "--unknown-flag".
+			output.Fail("flag desconocido: " + arg)
+			return 1
+		}
 		if name == "" {
 			name = arg
 		}
@@ -569,15 +576,6 @@ func pluginExecCommand(args []string) int {
 	return 0
 }
 
-// serviceFlags son los flags de services que llevan valor.
-var serviceFlags = map[string]bool{
-	"--manifest=":  true,
-	"--state-dir=": true,
-	"--variant=":   true,
-	"--service=":   true,
-	"--tail=":      true,
-}
-
 // firstPositional devuelve el primer argumento que no es un flag. Los
 // flags pueden ir antes o despues del nombre del servicio.
 func firstPositional(args []string) string {
@@ -597,24 +595,22 @@ func servicePaths(args []string) (manifest, stateDir string, rest []string, dryR
 	// Sin --manifest, la fuente es el registry (caché -> red -> embed).
 	manifest = ""
 	stateDir = filepath.Join(home, ".local/state/b3l0w/services")
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--dry-run":
-			dryRun = true
-		case strings.HasPrefix(arg, "--manifest="):
-			manifest = strings.TrimPrefix(arg, "--manifest=")
-		case strings.HasPrefix(arg, "--state-dir="):
-			stateDir = strings.TrimPrefix(arg, "--state-dir=")
-		case strings.HasPrefix(arg, "--variant="):
-			rest = append(rest, arg)
-		case strings.HasPrefix(arg, "--service="), strings.HasPrefix(arg, "--tail="):
-			rest = append(rest, arg)
-		case strings.HasPrefix(arg, "--"):
-			rest = append(rest, arg)
-		default:
-			rest = append(rest, arg)
+	f := parsearFlags(args)
+	manifest = f.valorO("--manifest", manifest)
+	stateDir = f.valorO("--state-dir", stateDir)
+	dryRun = f.presente("--dry-run")
+	// Los flags que no son de services se pasan tal cual: los usan
+	// otros subcomandos.
+	rest = f.libres
+	for nombre, valor := range f.valores {
+		switch nombre {
+		case "--manifest", "--state-dir":
+			continue
 		}
+		rest = append(rest, nombre+"="+valor)
+	}
+	for _, d := range f.desconocidos {
+		rest = append(rest, d)
 	}
 	return
 }
@@ -1332,21 +1328,22 @@ func pluginPaths(args []string) (src, registry, manifest, noctalia string, rest 
 	manifest = ""
 	noctalia = filepath.Join(home, ".local", "share", "noctalia", "plugins")
 
-	for _, arg := range args {
-		switch {
-		case arg == "--dry-run":
-			dryRun = true
-		case strings.HasPrefix(arg, "--src="):
-			src = strings.TrimPrefix(arg, "--src=")
-		case strings.HasPrefix(arg, "--registry="):
-			registry = strings.TrimPrefix(arg, "--registry=")
-		case strings.HasPrefix(arg, "--manifest="):
-			manifest = strings.TrimPrefix(arg, "--manifest=")
-		case strings.HasPrefix(arg, "--plugins-dir="):
-			noctalia = strings.TrimPrefix(arg, "--plugins-dir=")
-		default:
-			rest = append(rest, arg)
+	f := parsearFlags(args)
+	src = f.valorO("--src", src)
+	registry = f.valorO("--registry", registry)
+	manifest = f.valorO("--manifest", manifest)
+	noctalia = f.valorO("--plugins-dir", noctalia)
+	dryRun = f.presente("--dry-run")
+	rest = f.libres
+	for nombre, valor := range f.valores {
+		switch nombre {
+		case "--src", "--registry", "--manifest", "--plugins-dir":
+			continue
 		}
+		rest = append(rest, nombre+"="+valor)
+	}
+	for _, d := range f.desconocidos {
+		rest = append(rest, d)
 	}
 	return
 }
