@@ -235,6 +235,7 @@ func installCommand(args []string) int {
 	name := args[0]
 	source, asset := "", ""
 	insecure := false
+	dryRun := false
 	for _, arg := range args[1:] {
 		switch {
 		case strings.HasPrefix(arg, "--source="):
@@ -243,6 +244,13 @@ func installCommand(args []string) int {
 			asset = strings.TrimPrefix(arg, "--asset=")
 		case arg == "--insecure":
 			insecure = true
+		case arg == "--dry-run":
+			dryRun = true
+		case strings.HasPrefix(arg, "--"):
+			// Un flag que no existe se ignoraba en silencio: el
+			// usuario creia que --dry-run hacia algo y no hacia nada.
+			output.Fail("flag desconocido: " + arg)
+			return 1
 		}
 	}
 	return withManifest(func(m *config.Manifest) int {
@@ -259,6 +267,15 @@ func installCommand(args []string) int {
 			}
 			program = m.Get(name)
 			output.Ok(fmt.Sprintf("%s registrado", name))
+		}
+		if dryRun {
+			dest, _ := programs.InstallPath(name)
+			output.Step(fmt.Sprintf("%s: se instalaria en %s", name, dest))
+			if source != "" {
+				output.Step(fmt.Sprintf("  origen: %s", source))
+			}
+			output.Ok("dry-run: no se instaló nada")
+			return 0
 		}
 		output.Step(fmt.Sprintf("Instalando %s", name))
 		if insecure {
@@ -1318,7 +1335,7 @@ func loadPluginManifest(path string) (*plugins.Manifest, int) {
 }
 
 func pluginsBuild(args []string) int {
-	_, registry, manifest, _, rest, _ := pluginPaths(args)
+	_, registry, manifest, _, rest, dryRun := pluginPaths(args)
 	check := false
 	for _, arg := range rest {
 		if arg == "--check" {
@@ -1341,6 +1358,11 @@ func pluginsBuild(args []string) int {
 			return 1
 		}
 		output.Ok("catalog.toml al día")
+		return 0
+	}
+	if dryRun {
+		output.Step(fmt.Sprintf("%d plugins: se escribirian catalog.toml y plugins.json", len(entries)))
+		output.Ok("dry-run: no se escribió nada")
 		return 0
 	}
 	if err := plugins.Build(registry, manifest, entries); err != nil {
