@@ -10,13 +10,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Below-Z3R0/b3l0w-kit/system"
 )
 
 // Entries lee "Snapshot entries : N" de limine-snapper-info.
+//
+// Con timeout: en esta maquina el comando tardo mas de 10 segundos y
+// hacia que `b3l0w check` se quedara colgado casi 40.
 func Entries() (int, error) {
-	out, err := system.Run("limine-snapper-info")
+	out, err := system.RunTimeout(5*time.Second, "limine-snapper-info")
 	if err != nil {
 		return 0, err
 	}

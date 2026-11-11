@@ -715,6 +715,9 @@ func servicesUpdate(args []string) int {
 		return 0
 	}
 	output.Step("Actualizando servicios")
+	// Un fallo tiene que verse en el exit code: un script que hace
+	// "b3l0w services update && echo OK" no puede mentir.
+	fallaron := 0
 	for _, state := range states {
 		if only != "" && state.ID != only {
 			continue
@@ -726,11 +729,15 @@ func servicesUpdate(args []string) int {
 		newState, err := in.Update(*svc, state, rebuild, yes)
 		if err != nil {
 			output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			fallaron++
 			continue
 		}
 		if newState.UpdatedAt != state.UpdatedAt {
 			output.Ok(fmt.Sprintf("%s actualizado", state.ID))
 		}
+	}
+	if fallaron > 0 {
+		return 1
 	}
 	return 0
 }
@@ -1204,7 +1211,14 @@ func servicesSearch(args []string) int {
 		output.Fail(err.Error())
 		return 1
 	}
-	return services.RenderSearch(m, strings.Join(rest, " "))
+	q := strings.TrimSpace(strings.Join(rest, " "))
+	// Sin busqueda no es una busqueda: listaba todo y salia con 0.
+	// plugins search ya fallaba; los dos hermanos hacen lo mismo.
+	if q == "" {
+		output.Fail("falta la búsqueda: b3l0w services search <texto>")
+		return 1
+	}
+	return services.RenderSearch(m, q)
 }
 
 func servicesHardware(args []string) int {
