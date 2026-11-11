@@ -7,6 +7,10 @@
 //	local == base  -> el repo manda, se actualiza
 //	remote == base -> solo cambió el local, se conserva
 //	ambos cambian  -> conflicto, no se toca y se escribe <archivo>.new
+//
+// --force no cambia la lógica 3-way: solo resuelve los conflictos reales
+// (cambió el local y cambió el repo) a favor del repo. Un archivo que
+// solo editó el usuario se conserva aunque venga --force.
 package dotfiles
 
 import (
@@ -17,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -26,21 +31,41 @@ type Result struct {
 	Kept      []string
 	Conflicts []string
 	Missing   []string
-	Changed   bool
+	// Orphaned: estaban en el estado pero ya no están en el repo. Se
+	// reportan; el archivo local nunca se borra solo.
+	Orphaned []string
+	// ForceOverwrites: archivos cuyo contenido local reemplaza un pull
+	// con --force. Sirve para anunciar el número real antes de pisar.
+	ForceOverwrites []string
+	Changed         bool
 }
 
 type state map[string]string // ruta relativa -> sha256 aplicado
 
 // Pull aplica srcDir sobre ~/.config.
 //
-// force pisa todo (sin 3-way). dryRun no escribe nada.
+// force resuelve a favor del repo solo los conflictos reales. dryRun no
+// escribe nada: ni archivos ni estado.
 func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error) {
 	var res Result
-	stateDirty := false
 	st, err := loadState(statePath)
 	if err != nil {
 		return res, err
 	}
+
+	// persistir guarda el estado después de cada archivo aplicado: si
+	// una escritura falla a mitad, los archivos ya escritos no quedan
+	// con la base vieja (que dispararía conflictos falsos al siguiente pull).
+	persistir := func() error {
+		if dryRun {
+			return nil
+		}
+		return saveState(statePath, st)
+	}
+
+	// seen: rutas relativas presentes en el repo. Al final se usa para
+	// podar del estado las entradas que quedaron huérfanas.
+	seen := make(map[string]bool)
 
 	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -53,6 +78,7 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 		if err != nil {
 			return err
 		}
+		seen[rel] = true
 		if skip(rel) {
 			return nil
 		}
@@ -69,92 +95,138 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 		localHash := hash(local)
 		baseHash := st[rel]
 
-		switch {
-		case !localExists:
-			res.Missing = append(res.Missing, rel)
-			if !dryRun {
-				if err := writeFile(dest, remote); err != nil {
-					return err
-				}
-				st[rel] = remoteHash
-				res.Changed = true
+		// escribir aplica el remoto sobre el destino: conserva el modo
+		// del archivo local, no rompe symlinks y deja la base al día.
+		escribir := func() error {
+			if err := writeFile(resolveDest(dest), remote, info.Mode()); err != nil {
+				return err
 			}
+			st[rel] = remoteHash
+			if err := persistir(); err != nil {
+				return err
+			}
+			res.Changed = true
+			return nil
+		}
+
+		switch {
+		case !localExists && baseHash != "":
+			// Había base y el local no está: el usuario borró el archivo.
+			// Borrado intencional, no se resucita.
+			res.Kept = append(res.Kept, rel)
 			return nil
 
-		case force:
-			res.Updated = append(res.Updated, rel)
-			if !dryRun {
-				if err := writeFile(dest, remote); err != nil {
-					return err
-				}
-				st[rel] = remoteHash
-				res.Changed = true
+		case !localExists:
+			// Nunca existió: se instala.
+			res.Missing = append(res.Missing, rel)
+			if dryRun {
+				return nil
 			}
-			return nil
+			return escribir()
 
 		case baseHash == "":
-			// Primera vez sin estado: si el local es idéntico, se adopta;
-			// si difiere, no se pisa.
+			// Sin historial no hay forma de saber quién cambió: si es
+			// idéntico se adopta, si no es conflicto.
 			if localHash == remoteHash {
 				st[rel] = remoteHash
-				stateDirty = true
+				if err := persistir(); err != nil {
+					return err
+				}
 				res.Kept = append(res.Kept, rel)
 				return nil
 			}
-			res.Conflicts = append(res.Conflicts, rel)
-			if !dryRun {
-				if err := writeFile(dest+".new", remote); err != nil {
-					return err
+			res.ForceOverwrites = append(res.ForceOverwrites, rel)
+			if force {
+				if dryRun {
+					return nil
 				}
+				res.Updated = append(res.Updated, rel)
+				return escribir()
 			}
-			return nil
+			res.Conflicts = append(res.Conflicts, rel)
+			if dryRun {
+				return nil
+			}
+			if err := writeFile(dest+".new", remote, info.Mode()); err != nil {
+				return err
+			}
+			// El conflicto ya se reportó: se avanza la base para que no
+			// se repita en cada pull.
+			st[rel] = remoteHash
+			return persistir()
 
 		case localHash == baseHash:
-			// No lo tocó: el repo manda, salvo que ya sean iguales.
+			// El usuario no lo tocó: el repo manda.
 			if remoteHash == localHash {
 				return nil
 			}
 			res.Updated = append(res.Updated, rel)
-			if !dryRun {
-				if err := writeFile(dest, remote); err != nil {
-					return err
-				}
-				st[rel] = remoteHash
-				res.Changed = true
+			res.ForceOverwrites = append(res.ForceOverwrites, rel)
+			if dryRun {
+				return nil
 			}
-			return nil
+			return escribir()
 
 		case remoteHash == baseHash:
-			// Solo cambió el local: se conserva.
+			// Solo cambió el local: se conserva, incluso con --force.
 			res.Kept = append(res.Kept, rel)
 			return nil
 
 		default:
-			// Ambos cambiaron: no se pisa.
-			res.Conflicts = append(res.Conflicts, rel)
-			if !dryRun {
-				if err := writeFile(dest+".new", remote); err != nil {
-					return err
+			// Ambos cambiaron: conflicto real.
+			res.ForceOverwrites = append(res.ForceOverwrites, rel)
+			if force {
+				if dryRun {
+					return nil
 				}
+				res.Updated = append(res.Updated, rel)
+				return escribir()
 			}
-			return nil
+			res.Conflicts = append(res.Conflicts, rel)
+			if dryRun {
+				return nil
+			}
+			if err := writeFile(dest+".new", remote, info.Mode()); err != nil {
+				return err
+			}
+			// El conflicto ya se reportó: se avanza la base para que no
+			// se repita en cada pull.
+			st[rel] = remoteHash
+			return persistir()
 		}
 	})
 	if err != nil {
 		return res, err
 	}
 
-	if !dryRun && (res.Changed || stateDirty) {
-		if err := saveState(statePath, st); err != nil {
+	// Podar el estado: lo que ya no está en el repo queda huérfano. Se
+	// reporta, pero el archivo local no se borra automáticamente.
+	var orphans []string
+	for rel := range st {
+		if !seen[rel] {
+			orphans = append(orphans, rel)
+		}
+	}
+	sort.Strings(orphans)
+	res.Orphaned = orphans
+	if len(orphans) > 0 {
+		for _, rel := range orphans {
+			delete(st, rel)
+		}
+		if err := persistir(); err != nil {
 			return res, err
 		}
 	}
+
 	return res, nil
 }
 
-// Adopt registra el hash actual de cada archivo local como base, sin
-// tocar nada. Sirve para la primera corrida: evita que todo sea conflicto.
-func Adopt(srcDir, homeDir, statePath string) (int, error) {
+// Adopt registra la versión del repo como base de cada archivo que ya
+// existe en el home, sin tocar nada. Sirve para la primera corrida:
+// evita que todo sea conflicto y no pisa la config del usuario.
+//
+// dryRun (opcional) evita escribir el estado.
+func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 	st, err := loadState(statePath)
 	if err != nil {
 		return 0, err
@@ -175,16 +247,24 @@ func Adopt(srcDir, homeDir, statePath string) (int, error) {
 			return nil
 		}
 		dest := filepath.Join(homeDir, ".config", rel)
-		data, err := os.ReadFile(dest)
-		if err != nil {
-			return nil // no existe: se instalará en el próximo pull
+		if _, err := os.Stat(dest); err != nil {
+			return nil // no existe local: se instalará en el próximo pull
 		}
-		st[rel] = hash(data)
+		// La base es el contenido local actual: desde acá el 3-way
+		// normal decide. Si el repo difiere, el próximo pull lo aplica.
+		local, err := os.ReadFile(dest)
+		if err != nil {
+			return err
+		}
+		st[rel] = hash(local)
 		count++
 		return nil
 	})
 	if err != nil {
 		return 0, err
+	}
+	if len(dryRun) > 0 && dryRun[0] {
+		return count, nil
 	}
 	if err := saveState(statePath, st); err != nil {
 		return 0, err
@@ -207,15 +287,48 @@ func skip(rel string) bool {
 	return false
 }
 
-func writeFile(path string, data []byte) error {
+// writeFile escribe data en path. Si el destino existe conserva su modo
+// (un 0600 no puede quedar 0644 después de un update); si no, usa el modo
+// del origen.
+func writeFile(path string, data []byte, srcMode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	mode := srcMode.Perm()
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return err
+	}
+	// WriteFile aplica umask: se fuerza el modo exacto.
+	if err := os.Chmod(tmp, mode); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// resolveDest sigue los symlinks del destino: escribir encima del link
+// lo reemplazaría por un archivo regular y dejaría el target huérfano.
+func resolveDest(dest string) string {
+	if r, err := filepath.EvalSymlinks(dest); err == nil {
+		return r
+	}
+	// Link roto: se sigue a mano.
+	if link, err := os.Readlink(dest); err == nil {
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(filepath.Dir(dest), link)
+		}
+		return filepath.Clean(link)
+	}
+	// El destino no existe: se resuelve el padre.
+	dir, base := filepath.Split(dest)
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(r, base)
+	}
+	return dest
 }
 
 func hash(data []byte) string {
