@@ -172,6 +172,13 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 				if dryRun {
 					return nil
 				}
+				// Esta config nunca estuvo gestionada: el usuario no
+				// sabe que existe. Antes de pisarla se deja un backup,
+				// porque aca el .new no alcanza (el conflicto no se
+				// reportó: --force lo resolvio en silencio).
+				if err := backupLocal(dest, local); err != nil {
+					return err
+				}
 				return escribir()
 			}
 			res.Conflicts = append(res.Conflicts, rel)
@@ -187,12 +194,12 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			return persistir()
 
 		case localHash == baseHash:
-			// El usuario no lo tocó: el repo manda.
+			// El usuario no lo tocó: el repo manda. Esto pasa con y sin
+			// --force, así que no cuenta como overwrite de --force.
 			if remoteHash == localHash {
 				return nil
 			}
 			res.Updated = append(res.Updated, rel)
-			res.ForceOverwrites = append(res.ForceOverwrites, rel)
 			if dryRun {
 				return nil
 			}
@@ -221,6 +228,13 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 				res.Updated = append(res.Updated, rel)
 				if dryRun {
 					return nil
+				}
+				// Esta config nunca estuvo gestionada: el usuario no
+				// sabe que existe. Antes de pisarla se deja un backup,
+				// porque aca el .new no alcanza (el conflicto no se
+				// reportó: --force lo resolvio en silencio).
+				if err := backupLocal(dest, local); err != nil {
+					return err
 				}
 				return escribir()
 			}
@@ -343,6 +357,14 @@ func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 // skip deja fuera lo que no es configuración de usuario.
 func skip(rel string) bool {
 	base := filepath.Base(rel)
+	// El interior de un repo git no es un dotfile: sin esto el .git/
+	// entero se despliega en ~/.config/.git/.
+	if base == ".git" {
+		return true
+	}
+	if strings.HasPrefix(rel, ".git"+string(filepath.Separator)) {
+		return true
+	}
 	if base == "README.md" || strings.HasSuffix(base, ".md") {
 		return true
 	}
@@ -382,6 +404,18 @@ func writeFile(path string, data []byte, srcMode os.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+// backupLocal deja una copia del contenido local antes de pisarlo.
+// Se usa cuando --force pisa un archivo que el usuario nunca vio
+// gestionado: sin este backup, ese trabajo local se pierde en silencio.
+func backupLocal(dest string, content []byte) error {
+	if len(content) == 0 {
+		return nil
+	}
+	backup := dest + ".bak"
+	// Un .bak previo se sobreescribe: el último es el que importa.
+	return writeFile(backup, content, 0o644)
 }
 
 // resolveDest sigue los symlinks del destino: escribir encima del link

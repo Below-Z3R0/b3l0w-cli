@@ -65,12 +65,20 @@ Lo que sí hace: en las ramas 4 y 7 escribe el remoto sobre el local en
 lugar de dejar un `.new` al lado. El archivo local se pierde, pero el
 repo gana — es explícito y el usuario lo pidió.
 
-`Result.ForceOverwrites` lista **qué archivos reemplazaría** un pull con
-`--force`, para poder anunciar el número real antes de pisar. Entra en
-esa lista todo archivo cuyo contenido local sería reemplazado: las ramas
-4, 5 y 7. **No** entran las ramas 1, 2, 3 y 6: no hay contenido local
-que reemplazar, o el archivo se conserva. La lista se arma igual con y
-sin `--force`, así que se puede calcular el costo antes de decidir.
+`Result.ForceOverwrites` lista **el costo de `--force`**: qué archivos
+pisaría `--force` y que sin él no se pisarían. Para anunciar el número
+real antes de decidir.
+
+Entra en esa lista solo la **rama 7** (ambos cambiaron: conflicto real).
+**No** entran las ramas 4 y 5:
+
+- La rama 5 (el usuario no editó el archivo) se pisa igual con y sin
+  `--force`: el repo manda siempre. Incluirla inflaría el número.
+- La rama 4 (sin base en el estado) tiene conflicto y `--force` la
+  resuelve, pero antes deja un `.bak` del contenido local.
+
+La lista se arma igual con y sin `--force`, así que se puede calcular el
+costo antes de decidir.
 
 ## Adopt
 
@@ -162,8 +170,12 @@ en el estado y ya no aparece en el repo se reporta.
   y `Conflicts`). Los campos están listos para usar; falta el `output`.
 - La CLI hace un `Pull` en dry-run antes del real para detectar
   conflictos y preguntar antes de pisar.
-- `copyFile` quedó sin uso en el paquete: es de un `--adopt` anterior
-  que ya no existe.
+- Cuando `--force` pisa una config que **nunca estuvo gestionada**
+  (rama 4), deja un `.bak` del contenido local al lado. Sin ese backup
+  ese trabajo se perdía en silencio: el `.new` no alcanza porque el
+  conflicto no se reporta cuando `--force` lo resuelve.
+- Cuando `--force` pisa un **conflicto real** (rama 7), no deja `.bak`:
+  el `.new` ya documenta el estado anterior y el usuario fue avisado.
 
 ## Tests
 

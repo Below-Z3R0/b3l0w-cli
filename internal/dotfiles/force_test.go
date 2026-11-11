@@ -7,9 +7,10 @@ import (
 )
 
 // TestForceOverwritesListaLosQueSePisanYNoLosQueSeConservan:
-// ForceOverwrites dice qué archivos "--force" pisaría. Los que se
-// conservan (solo cambió el local) no van en la lista: --force no los
-// toca.
+// ForceOverwrites dice el COSTO de "--force": qué archivos)--force
+// pisaría y sin él no se pisarían. Los que se conservan (solo cambió
+// el local) no van: --force no los toca. Los que el repo pisa igual
+// (el usuario no los editó) tampoco: no los cuesta nada forzar.
 func TestForceOverwritesListaLosQueSePisanYNoLosQueSeConservan(t *testing.T) {
 	src, home, statePath := escenarioMulti(t, map[string]casoArchivo{
 		// No lo tocó el usuario: el repo manda, se pisa igual.
@@ -27,8 +28,10 @@ func TestForceOverwritesListaLosQueSePisanYNoLosQueSeConservan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Los que --force pisaría: el que el repo actualiza y el conflicto.
-	want := []string{"a/pisa.toml", "b/conflicto.toml"}
+	// Los que --force pisaría: SOLO el conflicto. "a/pisa.toml" se
+	// pisa igual sin --force (el repo manda cuando el usuario no lo
+	// tocó): no es costo de forzar, así que no va en la lista.
+	want := []string{"b/conflicto.toml"}
 	if !mismoConjunto(res.ForceOverwrites, want...) {
 		t.Fatalf("ForceOverwrites = %v, quería %v", res.ForceOverwrites, want)
 	}

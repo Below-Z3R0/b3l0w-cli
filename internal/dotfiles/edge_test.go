@@ -261,7 +261,7 @@ func TestEdge_EstadoConRutasQueNoExistenSeReportanComoHuerfanas(t *testing.T) {
 	src, home, statePath := bugSetup(t)
 	bugEscribir(t, filepath.Join(src, "noctalia", "config.toml"), "repo")
 	bugEstadoBase(t, statePath, map[string]string{
-		"noctalia/config.toml": hash([]byte("repo")),
+		"noctalia/config.toml":    hash([]byte("repo")),
 		"viejo/desaparecido.toml": hash([]byte("algo")),
 	})
 
