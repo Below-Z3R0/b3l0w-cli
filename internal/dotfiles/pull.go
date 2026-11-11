@@ -18,7 +18,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -221,9 +220,12 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	return res, nil
 }
 
-// Adopt registra la versión del repo como base de cada archivo que ya
-// existe en el home, sin tocar nada. Sirve para la primera corrida:
-// evita que todo sea conflicto y no pisa la config del usuario.
+// Adopt registra el contenido LOCAL actual como base de cada archivo que
+// ya existe en el home, sin tocar nada. Sirve para la primera corrida:
+// evita que todo sea conflicto.
+//
+// Ojo: adopta el local como base, no lo congela. Si el repo difiere, el
+// siguiente Pull lo trata como "no editado" y aplica el del repo (rama 5).
 //
 // dryRun (opcional) evita escribir el estado.
 func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
@@ -360,22 +362,4 @@ func saveState(path string, st state) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
-}
-
-// copyFile existe para los tests y para un futuro --adopt.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
 }
