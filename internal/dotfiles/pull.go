@@ -17,7 +17,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -82,6 +84,17 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			return nil
 		}
 
+		// Solo se aplican archivos regulares. Un FIFO, un socket o un
+		// device bloquearían ReadFile para siempre; un symlink a un
+		// directorio o roto lo haría fallar. Se ignoran sin abortar el
+		// pull entero. Para un symlink a un archivo regular se usa el
+		// modo del target, no el 0777 del symlink.
+		src, serr := os.Stat(path)
+		if serr != nil || !src.Mode().IsRegular() {
+			return nil
+		}
+		srcMode := src.Mode()
+
 		remote, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -89,15 +102,30 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 		remoteHash := hash(remote)
 		dest := filepath.Join(homeDir, ".config", rel)
 
-		local, err := os.ReadFile(dest)
-		localExists := err == nil
+		local, lerr := os.ReadFile(dest)
+		localExists := lerr == nil
+		if lerr != nil && !errors.Is(lerr, fs.ErrNotExist) {
+			// El destino existe pero no se puede leer (permisos, o es
+			// un directorio). No se puede calcular el 3-way: se
+			// conserva lo que hay y se reporta como conflicto, en vez
+			// de pisarlo creyendo que no existe.
+			res.Conflicts = append(res.Conflicts, rel)
+			if dryRun {
+				return nil
+			}
+			if err := writeFile(dest+".new", remote, srcMode); err != nil {
+				return err
+			}
+			st[rel] = remoteHash
+			return persistir()
+		}
 		localHash := hash(local)
 		baseHash := st[rel]
 
 		// escribir aplica el remoto sobre el destino: conserva el modo
 		// del archivo local, no rompe symlinks y deja la base al día.
 		escribir := func() error {
-			if err := writeFile(resolveDest(dest), remote, info.Mode()); err != nil {
+			if err := writeFile(resolveDest(dest), remote, srcMode); err != nil {
 				return err
 			}
 			st[rel] = remoteHash
@@ -117,11 +145,15 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 
 		case !localExists:
 			// Nunca existió: se instala.
-			res.Missing = append(res.Missing, rel)
 			if dryRun {
+				res.Missing = append(res.Missing, rel)
 				return nil
 			}
-			return escribir()
+			if err := escribir(); err != nil {
+				return err
+			}
+			res.Missing = append(res.Missing, rel)
+			return nil
 
 		case baseHash == "":
 			// Sin historial no hay forma de saber quién cambió: si es
@@ -136,17 +168,17 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			}
 			res.ForceOverwrites = append(res.ForceOverwrites, rel)
 			if force {
+				res.Updated = append(res.Updated, rel)
 				if dryRun {
 					return nil
 				}
-				res.Updated = append(res.Updated, rel)
 				return escribir()
 			}
 			res.Conflicts = append(res.Conflicts, rel)
 			if dryRun {
 				return nil
 			}
-			if err := writeFile(dest+".new", remote, info.Mode()); err != nil {
+			if err := writeFile(dest+".new", remote, srcMode); err != nil {
 				return err
 			}
 			// El conflicto ya se reportó: se avanza la base para que no
@@ -171,21 +203,32 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			res.Kept = append(res.Kept, rel)
 			return nil
 
+		case localHash == remoteHash:
+			// Local y repo llegaron al mismo contenido: no hay
+			// conflicto real, solo hay que avanzar la base. Es el caso
+			// "ambos editaron lo mismo" de un merge 3-way.
+			st[rel] = remoteHash
+			if err := persistir(); err != nil {
+				return err
+			}
+			res.Kept = append(res.Kept, rel)
+			return nil
+
 		default:
 			// Ambos cambiaron: conflicto real.
 			res.ForceOverwrites = append(res.ForceOverwrites, rel)
 			if force {
+				res.Updated = append(res.Updated, rel)
 				if dryRun {
 					return nil
 				}
-				res.Updated = append(res.Updated, rel)
 				return escribir()
 			}
 			res.Conflicts = append(res.Conflicts, rel)
 			if dryRun {
 				return nil
 			}
-			if err := writeFile(dest+".new", remote, info.Mode()); err != nil {
+			if err := writeFile(dest+".new", remote, srcMode); err != nil {
 				return err
 			}
 			// El conflicto ya se reportó: se avanza la base para que no
@@ -200,6 +243,14 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 
 	// Podar el estado: lo que ya no está en el repo queda huérfano. Se
 	// reporta, pero el archivo local no se borra automáticamente.
+	//
+	// Si el walk no vio ningún archivo (srcDir vacío, clone incompleto,
+	// --dotfiles-dir apuntando a otro lado) no se poda: borrar el estado
+	// entero convertiría el próximo pull en una batería de conflictos y,
+	// con --force, en pérdida de trabajo local. Mejor no tocar nada.
+	if len(seen) == 0 {
+		return res, nil
+	}
 	var orphans []string
 	for rel := range st {
 		if !seen[rel] {
@@ -234,7 +285,7 @@ func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 		return 0, err
 	}
 	count := 0
-	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -252,24 +303,39 @@ func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 		if _, err := os.Stat(dest); err != nil {
 			return nil // no existe local: se instalará en el próximo pull
 		}
+		// Solo archivos regulares y legibles: un directorio, un FIFO o
+		// un archivo sin permisos no se puede adoptar y no debe abortar
+		// la adopción de los demás.
+		destInfo, serr := os.Stat(dest)
+		if serr != nil || !destInfo.Mode().IsRegular() {
+			return nil
+		}
+		local, rerr := os.ReadFile(dest)
+		if rerr != nil {
+			return nil
+		}
+		// Adopt "solo agrega": no pisa una base existente. Si la pisara,
+		// una edición local pasaría a ser "no editada" y el próximo pull
+		// la perdería en silencio.
+		if _, yaAdoptado := st[rel]; yaAdoptado {
+			return nil
+		}
 		// La base es el contenido local actual: desde acá el 3-way
 		// normal decide. Si el repo difiere, el próximo pull lo aplica.
-		local, err := os.ReadFile(dest)
-		if err != nil {
-			return err
-		}
 		st[rel] = hash(local)
 		count++
 		return nil
 	})
-	if err != nil {
-		return 0, err
+	if walkErr != nil {
+		return count, walkErr
 	}
 	if len(dryRun) > 0 && dryRun[0] {
 		return count, nil
 	}
+	// Se devuelve el conteo real aunque falle el guardado: el llamador
+	// puede informar cuántos archivos se adoptaron antes del error.
 	if err := saveState(statePath, st); err != nil {
-		return 0, err
+		return count, err
 	}
 	return count, nil
 }
@@ -309,7 +375,13 @@ func writeFile(path string, data []byte, srcMode os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	// Un rename fallido (destino que es un directorio, otro filesystem,
+	// permisos) no puede dejar el .tmp tirado en ~/.config.
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // resolveDest sigue los symlinks del destino: escribir encima del link
@@ -348,7 +420,12 @@ func loadState(path string) (state, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal(data, &st); err != nil {
-		return nil, fmt.Errorf("estado de dotfiles inválido: %w", err)
+		return nil, fmt.Errorf("estado de dotfiles inválido (%s): %w; borralo para regenerarlo", path, err)
+	}
+	// JSON "null" es válido y deja el map en nil. Asignar sobre un map
+	// nil panickea: se normaliza a estado vacío, igual que "no existe".
+	if st == nil {
+		st = state{}
 	}
 	return st, nil
 }
@@ -357,9 +434,32 @@ func saveState(path string, st state) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
+	if st == nil {
+		st = state{}
+	}
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	data = append(data, '\n')
+	// Escritura atómica: tmp en el mismo directorio + rename. Si el
+	// proceso muere a mitad, el estado anterior sigue entero; nunca queda
+	// un JSON truncado que bloquee todos los pulls siguientes.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".dotfiles-*.json.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op si el rename salió bien
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
