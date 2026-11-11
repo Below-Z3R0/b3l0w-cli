@@ -67,6 +67,18 @@ func Run(m *config.Manifest, opts Options) int {
 	// usa alternate screen y deja el cursor oculto.
 	defer kitsystem.RestoreTTY()
 
+	// --dry-run tiene que ser un dry-run de verdad.
+	//
+	// Antes solo lo respetaba la capa de dotfiles: selfUpdate(),
+	// updateSystem() y updatePrograms() lo ignoraban y ejecutaban. Un
+	// "b3l0w update --dry-run" reemplazaba el binario en ejecucion y
+	// dejaba el sistema a medio actualizar.
+	//
+	// Con el flag se muestra el plan y no se toca nada.
+	if opts.DryRun {
+		return dryRun(m, opts)
+	}
+
 	// Sin banderas se hacen las tres capas y el CLI; con una sola, esa.
 	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
 	selfWanted := opts.Self || !anySelector
@@ -129,6 +141,42 @@ func Run(m *config.Manifest, opts Options) int {
 		output.Ok("update complete")
 	}
 	return code
+}
+
+// dryRun muestra que haria el update y no toca nada.
+//
+// El plan tiene que ser util: si solo dice "dry-run" el usuario no
+// sabe que habria cambiado. Cada capa dice que haria.
+func dryRun(m *config.Manifest, opts Options) int {
+	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
+
+	output.Step("Dry-run: no se toca nada")
+
+	if opts.Self || !anySelector {
+		if tag, err := selfupdate.Check(); err == nil && tag != "" && tag != version.Version {
+			output.Step(fmt.Sprintf("  b3l0w: %s -> %s", version.Version, tag))
+		} else {
+			output.Step(fmt.Sprintf("  b3l0w: %s (sin cambios)", version.Version))
+		}
+	}
+	if opts.System || !anySelector {
+		output.Step("  sistema: se actualizaria con cachy-update")
+	}
+	if opts.Programs || !anySelector {
+		output.Step(fmt.Sprintf("  programas: %d se revisarian", len(m.Programs)))
+	}
+	if opts.Plugins || !anySelector {
+		output.Step("  plugins: los sources se refrescarian")
+	}
+	if opts.Services || !anySelector {
+		output.Step("  servicios: las imagenes se revisarian")
+	}
+	if !anySelector {
+		output.Step("  dotfiles: se aplicaria el merge 3-way")
+	}
+
+	output.Ok("dry-run completo")
+	return 0
 }
 
 // updatePlugins refresca los sources con preflight de plugin_api. Si
