@@ -29,6 +29,11 @@ func Remove(manifestPath, id, pluginsDir string, dryRun bool) error {
 	fromSource := sourceVersion(*entry) != ""
 	removed := false
 	for _, dir := range []string{slug(*entry), entry.Path} {
+		// El dir viene del manifiesto: un "../" borraria directorios
+		// de fuera del arbol de plugins (esto es un RemoveAll).
+		if err := system.SafeName(dir); err != nil {
+			return fmt.Errorf("directorio inválido en el manifiesto: %w", err)
+		}
 		target := filepath.Join(pluginsDir, dir)
 		if _, err := os.Stat(target); err != nil {
 			continue

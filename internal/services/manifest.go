@@ -15,6 +15,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Below-Z3R0/b3l0w-kit/system"
+
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 )
 
@@ -97,6 +99,13 @@ func parseManifest(data []byte) (*Manifest, error) {
 	}
 	if m.Version == 0 || len(m.Services) == 0 {
 		return nil, fmt.Errorf("manifiesto de servicios vacío o sin versión")
+	}
+	// El ID termina en el nombre del archivo de estado: si trae "../"
+	// el CLI escribe fuera del directorio de estado.
+	for _, s := range m.Services {
+		if err := system.SafeName(s.ID); err != nil {
+			return nil, fmt.Errorf("servicio con id inválido: %w", err)
+		}
 	}
 	return &m, nil
 }

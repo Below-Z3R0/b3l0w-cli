@@ -31,6 +31,9 @@ func AssetURL(p config.Program) (string, error) {
 
 // InstallPath es donde se deja el binario de un programa.
 func InstallPath(name string) (string, error) {
+	if err := system.SafeName(name); err != nil {
+		return "", err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
