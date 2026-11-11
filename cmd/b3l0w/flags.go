@@ -1,6 +1,8 @@
 package main
 
-import "strings"
+import (
+	"strings"
+)
 
 // flags es el parseo de los argumentos de un comando.
 //

@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestAliasVerb comprueba el mapeo de banderas cortas a verbos.
 func TestAliasVerb(t *testing.T) {

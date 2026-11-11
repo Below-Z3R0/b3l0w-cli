@@ -7,7 +7,6 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
-
 	"github.com/Below-Z3R0/b3l0w-kit/output"
 )
 

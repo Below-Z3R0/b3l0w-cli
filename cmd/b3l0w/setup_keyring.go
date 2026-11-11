@@ -4,10 +4,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/verify"
-
 	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-kit/verify"
 )
 
 // ensureKeyring deja la clave del repo [b3l0w] en el keyring de pacman.
@@ -19,7 +18,7 @@ import (
 //
 // No pide sudo si la clave ya está.
 func ensureKeyring() {
-	if !system.HaveCommand("pacman-key") {
+	if !kitsystem.HaveCommand("pacman-key") {
 		return
 	}
 	if keyringHasKey() {
@@ -42,11 +41,11 @@ func ensureKeyring() {
 	tmp.Close()
 
 	output.Step("Importando la clave de [b3l0w]")
-	if err := system.Interactive("sudo", "pacman-key", "--add", tmp.Name()); err != nil {
+	if err := kitsystem.Interactive("sudo", "pacman-key", "--add", tmp.Name()); err != nil {
 		output.Warn("keyring: no se pudo importar la clave")
 		return
 	}
-	if err := system.Interactive("sudo", "pacman-key", "--lsign-key", verify.Fingerprint); err != nil {
+	if err := kitsystem.Interactive("sudo", "pacman-key", "--lsign-key", verify.Fingerprint); err != nil {
 		output.Warn("keyring: la clave se importó pero no se firmó localmente")
 		return
 	}
@@ -55,7 +54,7 @@ func ensureKeyring() {
 
 // keyringHasKey consulta sin root: --list-keys lee el keyring público.
 func keyringHasKey() bool {
-	out, err := system.RunCombined("pacman-key", "--list-keys", verify.Fingerprint)
+	out, err := kitsystem.RunCombined("pacman-key", "--list-keys", verify.Fingerprint)
 	if err != nil {
 		return false
 	}
