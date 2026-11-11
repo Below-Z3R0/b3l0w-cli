@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/apps"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
@@ -92,13 +91,11 @@ func run(args []string) int {
 
 // firstPositional devuelve el primer argumento que no es un flag. Los
 // flags pueden ir antes o despues del nombre del servicio.
+//
+// Delega en el parser comun: la regla de "que es un posicional" esta
+// escrita una sola vez.
 func firstPositional(args []string) string {
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			return arg
-		}
-	}
-	return ""
+	return parsearFlags(args).libre()
 }
 
 func homeDir() string {
