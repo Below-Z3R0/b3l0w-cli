@@ -13,6 +13,26 @@ import (
 // stdinReader se comparte para no perder líneas entre preguntas.
 var stdinReader = bufio.NewReader(os.Stdin)
 
+// ttyForTest permite a los tests simular una terminal. En producción es nil.
+var ttyForTest func() bool
+
+// SetTTYForTest reemplaza la detección de terminal y devuelve cómo restaurarla.
+//
+// IsTTY usa un ioctl real (TCGETS): un pipe o /dev/null ya no pasan por
+// terminal. Los tests necesitan decir "esto es una terminal" sin un PTY.
+func SetTTYForTest(f func() bool) (restore func()) {
+	prev := ttyForTest
+	ttyForTest = f
+	return func() { ttyForTest = prev }
+}
+
+func isTTY() bool {
+	if ttyForTest != nil {
+		return ttyForTest()
+	}
+	return system.IsTTY()
+}
+
 // Confirm pregunta como pacman: [Y/n] o [y/N], en inglés.
 //
 // Con --yes no pregunta. Sin terminal devuelve false: abortar es más
@@ -21,7 +41,7 @@ func Confirm(prompt string, yes bool, def bool) bool {
 	if yes {
 		return true
 	}
-	if !system.IsTTY() {
+	if !isTTY() {
 		return false
 	}
 
@@ -59,7 +79,7 @@ func parseAnswer(s string, def bool) (answer, ok bool) {
 
 // AskInt pide un número; vacío o inválido usa el default.
 func AskInt(prompt string, def int) int {
-	if !system.IsTTY() {
+	if !isTTY() {
 		return def
 	}
 	fmt.Print(prompt)
