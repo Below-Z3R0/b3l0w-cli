@@ -150,6 +150,13 @@ func Apply(plan *Plan, opts Options) error {
 		if !file.SrcExists {
 			return fmt.Errorf("falta el origen del dotfile: %s", file.Src)
 		}
+		// Si el destino ya esta, no se toca: el plan se armó con lo que
+		// FALTA (Empty() lo dice), y apply tiene que hacer lo mismo.
+		// Antes se pisaba igual, dejando backups y perdiendo las
+		// ediciones locales del usuario en cada corrida.
+		if file.DestExists {
+			continue
+		}
 		if err := installDotfile(run, file); err != nil {
 			return err
 		}
@@ -184,16 +191,46 @@ func dryRun(plan *Plan) {
 	}
 }
 
+// destinoSeguro valida que el destino de un dotfile no pueda borrar el
+// home ni el sistema de archivos.
+//
+// El destino viene del perfil (que puede ser una definicion remota), y
+// ExpandHome("~") devuelve el home entero. Con "~" como destino, el
+// RemoveAll de abajo borraba el home del usuario.
+func destinoSeguro(dest string) error {
+	if dest == "" {
+		return fmt.Errorf("destino de dotfile vacio")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return fmt.Errorf("no se pudo determinar el home: %w", err)
+	}
+	limpio := filepath.Clean(dest)
+	if limpio == "/" {
+		return fmt.Errorf("destino de dotfile peligroso: %s", dest)
+	}
+	if limpio == filepath.Clean(home) {
+		return fmt.Errorf("destino de dotfile peligroso: %s", dest)
+	}
+	if !strings.HasPrefix(limpio, filepath.Clean(home)+string(os.PathSeparator)) {
+		return fmt.Errorf("el destino esta fuera del home: %s", dest)
+	}
+	return nil
+}
+
 // installDotfile copia un archivo o directorio con backup del destino.
 func installDotfile(run Runner, file FileStatus) error {
+	if err := destinoSeguro(file.Dest); err != nil {
+		return err
+	}
 	if pathExists(file.Dest) {
 		stamp := time.Now().Format("20060102-150405")
 		backup := fmt.Sprintf("%s.bak-%s", file.Dest, stamp)
-		if err := run.Interactive("cp", "-a", file.Dest, backup); err != nil {
+		// rename en vez de cp + RemoveAll: es atomico y no deja una
+		// ventana en la que el destino no existe. Con cp, un corte
+		// dejaba el destino ya borrado y el backup sin hacer.
+		if err := os.Rename(file.Dest, backup); err != nil {
 			return fmt.Errorf("backup de %s: %w", file.Dest, err)
-		}
-		if err := os.RemoveAll(file.Dest); err != nil {
-			return err
 		}
 		output.Ok(fmt.Sprintf("backup: %s", backup))
 	}

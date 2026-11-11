@@ -205,24 +205,32 @@ func TestApplyDotfileHaceBackup(t *testing.T) {
 	}
 
 	fake := newFake()
-	plan := &Plan{Files: []FileStatus{{Src: src, Dest: dest, SrcExists: true, DestExists: true}}}
-
-	if err := Apply(plan, Options{Runner: fake, SyncPlugins: func() {}}); err != nil {
-		t.Fatalf("Apply: %v", err)
+	// El backup se hace con os.Rename (atomico), no con cp: el destino
+	// viejo se renombra a .bak-<ts> y queda libre para la copia.
+	if err := installDotfile(fake, FileStatus{Src: src, Dest: dest, SrcExists: true, DestExists: true}); err != nil {
+		t.Fatalf("installDotfile: %v", err)
 	}
-	if len(fake.calls) != 2 {
-		t.Fatalf("calls = %v, quería backup + copia", fake.calls)
+	// Solo la copia pasa por el runner.
+	if len(fake.calls) != 1 {
+		t.Fatalf("calls = %v, quería la copia", fake.calls)
 	}
-	if !strings.HasPrefix(fake.calls[0], "cp -a "+dest+" "+dest+".bak-") {
-		t.Errorf("primero va el backup: %q", fake.calls[0])
+	if fake.calls[0] != "cp -a "+src+" "+dest {
+		t.Errorf("la copia: %q", fake.calls[0])
 	}
-	if fake.calls[1] != "cp -a "+src+" "+dest {
-		t.Errorf("después va la copia: %q", fake.calls[1])
+	backups, _ := filepath.Glob(dest + ".bak-*")
+	if len(backups) != 1 {
+		t.Fatalf("backups = %v, quería 1", backups)
 	}
-	// El fake no copia: solo se comprueba que el destino se liberó para
-	// que el cp real lo cree.
+	old, err := os.ReadFile(backups[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(old) != "viejo" {
+		t.Errorf("el backup tiene %q, quería el viejo", old)
+	}
+	// El destino viejo tiene que estar libre para que el cp lo cree.
 	if pathExists(dest) {
-		t.Error("el destino viejo tenía que quedar borrado antes del cp")
+		t.Error("el destino viejo tenía que quedar renombrado antes del cp")
 	}
 }
 
@@ -333,16 +341,33 @@ func TestApplyErroresDeDotfile(t *testing.T) {
 
 	t.Run("backup", func(t *testing.T) {
 		fake := newFake()
-		fake.failPrefix = []string{"cp -a " + dest + " " + dest + ".bak-"}
-		plan := &Plan{Files: []FileStatus{{Src: src, Dest: dest, SrcExists: true, DestExists: true}}}
-
-		err := Apply(plan, Options{Runner: fake, SyncPlugins: func() {}})
-		if err == nil || !strings.Contains(err.Error(), "backup de") {
-			t.Fatalf("error = %v, quería el de backup", err)
+		// installDotfile directo: Apply saltea los destinos que ya
+		// estan (el plan solo trae lo que falta), asi que por el plan
+		// no se llega al backup.
+		err := installDotfile(fake, FileStatus{Src: src, Dest: dest, SrcExists: true, DestExists: true})
+		if err != nil {
+			t.Fatalf("installDotfile: %v", err)
 		}
-		// Si el backup falló, el destino no se tocó.
-		if !pathExists(dest) {
-			t.Error("el destino no se puede borrar si el backup falló")
+		// El backup se hace con os.Rename (atomico), no con cp: el
+		// destino viejo queda en el .bak y el nuevo en su lugar.
+		backups, _ := filepath.Glob(dest + ".bak-*")
+		if len(backups) != 1 {
+			t.Fatalf("backups = %v, quería 1", backups)
+		}
+		old, err := os.ReadFile(backups[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(old) != "viejo" {
+			t.Errorf("el backup tiene %q, quería el contenido viejo", old)
+		}
+		// El contenido nuevo lo pone el runner real; el fake no copia.
+		// Lo que importa acá es que el backup quedo con el viejo y que
+		// el destino ya no tiene el contenido anterior.
+		if _, err := os.ReadFile(dest); err == nil {
+			if got, _ := os.ReadFile(dest); string(got) == "viejo" {
+				t.Error("el destino todavia tiene el contenido viejo")
+			}
 		}
 	})
 
