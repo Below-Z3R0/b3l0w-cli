@@ -1,2 +1,8 @@
 dist/
 *.log
+
+# packaging: artefactos de build y clones locales
+packaging/*/src/
+packaging/*/pkg/
+packaging/*/calamares/
+packaging/**/*.pkg.tar.zst
