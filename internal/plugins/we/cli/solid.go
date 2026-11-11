@@ -92,6 +92,12 @@ func cmdSolid(args []string) int {
 		return fail("%v", err)
 	}
 
+	// RGBA son 4 bytes por pixel: 100000x100000 son 40 GB y el kernel
+	// mata el proceso. El limite es generoso para un fondo y corta el
+	// caso que revienta la maquina.
+	if int64(width)*int64(height) > 1<<26 {
+		return fail("--size demasiado grande: maximo 8192x8192")
+	}
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {

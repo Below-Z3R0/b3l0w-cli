@@ -90,6 +90,14 @@ func LoadSession(dataDir, id string) (Session, error) {
 		}
 		return Session{}, fmt.Errorf("leyendo la sesión %s: %w", id, err)
 	}
+	// El cursor viene de un JSON en disco: si quedó fuera de la cola
+	// (sesión editada a mano o interrumpida a mitad de guardado),
+	// indexar revienta con un panic. Se valida una sola vez acá.
+	if session.Cursor < 0 || session.Cursor >= len(session.Queue) {
+		return Session{}, fmt.Errorf(
+			"la sesión %s tiene el cursor %d fuera de una cola de %d canciones",
+			session.ID, session.Cursor, len(session.Queue))
+	}
 	return session, nil
 }
 

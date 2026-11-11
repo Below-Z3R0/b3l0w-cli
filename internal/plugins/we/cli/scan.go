@@ -165,6 +165,11 @@ func cmdScan(args []string) int {
 		return fail("indicá al menos una carpeta con --dir")
 	}
 
+	// --max viene del usuario y se usa como capacidad: un valor
+	// absurdo reserva esa memoria de una y mata el proceso.
+	if max > 100000 {
+		return fail("--max demasiado grande: maximo 100000")
+	}
 	items := make([]scanItem, 0, max)
 	seen := map[string]bool{}
 
