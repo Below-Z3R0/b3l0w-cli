@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // NormalizeDigest deja solo el "sha256:..." del digest.

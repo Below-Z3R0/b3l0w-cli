@@ -14,8 +14,8 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/releases"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/releases"
 )
 
 // Inyectables para los tests.

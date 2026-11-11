@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // systemList muestra la definición del sistema: los perfiles y cuántos

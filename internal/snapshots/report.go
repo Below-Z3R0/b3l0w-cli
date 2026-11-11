@@ -3,8 +3,8 @@ package snapshots
 import (
 	"fmt"
 
-	"github.com/Below-Z3R0/b3l0w-kit/confirm"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Report cuenta las entradas, pregunta si reducir y con qué límite.

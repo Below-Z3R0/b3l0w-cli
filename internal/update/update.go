@@ -24,9 +24,9 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/versioncheck"
 
-	"github.com/Below-Z3R0/b3l0w-kit/confirm"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // Options son las banderas de `b3l0w update`.

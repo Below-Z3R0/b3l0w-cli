@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
-	kitreleases "github.com/Below-Z3R0/b3l0w-kit/releases"
+	kitreleases "github.com/Below-Z3R0/b3l0w-cli/kit/releases"
 )
 
 func TestCheckSoloProgramasDeGitHub(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/paths"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
 )
 
 // b3l0w es el CLI de control del sistema: versiones, estado, updates y

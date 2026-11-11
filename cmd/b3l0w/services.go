@@ -10,7 +10,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Los subcomandos de `b3l0w services`: instalar, actualizar y operar

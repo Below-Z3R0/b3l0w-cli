@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Las rutas y el parseo de argumentos de los plugins.

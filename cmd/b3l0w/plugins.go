@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
-	"github.com/Below-Z3R0/b3l0w-kit/confirm"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/paths"
-	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
+	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // Los subcomandos de `b3l0w plugins`: el catalogo de extensiones de

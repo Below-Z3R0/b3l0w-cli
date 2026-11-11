@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/confirm"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // repoSection es la sección que se agrega a pacman.conf.

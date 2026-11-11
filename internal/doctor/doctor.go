@@ -13,9 +13,9 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/releases"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/system"
 
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/paths"
-	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
+	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // Run devuelve 0 si no hay errores (los avisos no cuentan).

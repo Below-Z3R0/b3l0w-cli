@@ -9,7 +9,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/snapshots"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/update"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Los comandos de actualizacion: el update general, el chequeo y el

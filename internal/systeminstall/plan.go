@@ -9,7 +9,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
 
-	kitsystem "github.com/Below-Z3R0/b3l0w-kit/system"
+	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // FileStatus es un dotfile: si existe el origen (en el repo) y el destino.

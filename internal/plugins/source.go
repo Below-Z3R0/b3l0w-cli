@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // SourceName es el nombre del source de Noctalia que publica el registry.

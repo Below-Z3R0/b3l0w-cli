@@ -6,8 +6,8 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 
-	"github.com/Below-Z3R0/b3l0w-kit/paths"
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // Uninstall borra el binario de ~/.local/bin y lo saca del manifiesto.

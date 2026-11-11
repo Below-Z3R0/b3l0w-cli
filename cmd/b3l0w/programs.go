@@ -6,8 +6,8 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
-	"github.com/Below-Z3R0/b3l0w-kit/paths"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
 )
 
 // Los comandos de programas: instalar, desinstalar y registrar los

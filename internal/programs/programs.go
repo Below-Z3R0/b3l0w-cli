@@ -17,7 +17,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // versionRe acepta "v1.2.3" y "1.2.3". Es la única forma de leer una

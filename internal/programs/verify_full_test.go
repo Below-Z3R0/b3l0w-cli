@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Below-Z3R0/b3l0w-kit/verify"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/verify"
 )
 
 // TestVerifyReleaseCompleto ejercita el camino real: servidor HTTP,

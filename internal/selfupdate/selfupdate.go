@@ -17,8 +17,8 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/version"
-	"github.com/Below-Z3R0/b3l0w-kit/fetch"
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/fetch"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 const (

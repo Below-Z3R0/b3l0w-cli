@@ -9,7 +9,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systemdef"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/systeminstall"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Los comandos de sistema: el perfil de la distro, su diff contra la

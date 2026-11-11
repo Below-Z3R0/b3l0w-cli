@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/confirm"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Installer instala un servicio: pull de la imagen, up del stack,

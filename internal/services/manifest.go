@@ -15,7 +15,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Below-Z3R0/b3l0w-kit/system"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 )

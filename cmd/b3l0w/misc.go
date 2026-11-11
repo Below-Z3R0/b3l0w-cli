@@ -7,7 +7,7 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/doctor"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/programs"
-	"github.com/Below-Z3R0/b3l0w-kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
 // Los comandos sueltos: el listado, la ejecucion de un plugin y el
