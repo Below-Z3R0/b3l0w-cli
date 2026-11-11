@@ -50,7 +50,13 @@ func Run(args []string) int {
 		return 1
 	}
 
-	if instala(flag) && !allowStale {
+	// El freno de DB vieja aplica a las instalaciones, no a -Syu.
+	//
+	// -Syu sincroniza y actualiza: el chequeo de "¿la DB es vieja?"
+	// se resuelve solo con el sync. Antes frenaba -Syu y el mensaje de
+	// escape decia "usá: b3l0w apps -Syu": un deadlock, porque el
+	// comando que el usuario necesitaba era el que se rechazaba.
+	if instala(flag) && !allowStale && !actualiza(flag) {
 		if edad, db, err := OldestSyncDB(); err == nil && edad > MaxAge {
 			output.Fail(fmt.Sprintf("la base de datos de pacman tiene %s (%s)", humanizar(edad), db))
 			fmt.Println("  actualizá antes de instalar: b3l0w apps -Syu")
@@ -98,6 +104,14 @@ func instala(flag string) bool {
 		return false
 	}
 	return !strings.Contains(flag, "s") && !strings.Contains(flag, "i")
+}
+
+// actualiza dice si el flag sincroniza y actualiza todo (-Syu).
+//
+// -Syu refresca las DB antes de actualizar: la freshness no es un
+// problema ahi, es justamente lo que arregla.
+func actualiza(flag string) bool {
+	return strings.HasPrefix(flag, "-S") && strings.Contains(flag, "y") && strings.Contains(flag, "u")
 }
 
 // needsRoot: consultar (-Ss, -Si, -Q) no pide sudo; instalar y quitar

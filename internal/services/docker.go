@@ -16,21 +16,19 @@ import (
 )
 
 // DockerAdapter habla con Docker. Todo pasa por compose v2.
-type DockerAdapter struct {
-	Runner func(name string, args ...string) (string, error)
-}
+//
+// No hay un Runner para inyectar comandos: nunca se uso en tests y
+// hacia que el entorno se perdiera (ver runEnv).
+type DockerAdapter struct{}
 
 // NewDocker devuelve un adapter con los defaults del sistema.
 func NewDocker() *DockerAdapter {
-	return &DockerAdapter{Runner: system.RunCombined}
+	return &DockerAdapter{}
 }
 
 func (d *DockerAdapter) run(args ...string) (string, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("comando vacío")
-	}
-	if d.Runner != nil {
-		return d.Runner(args[0], args[1:]...)
 	}
 	return system.RunCombined(args[0], args[1:]...)
 }
@@ -60,9 +58,9 @@ func (d *DockerAdapter) runEnv(env map[string]string, args ...string) (string, e
 	if len(args) == 0 {
 		return "", fmt.Errorf("comando vacío")
 	}
-	if d.Runner != nil {
-		return d.Runner(args[0], args[1:]...)
-	}
+	// El env se inyecta siempre: si no, la variable IMAGE se pierde y
+	// compose levanta la imagen por su default (${IMAGE:-intel-latest})
+	// en vez de la variante que el usuario pidio.
 	cmd := exec.Command(args[0], args[1:]...)
 	if len(env) > 0 {
 		cmd.Env = os.Environ()

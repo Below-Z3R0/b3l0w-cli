@@ -1105,11 +1105,27 @@ func servicesVariant(args []string) int {
 	output.Step(fmt.Sprintf("%s → %s", svc.ID, want))
 	fmt.Printf("  imagen: %s\n", image)
 	fmt.Println("  → pull y recreate del stack")
-	if err := services.NewDocker().Pull(svc.Image, tag); err != nil {
+
+	docker := services.NewDocker()
+	if err := docker.Pull(svc.Image, tag); err != nil {
 		output.Fail(err.Error())
 		return 1
 	}
-	digest, _ := services.NewDocker().ImageDigest(image)
+	digest, _ := docker.ImageDigest(image)
+
+	// Recrear el stack es lo que hace que la variante se aplique.
+	//
+	// Antes solo se hacia el pull y se guardaba el estado: el
+	// contenedor seguía corriendo la imagen anterior y el estado
+	// decía otra cosa. Ademas el env con IMAGE es lo que le dice a
+	// compose que imagen levantar.
+	dir := serviceDir(*svc)
+	files := services.ComposeFiles(*svc, want)
+	if err := docker.Up(dir, files, map[string]string{"IMAGE": tag}); err != nil {
+		output.Fail(err.Error())
+		return 1
+	}
+
 	state.Previous = state.Image
 	state.PreviousTag = state.Tag
 	state.Variant = want
