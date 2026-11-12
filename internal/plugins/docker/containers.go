@@ -90,6 +90,16 @@ func Exec(ctx context.Context, args ...string) (string, error) {
 	return out.String(), nil
 }
 
+// runnerDe devuelve el runner a usar. Si no se inyectó ninguno cae en Exec
+// (el runner real), para que un `nil` no sea un panic: el contrato es el
+// mismo en todas las funciones del paquete.
+func runnerDe(run Runner) Runner {
+	if run == nil {
+		return Exec
+	}
+	return run
+}
+
 func primeraLinea(texto string) string {
 	texto = strings.TrimSpace(texto)
 	if idx := strings.IndexByte(texto, '\n'); idx > 0 {
@@ -147,6 +157,7 @@ func Containers(ctx context.Context, run Runner, all bool) ([]Container, error) 
 	if all {
 		args = []string{"ps", "-a", "--no-trunc", "--format", "{{json .}}"}
 	}
+	run = runnerDe(run)
 	raw, err := run(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -224,6 +235,7 @@ func uptimeFromStatus(status string) string {
 
 // Images lee `docker images`.
 func Images(ctx context.Context, run Runner) ([]Image, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "images", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
@@ -260,6 +272,7 @@ func Images(ctx context.Context, run Runner) ([]Image, error) {
 
 // Volumes lee `docker volume ls`.
 func Volumes(ctx context.Context, run Runner) ([]Volume, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "volume", "ls", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
@@ -285,6 +298,7 @@ func Volumes(ctx context.Context, run Runner) ([]Volume, error) {
 
 // Networks lee `docker network ls`.
 func Networks(ctx context.Context, run Runner) ([]Network, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "network", "ls", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
@@ -316,6 +330,7 @@ func Networks(ctx context.Context, run Runner) ([]Network, error) {
 // Snapshot junta todo. Las imágenes/volúmenes/redes se piden en paralelo: en
 // serie son cuatro procesos que el panel esperaba uno atrás del otro.
 func Collect(ctx context.Context, run Runner, includeStopped bool) Snapshot {
+	run = runnerDe(run)
 	// Slices vacíos, no nil: en JSON un nil sale `null` y el plugin recibe nil
 	// en vez de una lista (cualquier `#payload.images` explota).
 	snap := Snapshot{
@@ -361,7 +376,12 @@ func Collect(ctx context.Context, run Runner, includeStopped bool) Snapshot {
 	if err != nil {
 		snap.Error = err.Error()
 	}
-	snap.Containers = containers
+	// Igual que imágenes/volúmenes/redes: si no vino nada, se queda la lista
+	// vacía. Un nil sale `null` en JSON y el plugin hace #payload.containers
+	// sobre null.
+	if containers != nil {
+		snap.Containers = containers
+	}
 
 	if img := <-canalImg; img.err != nil {
 		if snap.Error == "" {

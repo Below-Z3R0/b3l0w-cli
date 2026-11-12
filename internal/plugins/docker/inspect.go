@@ -39,6 +39,7 @@ type Mount struct {
 // Se pide por formato: el JSON completo trae cientos de KB y el runtime de Luau
 // no los necesita.
 func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "inspect", "--format", "{{json .}}", id)
 	if err != nil {
 		return Inspect{}, err
