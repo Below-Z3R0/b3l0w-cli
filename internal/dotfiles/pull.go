@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // Result cuenta qué pasó con cada archivo.
@@ -49,6 +50,18 @@ type state map[string]string // ruta relativa -> sha256 aplicado
 // escribe nada: ni archivos ni estado.
 func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error) {
 	var res Result
+
+	// Lock sobre el estado: el estado es un read-modify-write (se lee
+	// al principio y se guarda por cada archivo). Sin lock, dos Pull
+	// simultaneos se pisan y las bases que avanzó uno desaparecen:
+	// el pull siguiente ve todo como "sin base" y reporta conflictos
+	// falsos (o, con --force, pisa en masa).
+	unlock, err := lockState(statePath)
+	if err != nil {
+		return res, err
+	}
+	defer unlock()
+
 	st, err := loadState(statePath)
 	if err != nil {
 		return res, err
@@ -65,8 +78,14 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	}
 
 	// seen: rutas relativas presentes en el repo. Al final se usa para
-	// podar del estado las entradas que quedaron huérfanas.
+	// podar del estado las entradas que quedaron huérfanas. Incluye los
+	// archivos que skip() descarta: un .md del repo no se despliega,
+	// pero si estaba en el estado no es un huérfano.
 	seen := make(map[string]bool)
+	// applied: los archivos que realmente se aplican. El guard de repo
+	// vacío mira ESTE, no seen: un repo con un solo README.md (o solo
+	// .git/) no tiene nada que aplicar y no debe podar el estado.
+	applied := make(map[string]bool)
 
 	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -83,6 +102,7 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 		if skip(rel) {
 			return nil
 		}
+		applied[rel] = true
 
 		// Solo se aplican archivos regulares. Un FIFO, un socket o un
 		// device bloquearían ReadFile para siempre; un symlink a un
@@ -262,7 +282,7 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	// --dotfiles-dir apuntando a otro lado) no se poda: borrar el estado
 	// entero convertiría el próximo pull en una batería de conflictos y,
 	// con --force, en pérdida de trabajo local. Mejor no tocar nada.
-	if len(seen) == 0 {
+	if len(applied) == 0 {
 		return res, nil
 	}
 	var orphans []string
@@ -388,19 +408,31 @@ func writeFile(path string, data []byte, srcMode os.FileMode) error {
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, mode); err != nil {
+	// Temporal unico por escritura. Con un nombre fijo (path + ".tmp")
+	// dos escrituras simultaneas escribian en el mismo archivo: el
+	// resultado era un Frankenstein (la mitad de una version y la mitad
+	// de la otra), y ademas un ".tmp" que el usuario ya tenia se
+	// truncaba y desaparecia con el rename.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	// WriteFile aplica umask: se fuerza el modo exacto.
-	if err := os.Chmod(tmp, mode); err != nil {
-		os.Remove(tmp)
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op si el rename salio bien
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
 		return err
 	}
-	// Un rename fallido (destino que es un directorio, otro filesystem,
-	// permisos) no puede dejar el .tmp tirado en ~/.config.
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+	// El modo va en el temporal: el destino todavia no existe.
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
 	return nil
@@ -444,6 +476,30 @@ func hash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// lockState toma un lock exclusivo sobre el archivo de estado y
+// devuelve la funcion que lo libera.
+//
+// El lock vive en un archivo aparte (statePath + ".lock") para no
+// interferir con el rename atomico del estado. Usa flock(2): si otro
+// proceso ya lo tiene, espera.
+func lockState(statePath string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(statePath+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("no se pudo tomar el lock del estado: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("no se pudo tomar el lock del estado: %w", err)
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}, nil
+}
+
 func loadState(path string) (state, error) {
 	st := state{}
 	data, err := os.ReadFile(path)
@@ -451,7 +507,10 @@ func loadState(path string) (state, error) {
 		if os.IsNotExist(err) {
 			return st, nil
 		}
-		return nil, err
+		// Si el estado no se puede leer (es un directorio, sin
+		// permisos), el error tiene que decir como recuperarse: si no,
+		// el usuario ve "is a directory" y no sabe que hacer.
+		return nil, fmt.Errorf("no se pudo leer el estado de dotfiles (%s): %w; borralo para regenerarlo", path, err)
 	}
 	if err := json.Unmarshal(data, &st); err != nil {
 		return nil, fmt.Errorf("estado de dotfiles inválido (%s): %w; borralo para regenerarlo", path, err)
