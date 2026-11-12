@@ -81,8 +81,12 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 		return nil, fmt.Errorf("pull: %w", err)
 	}
 	current := *state
+	// El tag al que se vuelve se guarda aparte: despues PreviousTag
+	// pasa a ser el tag nuevo (para poder volver adelante), y el env
+	// del compose tiene que llevar el viejo.
+	rollbackTag := state.PreviousTag
 	state.Image = state.Previous
-	state.Tag = state.PreviousTag
+	state.Tag = rollbackTag
 	digest, _ := in.Docker.ImageDigest(state.Previous)
 	state.Digest = digest
 	state.Previous = current.Image
@@ -91,7 +95,7 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 
 	dir := in.repoDir(svc)
 	files := ComposeFiles(svc, state.Variant)
-	env := map[string]string{"IMAGE": state.PreviousTag}
+	env := map[string]string{"IMAGE": rollbackTag}
 	if err := in.Docker.Up(dir, files, env); err != nil {
 		return nil, fmt.Errorf("up: %w", err)
 	}
