@@ -102,6 +102,16 @@ mano (`snapper -c home undochange ...`). Los conflictos se resuelven
 editando el `.new` y volviendo a correr; el comando lista al final los
 que quedaron pendientes. Si hay conflictos pide dos confirmaciones para
 que el repo gane (`--force`); si no, aplica el merge normal.
+
+El **preview de conflictos se hace siempre, también en `--dry-run`**: el
+dry-run tiene que decir qué archivos entrarían en conflicto y cuántos son,
+si no no sirve para decidir. (El número del aviso es el de los conflictos:
+`--force` resuelve solo esos, los archivos que el usuario editó y el repo
+no tocó se conservan.)
+
+Al final se avisa también de los **huérfanos**: rutas que estaban en el
+estado pero ya no están en el repo. Se informa, pero el archivo local no
+se borra.
 `--adopt` corta antes de la snapshot: solo registra hashes y no toca ni
 un archivo.
 
