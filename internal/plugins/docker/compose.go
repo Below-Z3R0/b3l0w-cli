@@ -68,9 +68,7 @@ func GroupProjects(containers []Container) []Project {
 // ComposeAction corre `docker compose -p <proyecto> <accion>` resolviendo el
 // archivo desde `docker compose ls`.
 func ComposeAction(ctx context.Context, run Runner, project, action string) (Action, error) {
-	if run == nil {
-		run = Exec
-	}
+	run = runnerDe(run)
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
@@ -116,9 +114,7 @@ type eventRaw struct {
 // Events devuelve los últimos eventos de contenedor. `docker events` sin
 // `--until` no termina nunca: se acota la ventana para que el comando retorne.
 func Events(ctx context.Context, run Runner, since string) ([]Event, error) {
-	if run == nil {
-		run = Exec
-	}
+	run = runnerDe(run)
 	if since == "" {
 		since = "6h"
 	}

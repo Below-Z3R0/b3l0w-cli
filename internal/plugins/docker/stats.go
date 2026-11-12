@@ -33,6 +33,7 @@ func percent(valor string) float64 {
 // Stats devuelve el consumo de cada contenedor vivo. `--no-stream` es una
 // muestra instantánea: no deja ningún proceso colgado midiendo.
 func Stats(ctx context.Context, run Runner) ([]Stat, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "stats", "--no-stream", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err

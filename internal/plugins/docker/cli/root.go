@@ -17,6 +17,11 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker"
 )
 
+// runner es el ejecutor de docker. En producción es docker.Exec; los tests
+// lo reemplazan por una func falsa para no tocar el daemon real.
+var runner docker.Runner = docker.Exec
+
+// usage documenta los subcomandos que expone `b3l0w docker`.
 const usage = `b3l0w docker — contenedores, imágenes, volúmenes y redes
 
 uso: b3l0w docker <comando> [opciones]
@@ -300,7 +305,7 @@ func composeFileCmd(args []string) int {
 	nombre := args[0]
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	res, err := docker.RunCommand(ctx, docker.Exec, "compose", []string{"ls", "--all", "--format", "json"})
+	res, err := docker.RunCommand(ctx, runner, "compose", []string{"ls", "--all", "--format", "json"})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docker compose ls: %v\n", err)
 		return 1
@@ -379,7 +384,7 @@ func eventsCmd(args []string) int {
 	fs.Parse(args)
 	ctx, cancel := ctxDe()
 	defer cancel()
-	eventos, err := docker.Events(ctx, docker.Exec, desde)
+	eventos, err := docker.Events(ctx, runner, desde)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "events:", err)
 		return 1
@@ -401,7 +406,7 @@ func composeCmd(args []string) int {
 	if len(args) >= 1 && args[0] == "ls" {
 		ctx, cancel := ctxDe()
 		defer cancel()
-		snap := docker.Collect(ctx, docker.Exec, true)
+		snap := docker.Collect(ctx, runner, true)
 		projects := docker.GroupProjects(snap.Containers)
 		data, _ := json.Marshal(map[string]any{"projects": projects})
 		fmt.Println(string(data))
@@ -414,7 +419,7 @@ func composeCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.ComposeAction(ctx, docker.Exec, args[0], *accion)
+	res, err := docker.ComposeAction(ctx, runner, args[0], *accion)
 	data, _ := json.Marshal(map[string]any{"ok": err == nil && res.OK, "command": res.Command, "output": res.Output})
 	fmt.Println(string(data))
 	if err != nil {
@@ -428,7 +433,7 @@ func infoCmd(args []string) int {
 	_ = jsonFlag
 	ctx, cancel := ctxDe()
 	defer cancel()
-	info, err := docker.GetInfo(ctx, docker.Exec)
+	info, err := docker.GetInfo(ctx, runner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "info:", err)
 		return 1
@@ -449,7 +454,7 @@ func snapshot(args []string) int {
 	fs.Parse(args)
 	ctx, cancel := ctxDe()
 	defer cancel()
-	snap := docker.Collect(ctx, docker.Exec, *all)
+	snap := docker.Collect(ctx, runner, *all)
 	if *asJSON {
 		json.NewEncoder(os.Stdout).Encode(snap)
 		if snap.Error != "" {
@@ -485,13 +490,13 @@ func control(action string, args []string) int {
 	var err error
 	switch action {
 	case "start":
-		res, err = docker.Start(ctx, docker.Exec, args[0])
+		res, err = docker.Start(ctx, runner, args[0])
 	case "stop":
-		res, err = docker.Stop(ctx, docker.Exec, args[0])
+		res, err = docker.Stop(ctx, runner, args[0])
 	case "restart":
-		res, err = docker.Restart(ctx, docker.Exec, args[0])
+		res, err = docker.Restart(ctx, runner, args[0])
 	default:
-		res, err = docker.Remove(ctx, docker.Exec, args[0])
+		res, err = docker.Remove(ctx, runner, args[0])
 	}
 	return salidaJSON(res, err, jsonFlag)
 }
@@ -508,11 +513,11 @@ func removeResource(what string, args []string) int {
 	var err error
 	switch what {
 	case "rmi":
-		res, err = docker.RemoveImage(ctx, docker.Exec, args[0])
+		res, err = docker.RemoveImage(ctx, runner, args[0])
 	case "volume-rm":
-		res, err = docker.RemoveVolume(ctx, docker.Exec, args[0])
+		res, err = docker.RemoveVolume(ctx, runner, args[0])
 	default:
-		res, err = docker.RemoveNetwork(ctx, docker.Exec, args[0])
+		res, err = docker.RemoveNetwork(ctx, runner, args[0])
 	}
 	return salidaJSON(res, err, jsonFlag)
 }
@@ -529,7 +534,7 @@ func runImage(args []string) int {
 	fs.Parse(args)
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.RunImage(ctx, docker.Exec, docker.RunOptions{
+	res, err := docker.RunImage(ctx, runner, docker.RunOptions{
 		Image: *image, Name: *name, Network: *network, Ports: ports, Env: env,
 	})
 	if *asJSON {
@@ -561,7 +566,7 @@ func logs(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	texto, err := docker.Logs(ctx, docker.Exec, args[0], tail)
+	texto, err := docker.Logs(ctx, runner, args[0], tail)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -576,7 +581,7 @@ func statsCmd(args []string) int {
 	fs.Parse(args)
 	ctx, cancel := ctxDe()
 	defer cancel()
-	lista, err := docker.Stats(ctx, docker.Exec)
+	lista, err := docker.Stats(ctx, runner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -603,7 +608,7 @@ func inspectCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	info, err := docker.InspectContainer(ctx, docker.Exec, fs.Arg(0))
+	info, err := docker.InspectContainer(ctx, runner, fs.Arg(0))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -627,7 +632,7 @@ func dfCmd(args []string) int {
 	fs.Parse(args)
 	ctx, cancel := ctxDe()
 	defer cancel()
-	filas, total, err := docker.DiskUsage(ctx, docker.Exec)
+	filas, total, err := docker.DiskUsage(ctx, runner)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
@@ -666,7 +671,7 @@ func pruneCmd(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	res, err := docker.Prune(ctx, docker.Exec, destino)
+	res, err := docker.Prune(ctx, runner, destino)
 	if *asJSON {
 		cuerpo := map[string]any{"ok": err == nil && res.OK, "command": res.Command, "output": res.Output}
 		if err != nil {
@@ -749,7 +754,7 @@ func runSimple(args []string, comando string) (docker.Action, error) {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	return docker.RunCommand(ctx, docker.Exec, comando, resto)
+	return docker.RunCommand(ctx, runner, comando, resto)
 }
 
 // execCmd corre un comando dentro de un contenedor en ejecución.
@@ -764,7 +769,7 @@ func execCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.ExecInContainer(ctx, docker.Exec, id, argv)
+	res, err := docker.ExecInContainer(ctx, runner, id, argv)
 	if err != nil {
 		return imprimirExec(res, err, jsonFlag)
 	}
@@ -866,10 +871,10 @@ func copyCmd(args []string) int {
 		if destCont != "" {
 			return errorSimple("cp: no se puede copiar entre contenedores")
 		}
-		res, err = docker.CopyFrom(ctx, docker.Exec, origenCont, origenRuta, destRuta)
+		res, err = docker.CopyFrom(ctx, runner, origenCont, origenRuta, destRuta)
 	case destCont != "":
 		// Del host al contenedor.
-		res, err = docker.Copy(ctx, docker.Exec, destCont, origen, destRuta)
+		res, err = docker.Copy(ctx, runner, destCont, origen, destRuta)
 	default:
 		return errorSimple("cp: el origen o el destino debe ser una ruta dentro del contenedor (id:/ruta)")
 	}
@@ -912,7 +917,7 @@ func commitCmd(args []string) int {
 	_, mensaje, _ := extraerValor(resto, "--message")
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Commit(ctx, docker.Exec, id, repo, tag, mensaje)
+	res, err := docker.Commit(ctx, runner, id, repo, tag, mensaje)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -931,9 +936,9 @@ func pauseCmd(args []string, pausar bool) int {
 	var res docker.Action
 	var err error
 	if pausar {
-		res, err = docker.Pause(ctx, docker.Exec, id)
+		res, err = docker.Pause(ctx, runner, id)
 	} else {
-		res, err = docker.Unpause(ctx, docker.Exec, id)
+		res, err = docker.Unpause(ctx, runner, id)
 	}
 	return salidaJSON(res, err, jsonFlag)
 }
@@ -951,7 +956,7 @@ func renameCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Rename(ctx, docker.Exec, id, nombre)
+	res, err := docker.Rename(ctx, runner, id, nombre)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -969,7 +974,7 @@ func tagCmd(args []string) int {
 	_, tag, _ := extraerValor(resto, "--tag")
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Tag(ctx, docker.Exec, id, repo, tag)
+	res, err := docker.Tag(ctx, runner, id, repo, tag)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1001,7 +1006,7 @@ func pullCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Pull(ctx, docker.Exec, resto[0])
+	res, err := docker.Pull(ctx, runner, resto[0])
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1013,7 +1018,7 @@ func pushCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Push(ctx, docker.Exec, resto[0])
+	res, err := docker.Push(ctx, runner, resto[0])
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1028,9 +1033,9 @@ func createCmd(args []string, clase string) int {
 	var res docker.Action
 	var err error
 	if clase == "volume" {
-		res, err = docker.CreateVolume(ctx, docker.Exec, resto[0])
+		res, err = docker.CreateVolume(ctx, runner, resto[0])
 	} else {
-		res, err = docker.CreateNetwork(ctx, docker.Exec, resto[0])
+		res, err = docker.CreateNetwork(ctx, runner, resto[0])
 	}
 	return salidaJSON(res, err, jsonFlag)
 }
@@ -1045,7 +1050,7 @@ func saveCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.SaveImage(ctx, docker.Exec, imagen, destino)
+	res, err := docker.SaveImage(ctx, runner, imagen, destino)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1058,7 +1063,7 @@ func loadCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.LoadImage(ctx, docker.Exec, origen)
+	res, err := docker.LoadImage(ctx, runner, origen)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1072,7 +1077,7 @@ func exportCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.ExportContainer(ctx, docker.Exec, id, destino)
+	res, err := docker.ExportContainer(ctx, runner, id, destino)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1085,7 +1090,7 @@ func diffCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Diff(ctx, docker.Exec, id)
+	res, err := docker.Diff(ctx, runner, id)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1109,7 +1114,7 @@ func buildCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.Build(ctx, docker.Exec, etiqueta, contexto, dockerfile)
+	res, err := docker.Build(ctx, runner, etiqueta, contexto, dockerfile)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1125,7 +1130,7 @@ func portCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.RunCommand(ctx, docker.Exec, "port", resto)
+	res, err := docker.RunCommand(ctx, runner, "port", resto)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1148,7 +1153,7 @@ func searchCmd(args []string) int {
 	// StarCount e IsOfficial. La tabla de texto obliga a parsear columnas
 	// alineadas y se rompe con las descripciones largas.
 	comando := append([]string{"--limit", limite, "--format", "{{json .}}"}, resto...)
-	res, err := docker.RunCommand(ctx, docker.Exec, "search", comando)
+	res, err := docker.RunCommand(ctx, runner, "search", comando)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1176,7 +1181,7 @@ func updateCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.RunCommand(ctx, docker.Exec, "update", append(flags, id))
+	res, err := docker.RunCommand(ctx, runner, "update", append(flags, id))
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1189,7 +1194,7 @@ func volumeInspectCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.RunCommand(ctx, docker.Exec, "volume", append([]string{"inspect"}, resto...))
+	res, err := docker.RunCommand(ctx, runner, "volume", append([]string{"inspect"}, resto...))
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1200,7 +1205,7 @@ func networkInspectCmd(args []string) int {
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.RunCommand(ctx, docker.Exec, "network", append([]string{"inspect"}, resto...))
+	res, err := docker.RunCommand(ctx, runner, "network", append([]string{"inspect"}, resto...))
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1231,7 +1236,7 @@ func volumeExportCmd(args []string) int {
 		"-v", carpeta + ":/respaldo",
 		"alpine", "tar", "czf", "/respaldo/" + archivo, "-C", "/origen", ".",
 	}
-	res, err := docker.RunCommand(ctx, docker.Exec, "run", comando)
+	res, err := docker.RunCommand(ctx, runner, "run", comando)
 	return salidaJSON(res, err, jsonFlag)
 }
 
@@ -1258,7 +1263,7 @@ func volumeImportCmd(args []string) int {
 		"-v", carpeta + ":/respaldo:ro",
 		"alpine", "tar", "xzf", "/respaldo/" + archivo, "-C", "/destino",
 	}
-	res, err := docker.RunCommand(ctx, docker.Exec, "run", comando)
+	res, err := docker.RunCommand(ctx, runner, "run", comando)
 	return salidaJSON(res, err, jsonFlag)
 }
 

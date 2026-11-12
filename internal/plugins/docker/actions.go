@@ -15,6 +15,7 @@ type Action struct {
 }
 
 func ejecutar(ctx context.Context, run Runner, args ...string) (Action, error) {
+	run = runnerDe(run)
 	comando := "docker " + strings.Join(args, " ")
 	salida, err := run(ctx, args...)
 	if err != nil {
@@ -184,6 +185,7 @@ func puertoValido(valor string) bool {
 
 // Logs devuelve las últimas líneas de un contenedor (texto, no JSON).
 func Logs(ctx context.Context, run Runner, id string, tail int) (string, error) {
+	run = runnerDe(run)
 	if tail <= 0 {
 		tail = 200
 	}
