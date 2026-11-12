@@ -53,13 +53,22 @@ func gpuRank(g GPU) int {
 
 // DetectHardware lee el hardware del host sin binarios externos.
 func DetectHardware() Hardware {
-	hw := Hardware{CPUVendor: cpuVendor(), CPUFlags: cpuFlags()}
-	hw.GPUs = detectGPUs()
+	return detectHardwareAt("/proc/cpuinfo", "/sys/class/drm")
+}
+
+// detectHardwareAt lee el hardware de las rutas que le pasan.
+//
+// Las rutas son argumento para que los tests usen directorios
+// temporales y no el /proc y el /sys de la maquina que corre el test:
+// un test que lee el hardware real no dice nada del codigo.
+func detectHardwareAt(cpuinfoPath, drmRoot string) Hardware {
+	hw := Hardware{CPUVendor: cpuVendorAt(cpuinfoPath), CPUFlags: cpuFlagsAt(cpuinfoPath)}
+	hw.GPUs = detectGPUsAt(drmRoot)
 	return hw
 }
 
-func cpuVendor() string {
-	data, err := os.ReadFile("/proc/cpuinfo")
+func cpuVendorAt(path string) string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
@@ -74,8 +83,8 @@ func cpuVendor() string {
 	return ""
 }
 
-func cpuFlags() []string {
-	data, err := os.ReadFile("/proc/cpuinfo")
+func cpuFlagsAt(path string) []string {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
@@ -101,9 +110,9 @@ func cpuFlags() []string {
 	return nil
 }
 
-// detectGPUs recorre /sys/class/drm/card*/device.
-func detectGPUs() []GPU {
-	entries, err := os.ReadDir("/sys/class/drm")
+// detectGPUsAt recorre <drmRoot>/card*/device.
+func detectGPUsAt(drmRoot string) []GPU {
+	entries, err := os.ReadDir(drmRoot)
 	if err != nil {
 		return nil
 	}
@@ -118,7 +127,7 @@ func detectGPUs() []GPU {
 			continue
 		}
 		// cardN es un symlink: IsDir() da false para symlinks.
-		dev := filepath.Join("/sys/class/drm", name, "device")
+		dev := filepath.Join(drmRoot, name, "device")
 		if info, err := os.Stat(dev); err != nil || !info.IsDir() {
 			continue
 		}
