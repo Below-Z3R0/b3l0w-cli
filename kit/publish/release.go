@@ -1,4 +1,4 @@
-package plugins
+package publish
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 )
 
 // releaseBranch es la rama que publica producción. El repo de plugins
@@ -13,7 +15,7 @@ import (
 const releaseBranch = "main"
 
 // ReleaseOptions describe un release selectivo de plugins a main.
-type ReleaseOptions struct {
+type Options struct {
 	RepoDir      string
 	ManifestPath string
 	Slugs        []string
@@ -32,7 +34,7 @@ type ReleaseOptions struct {
 // prunea los artefactos de desarrollo en el lugar y commitea ahí. No
 // hay checkout de otra rama porque no hay rama de trabajo a la que
 // volver, y no hay merge dev->main porque dev no existe.
-func Release(opts ReleaseOptions) error {
+func Release(opts Options) error {
 	repo := opts.RepoDir
 	if repo == "" {
 		return fmt.Errorf("falta el repo del registry")
@@ -64,7 +66,7 @@ func Release(opts ReleaseOptions) error {
 		return fmt.Errorf("working tree sucio en %s; commiteá o stasheá antes del release: %s", branch, strings.Join(others, ", "))
 	}
 
-	entries, err := Collect(repo)
+	entries, err := plugins.Collect(repo)
 	if err != nil {
 		return err
 	}
@@ -109,11 +111,11 @@ func Release(opts ReleaseOptions) error {
 
 	// El catálogo se arma con lo que realmente quedó en main. Si el
 	// release es selectivo, no lista plugins que no están en main.
-	prodEntries, err := Collect(repo)
+	prodEntries, err := plugins.Collect(repo)
 	if err != nil {
 		return err
 	}
-	if err := Build(repo, opts.ManifestPath, prodEntries); err != nil {
+	if err := plugins.Build(repo, opts.ManifestPath, prodEntries); err != nil {
 		return err
 	}
 	if _, err := git(repo, "add", "catalog.toml"); err != nil {
@@ -208,7 +210,7 @@ func pruneProduction(base string) error {
 	return nil
 }
 
-func selectRelease(entries []Entry, slugs []string) ([]Entry, error) {
+func selectRelease(entries []plugins.Entry, slugs []string) ([]plugins.Entry, error) {
 	if len(slugs) == 0 {
 		return entries, nil
 	}
@@ -216,7 +218,7 @@ func selectRelease(entries []Entry, slugs []string) ([]Entry, error) {
 	for _, s := range slugs {
 		want[s] = true
 	}
-	var out []Entry
+	var out []plugins.Entry
 	for _, entry := range entries {
 		if want[entry.Path] || want[entry.ID] {
 			out = append(out, entry)

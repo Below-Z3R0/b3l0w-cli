@@ -1,10 +1,13 @@
-package plugins
+package publish
 
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
 )
 
 func TestPruneProduction(t *testing.T) {
@@ -112,7 +115,7 @@ func TestReleaseFromMain(t *testing.T) {
 	}
 	commitRepo(t, repo, "init")
 
-	err := Release(ReleaseOptions{RepoDir: repo, Slugs: []string{"wallpaper"}})
+	err := Release(Options{RepoDir: repo, Slugs: []string{"wallpaper"}})
 	if err != nil {
 		t.Fatalf("release desde main: %v", err)
 	}
@@ -163,7 +166,7 @@ func TestReleaseRejectsOtherBranch(t *testing.T) {
 	commitRepo(t, repo, "init")
 	mustGit(t, repo, "checkout", "-b", "dev")
 
-	err := Release(ReleaseOptions{RepoDir: repo})
+	err := Release(Options{RepoDir: repo})
 	if err == nil {
 		t.Fatal("el release debería rechazar una rama que no es main")
 	}
@@ -182,7 +185,7 @@ func TestReleaseRejectsDirtyTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Release(ReleaseOptions{RepoDir: repo})
+	err := Release(Options{RepoDir: repo})
 	if err == nil {
 		t.Fatal("esperaba error de working tree sucio")
 	}
@@ -200,7 +203,7 @@ func TestReleaseDryRunKeepsRepo(t *testing.T) {
 	}
 	commitRepo(t, repo, "init")
 
-	if err := Release(ReleaseOptions{RepoDir: repo, DryRun: true}); err != nil {
+	if err := Release(Options{RepoDir: repo, DryRun: true}); err != nil {
 		t.Fatalf("dry-run: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "wallpaper", "tests")); err != nil {
@@ -208,5 +211,44 @@ func TestReleaseDryRunKeepsRepo(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "catalog.toml")); !os.IsNotExist(err) {
 		t.Error("el dry-run no debería escribir catalog.toml")
+	}
+}
+
+// writePlugin crea un plugin mínimo en el registry para los tests.
+func writePlugin(t *testing.T, registry, dir, id, version string, api int) {
+	t.Helper()
+	path := filepath.Join(registry, dir)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `id = "` + id + `"
+name = "` + dir + `"
+version = "` + version + `"
+plugin_api = ` + strconv.Itoa(api) + `
+author = "b3l0w"
+license = "MIT"
+icon = "movie"
+description = "test"
+tags = ["wallpaper", "desktop"]
+dependencies = ["mpvpaper"]
+`
+	if err := os.WriteFile(filepath.Join(path, "plugin.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSelectRelease(t *testing.T) {
+	entries := []plugins.Entry{
+		{ID: "b3l0w/audio", Path: "audio"},
+		{ID: "b3l0w/wallpaper", Path: "wallpaper"},
+	}
+	if got, err := selectRelease(entries, nil); err != nil || len(got) != 2 {
+		t.Fatalf("sin filtro debería devolver todo: %v %v", got, err)
+	}
+	if got, err := selectRelease(entries, []string{"wallpaper"}); err != nil || len(got) != 1 || got[0].Path != "wallpaper" {
+		t.Fatalf("filtro por slug: %v %v", got, err)
+	}
+	if _, err := selectRelease(entries, []string{"no-existe"}); err == nil {
+		t.Fatal("esperaba error con un slug inexistente")
 	}
 }
