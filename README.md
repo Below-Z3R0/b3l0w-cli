@@ -175,22 +175,28 @@ forma clásica de romper Arch. El CLI lo niega y ofrece `-Syu`.
 
 ## Empaquetado
 
+Este repo solo empaqueta **su propio binario**. Los paquetes de la distro
+(Noctalia, Umbriel, Calamares, keyring, vkBasalt, Millennium, Heronite,
+boot-preview, kitty-shapes) viven en el repo **`Manteiner`**, con su workflow
+de build.
+
 ```
 packaging/
-  b3l0w-keyring/     clave del repo [b3l0w] + pacman-key --populate
-  b3l0w-cli/         compila Go
-  boot-preview/      compila Go
-  kitty-shapes/      instala el binario de Bun
+  assets/            iconos y .desktop del CLI
+  b3l0w-cli/         compila este repo
 ```
 
 ```bash
-# construir uno
+# construir el paquete del CLI
 cd packaging/b3l0w-cli
 rsync -a --exclude .git --exclude packaging ../../ src/
 makepkg -f
+```
 
-# publicar en b3l0w-packages (pide la passphrase)
-bash release/repo-publish.sh --push packaging/*/*.pkg.tar.zst
+Para publicar en `b3l0w-packages` (pide la passphrase):
+
+```bash
+bash <ruta-al-repo-Manteiner>/release/repo-publish.sh --push <archivos>.pkg.tar.zst
 ```
 
 El script reemplaza los symlinks `b3l0w.db` / `b3l0w.files` por copias
