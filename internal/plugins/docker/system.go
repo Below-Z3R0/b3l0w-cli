@@ -20,6 +20,7 @@ type DiskRow struct {
 
 // DiskUsage devuelve el espacio que ocupa y el que se puede recuperar.
 func DiskUsage(ctx context.Context, run Runner) ([]DiskRow, string, error) {
+	run = runnerDe(run)
 	raw, err := run(ctx, "system", "df", "--format", "{{json .}}")
 	if err != nil {
 		return nil, "", err

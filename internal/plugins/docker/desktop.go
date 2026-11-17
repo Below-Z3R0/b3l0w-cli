@@ -25,6 +25,7 @@ func ExecInContainer(ctx context.Context, run Runner, id string, argv []string) 
 	if len(argv) == 0 {
 		return ExecResult{}, fmt.Errorf("exec: falta el comando")
 	}
+	run = runnerDe(run)
 	args := append([]string{"exec", id}, argv...)
 	salida, err := run(ctx, args...)
 	if err != nil {
@@ -42,6 +43,7 @@ type CopyResult struct {
 
 // Copy copia archivos de o hacia un contenedor (`docker cp`).
 func Copy(ctx context.Context, run Runner, id string, origen string, destino string) (CopyResult, error) {
+	run = runnerDe(run)
 	salida, err := run(ctx, "cp", origen, id+":"+destino)
 	if err != nil {
 		return CopyResult{}, err
@@ -51,6 +53,7 @@ func Copy(ctx context.Context, run Runner, id string, origen string, destino str
 
 // CopyFrom copia archivos de un contenedor al host.
 func CopyFrom(ctx context.Context, run Runner, id string, origen string, destino string) (CopyResult, error) {
+	run = runnerDe(run)
 	salida, err := run(ctx, "cp", id+":"+origen, destino)
 	if err != nil {
 		return CopyResult{}, err
