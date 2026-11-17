@@ -364,7 +364,11 @@ func updateDotfiles(opts Options) int {
 
 	// Detectar conflictos antes de escribir: si los hay, preguntar si
 	// el usuario quiere que el repo gane, con un segundo aviso.
-	if !opts.DryRun && !opts.Force {
+	// El preview se hace siempre (tambien en dry-run): el usuario tiene
+	// que ver los conflictos antes de confirmar. Con el if de antes
+	// (que excluia el dry-run) el dry-run no mostraba ninguno, y un
+	// dry-run que no dice lo que pasaria no sirve de nada.
+	if !opts.Force {
 		if preview, err := dotfiles.Pull(dir, home, state, false, true); err == nil && len(preview.Conflicts) > 0 {
 			fmt.Printf("  ! %d conflict(s):\n", len(preview.Conflicts))
 			for _, f := range preview.Conflicts {
@@ -397,6 +401,11 @@ func updateDotfiles(opts Options) int {
 	}
 	for _, f := range res.Conflicts {
 		output.Warn(fmt.Sprintf("%s: conflict, see %s.new", f, f))
+	}
+	// Lo que quedo en el repo pero no en el estado: se avisa, pero el
+	// archivo local no se borra.
+	for _, f := range res.Orphaned {
+		output.Warn(fmt.Sprintf("%s: orphaned (in the state, not in the repo)", f))
 	}
 
 	if opts.DryRun {
