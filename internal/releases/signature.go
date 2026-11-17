@@ -7,16 +7,20 @@ package releases
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/releases"
 )
 
 // Inyectables para los tests.
 var (
+	client = &http.Client{Timeout: 8 * time.Second}
 	// Un 404 del CDN justo después de publicar es transitorio: sin
 	// reintento, doctor marca SIN FIRMA un release que sí está firmado.
 	// El CLI no está en el manifiesto y su release se busca con la
@@ -47,14 +51,14 @@ func Check(m *config.Manifest) []Status {
 			continue
 		}
 		st := Status{Name: p.Name, Repo: repo}
-		tag, err := LatestTag(repo)
+		tag, err := releases.LatestTag(repo)
 		if err != nil {
 			st.Err = err.Error()
 			out = append(out, st)
 			continue
 		}
 		st.Tag = tag
-		signed, err := HasSignature(repo, tag)
+		signed, err := releases.HasSignature(repo, tag)
 		if err != nil {
 			st.Err = err.Error()
 		} else {
@@ -75,7 +79,7 @@ func checkCLI() Status {
 		return st
 	}
 	st.Tag = tag
-	signed, err := HasSignature(repo, tag)
+	signed, err := releases.HasSignature(repo, tag)
 	if err != nil {
 		st.Err = err.Error()
 		return st

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
+	kitreleases "github.com/Below-Z3R0/b3l0w-cli/kit/releases"
 )
 
 func TestCheckSoloProgramasDeGitHub(t *testing.T) {
@@ -22,7 +23,7 @@ func TestCheckSoloProgramasDeGitHub(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Cleanup(SetBases(srv.URL, srv.URL))
+	t.Cleanup(kitreleases.SetBases(srv.URL, srv.URL))
 
 	// El CLI propio no usa /releases/latest: se busca con la
 	// convención v*, que inyectan cliTag y cliRepo.
