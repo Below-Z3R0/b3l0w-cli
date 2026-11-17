@@ -38,3 +38,13 @@ func PluginsDir() string {
 	}
 	return filepath.Join(home, ".local", "lib", "b3l0w", "plugins")
 }
+
+// Home es el home del usuario. Devuelve "" si no se puede resolver:
+// el llamador decide si eso es un error.
+func Home() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
+}

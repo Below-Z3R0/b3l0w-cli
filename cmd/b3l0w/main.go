@@ -98,14 +98,6 @@ func firstPositional(args []string) string {
 	return parsearFlags(args).libre()
 }
 
-func homeDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return home
-}
-
 func usage() {
 	fmt.Printf(`b3l0w %s — control del sistema
 

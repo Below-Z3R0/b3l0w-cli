@@ -3,20 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/Below-Z3R0/b3l0w-cli/internal/pacman"
 	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
 	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
-
-// repoSection es la sección que se agrega a pacman.conf.
-const repoSection = `
-[b3l0w]
-SigLevel = Required DatabaseOptional
-Server = https://raw.githubusercontent.com/Below-Z3R0/b3l0w-packages/main/x86_64
-`
 
 // pacmanConf es variable para los tests.
 var pacmanConf = "/etc/pacman.conf"
@@ -26,14 +19,14 @@ var pacmanConf = "/etc/pacman.conf"
 // Pide confirmación y muestra el bloque exacto antes de tocar un
 // archivo del sistema. Si no hay TTY, se omite.
 func ensureRepo() {
-	if repoConfigurado() {
+	if pacman.Configurado(pacmanConf) {
 		output.Ok("repo: [b3l0w] ya está en pacman.conf")
 		return
 	}
 
 	output.Step("Configurando el repo [b3l0w]")
 	fmt.Printf("  Se agrega a %s:\n\n", pacmanConf)
-	for _, line := range strings.Split(strings.TrimSpace(repoSection), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(pacman.Section), "\n") {
 		fmt.Printf("    %s\n", line)
 	}
 	fmt.Println()
@@ -43,32 +36,17 @@ func ensureRepo() {
 		return
 	}
 
-	// sudo tee -a: la redirección la haría el shell como usuario, así
-	// que el append tiene que hacerlo tee con privilegios.
-	cmd := exec.Command("sudo", "tee", "-a", pacmanConf)
-	cmd.Stdin = strings.NewReader(repoSection)
-	cmd.Stdout = nil
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		output.Warn("repo: no se pudo escribir " + pacmanConf)
+	if err := pacman.AgregarRepo(pacmanConf, pacman.Section); err != nil {
+		output.Warn("repo: " + err.Error())
 		return
 	}
 
-	if repoConfigurado() {
+	if pacman.Configurado(pacmanConf) {
 		output.Ok("repo: [b3l0w] agregado")
 		fmt.Println("  Para sincronizar: sudo pacman -Sy")
 		return
 	}
 	output.Warn("repo: no se pudo verificar el cambio")
-}
-
-// repoConfigurado dice si la sección ya está.
-func repoConfigurado() bool {
-	data, err := os.ReadFile(pacmanConf)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), "[b3l0w]")
 }
 
 // avisarBinarioViejo detecta el caso que confunde a todos: el paquete
