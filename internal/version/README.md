@@ -1,94 +1,80 @@
-# version
+# internal/version
 
-Guarda la versión del binario de b3l0w.
+Guarda la versión del binario.
 
-## Qué hace y por qué existe
+## Qué es
 
-`b3l0w version` tiene que decir qué versión del binario está corriendo. El
-valor no puede estar hardcodeado en el fuente porque cambia con cada
-release, y no puede calcularse en runtime porque la info no está en ningún
-archivo junto al binario.
-
-Este módulo existe para tener **un solo lugar** donde vive ese valor y que
-el build lo sobreescriba. Todo el resto del código lee `version.Version`:
-`cmd/b3l0w/main.go` (el comando `version`), `internal/update` (el aviso de
-"hay una versión nueva") y `internal/selfupdate` (la comparación antes /
-después).
-
-## API
-
-| Símbolo | Qué hace |
-|---|---|
-| `Version` | Variable `string` con la versión del binario. La pisa el build. `"dev"` en una compilación local. |
-
-### Uso
+Una variable, no una función:
 
 ```go
-import "github.com/Below-Z3R0/b3l0w-cli/internal/version"
-
-fmt.Printf("b3l0w %s\n", version.Version)
+var Version = "dev"
 ```
 
-Como es una `var` y no una `const`, un test puede cambiar su valor y
-restaurarlo después. `internal/selfupdate/selfupdate_test.go` hace
-exactamente eso para simular una actualización.
+## Por qué una variable y no una función
 
-## Cómo se inyecta en el build
+El linker (`-ldflags -X`) solo puede pisar **variables de tipo string**, no
+el resultado de una función. Si esto fuera:
 
-Con la flag `-ldflags` del linker de Go:
+```go
+func Version() string { return "dev" }
+```
+
+el `-ldflags` apuntaría a un símbolo inexistente, el build seguiría
+compilando sin quejarse, y el binario diría `"dev"` **para siempre**. El
+fallo sería silencioso: ningún error, ningún warning, solo una versión
+equivocada en cada `b3l0w version`.
+
+Por eso es una variable.
+
+## Cómo la pisa el build
 
 ```bash
-go build -ldflags "-X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v0.1.0" -o b3l0w ./cmd/b3l0w
+go build -trimpath \
+  -ldflags "-s -w -X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v$pkgver" \
+  -o b3l0w ./cmd/b3l0w
 ```
 
-El `PKGBUILD` de `packaging/b3l0w-cli` lo hace con el valor del tag:
+La ruta del `-ldflags` tiene que ser `<módulo>/<paquete>.<variable>`:
 
-```bash
-CGO_ENABLED=0 go build -trimpath \
-    -ldflags "-s -w -X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v$pkgver" \
-    -o b3l0w ./cmd/b3l0w
-```
-
-Sin `-ldflags`, el valor por defecto `"dev"` sobrevive: un binario compilado
-a mano se identifica como `dev`, y el código lo detecta
-(`strings.Contains(version.Version, "dev")`) para no ir a buscar una release
-que no corresponde.
-
-## Decisiones
-
-**`-X` solo funciona sobre variables de tipo string.** `Version` es una
-`var` de string, inicializada con la constante `"dev"`, así que el linker
-puede pisarla en tiempo de link. Si fuera una función, o un `const`, el
-linker no la tocaría y el binario diría `"dev"` para siempre.
-
-**Un solo paquete, un solo símbolo.** No hay `BuildDate`, `Commit` ni
-`Channel` en este paquete. Si alguna vez hacen falta, van en el mismo
-lugar, pero hoy no hay consumidor y una variable muerta es ruido.
-
-**El valor por defecto es `"dev"`, no `""`.** Una cadena vacía se imprime
-como nada y es indistinguible de un bug. `"dev"` dice explícitamente "esto
-no salió de un release".
-
-**El módulo no se importa desde `kit/`.** Vive en `internal/` porque es
-detalle de la aplicación: el `kit/` es código compartido y no debe conocer
-la versión de una CLI en particular.
-
-## Archivos
-
-| Archivo | Qué hace |
+| Parte | Valor |
 |---|---|
-| `version.go` | Todo el módulo: la variable `Version` y el comentario que explica la inyección por `-ldflags`. |
+| módulo | `github.com/Below-Z3R0/b3l0w-cli` |
+| paquete | `internal/version` → `version` |
+| variable | `Version` |
 
-Cobertura: no hay test propio. La variable se ejercita de forma indirecta:
-`internal/selfupdate/selfupdate_test.go` la sobreescribe y la restaura para
-simular el cambio de versión en una actualización.
+Si el archivo se mueve de `internal/version/` a otro lado, la ruta cambia y
+el `-ldflags` deja de encontrar el símbolo. El build **no falla**: compila
+igual y la versión queda en `"dev"`.
 
-## Qué NO hace
+## Dónde se usa
 
-- **No consulta la red.** No sabe si hay una versión nueva; eso es
-  `internal/selfupdate`.
-- **No formatea.** Devuelve el string crudo; el prefijo `"b3l0w "` lo
-  pone quien imprime.
-- **No compara versiones.** La comparación con la release publicada la
-  hace el llamador.
-- **No es un changelog.** No sabe qué cambió entre versiones.
+- `b3l0w version` — muestra la versión del binario.
+- `internal/versioncheck` — compara la versión local contra la remota.
+- El PKGBUILD de `packaging/b3l0w-cli/PKGBUILD` inyecta `$pkgver`.
+
+## Test
+
+`version_test.go` verifica que la variable no esté vacía. Es una red de
+seguridad mínima: el valor real solo existe después del link.
+
+Para comprobar que la inyección funciona de verdad:
+
+```bash
+go build -ldflags "-X github.com/Below-Z3R0/b3l0w-cli/internal/version.Version=v9.9.9" \
+  -o /tmp/b3l0w-test ./cmd/b3l0w
+/tmp/b3l0w-test version
+# debe decir v9.9.9
+```
+
+## Nota sobre tests que pegan a la red
+
+`internal/systemdef` tiene un test que consulta GitHub. Se saltea con
+`-short`:
+
+```bash
+go test ./... -short   # suite offline, la que corre en CI
+go test ./...          # suite completa, incluye los que necesitan red
+```
+
+Si un test nuevo necesita internet, seguí el mismo patrón: `testing.Short()`
+y un `t.Skip` con el motivo.

@@ -1,27 +1,25 @@
-# snapshot
+# Snapshot de home
 
-Pide una snapshot de `home` antes de que el CLI toque la configuración.
+## Qué es
 
-## Qué hace y por qué existe
-
-Antes de aplicar dotfiles sobre el home del usuario, el CLI crea una
-snapshot del subvolume `home` con `snapper`. Si algo sale mal, hay un punto
-de retorno del filesystem, no solo el 3-way merge de archivos.
-
-Este módulo existe para eso y nada más: **un solo comando, una sola
-responsabilidad**. No hace copias de archivos, no implementa backups ni
-mantiene un historial propio. Si `snapper` no está instalado, o no tiene
-configuración para `home`, el módulo devuelve un error y **el llamador
-decide**: en `internal/update` es un warning, no un bloqueo, porque el
-3-way merge de dotfiles sigue protegiendo los cambios locales.
+Pide una snapshot del subvolume `home` antes de que el CLI toque la
+configuración del usuario: si el pull de dotfiles sale mal, hay una snapshot a
+la que volver. No copia archivos ni restaura: solo llama a `snapper`.
 
 ## API
 
-| Función | Qué hace |
-|---|---|
-| `Create(label string) error` | Intenta crear una snapshot del subvolume `home` con la etiqueta dada. |
+```go
+func Create(label string) error
+```
 
-### Uso
+- `label`: descripción de la snapshot, lo que permite saber después cuál era
+  (`b3l0w pre-dotfiles`). Vacío o solo espacios es un error: se rechaza
+  **antes** de tocar el disco, porque una snapshot sin descripción no se puede
+  identificar después.
+- `nil` si la snapshot se creó. Error si el label está vacío, si snapper no está
+  instalado, o si el comando falla; en el último caso el error trae la salida.
+
+Único llamador: `internal/update/update.go`, antes del pull de dotfiles:
 
 ```go
 if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
@@ -29,73 +27,81 @@ if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
 }
 ```
 
-El error nunca detiene la operación: la snapshot es una red de seguridad,
-no un requisito.
+La firma `Create(label string) error` no cambió.
 
-## Qué corre por debajo
+## Por qué el error NO es bloqueante
 
-```
-snapper -c home create -d <label>
-```
+El módulo devuelve el error y **decide el llamador**. Acá decide
+`internal/update`, y decide avisar y seguir, por tres razones:
 
-- `system.CommandPath("snapper")` verifica que el binario esté en el
-  `PATH`. Si no está, el error es `"snapper no está instalado"`.
-- `system.RunCombined` ejecuta el comando con stderr mezclado en stdout.
-  El error no distingue el código de salida del mensaje: lo que ve el
-  usuario es el output combinado.
-- El subvolume se fija en `home`: es el que contiene la configuración que el
-  CLI va a sobreescribir.
+1. La snapshot es una protección extra, no la única: el pull de dotfiles tiene
+   su propio 3-way merge, no pisa cambios locales igual.
+2. Sin snapper, o sin config `home`, bloquear sería castigar al usuario por una
+   protección que no pidió.
+3. El error dice qué pasó (`snapper -c home: <salida>`): se ve si falta el
+   paquete, la config, o el permiso.
 
-## Diferencia con `internal/snapshots`
+## Qué pasa cuando snapper no está
 
-Son dos módulos distintos y no se pisan:
+| Situación | Qué devuelve |
+|---|---|
+| snapper no está instalado | `snapper no está instalado` |
+| snapper está pero no tiene config `home` | `snapper -c home: <salida de snapper>` |
 
-| | `internal/snapshot` (este) | `internal/snapshots` |
+En el segundo caso la salida de snapper dice qué falta (por ejemplo
+`Unknown config`).
+
+## La diferencia con `internal/snapshots`
+
+| | `internal/snapshot` (singular) | `internal/snapshots` (plural) |
 |---|---|---|
-| Objeto | Snapshots de **snapper** (filesystem) | **Entradas de arranque** de Limine |
-| Herramienta | `snapper -c home create` | `limine-snapper-info`, `limine-snapper-remove` |
-| API | `Create(label)` | `Entries()`, `IDs()`, `Prune(keep)`, `Report(keep, yes)` |
-| Para qué | Punto de retorno antes de tocar el home | Contar y podar las entradas de Limine que apuntan a snapshots |
-| Momento | Antes de aplicar dotfiles | Routine de mantenimiento |
+| Qué hace | **Crea** una snapshot de `home` | **Cuenta y poda** entradas de arranque de Limine |
+| Herramienta | `snapper` | `limine-snapper-info` / `-list` / `-remove` / `-sync` |
+| Toca el disco | Sí: crea la snapshot | No: solo borra entradas de la ESP |
+| Rol | Red de seguridad antes de tocar config | Higiene del menú de arranque |
 
-`snapshots` no crea snapshots: cuenta y borra **entradas de arranque**, que
-en Limine son punteros a snapshots de snapper. Son cosas distintas con
-nombres parecidos; de ahí las dos carpetas.
+Ninguno depende del otro: el primero crea snapshots de snapper, el segundo
+administra las entradas de Limine que apuntan a ellas.
+
+## Estado real de la config `home` en CachyOS
+
+En esta máquina **hoy `Create` siempre falla**, y no es un bug del módulo:
+
+- snapper **sí está instalado**: `/usr/sbin/snapper`.
+- El subvolume `home` **sí existe**: `/etc/fstab` lo monta como
+  `subvol=/@home` sobre el mismo btrfs que `@`.
+- Pero `/etc/snapper/configs/` contiene **solo `root`**: no hay config `home`,
+  así que `snapper -c home` responde `Unknown config` y el módulo devuelve ese
+  error.
+
+Falta crear la config: es trabajo del sistema, no del módulo. Lo natural es que
+`internal/systemdef` declare `snapper-config create home` en el perfil,
+(verificar) porque el módulo no debería decidir políticas de config.
+
+Sobre permisos: `snapper` habla con `snapperd` por DBus (`BusName=org.opensuse.Snapper`)
+y la política deja que el contexto por defecto envíe mensajes, pero sin ser
+root hace falta `ALLOW_USERS` o `ALLOW_GROUPS` en el config, (verificar) cuál
+aplicaría en la distro.
 
 ## Decisiones
 
-**Un solo archivo, una sola función.** El módulo tiene 23 líneas. No hace
-falta una capa de abstracción alrededor de un comando: la abstracción útil
-está en "pedir una snapshot" y en "que el fallo no sea bloqueante".
-
-**El error se propaga, la decisión no.** `Create` devuelve error y no
-decide si eso interrumpe o no. Quien llama (`internal/update`) sabe que la
-actualización de dotfiles tiene un 3-way merge de respaldo y por eso
-degrada el fallo a warning.
-
-**No se consulta si snapper tiene config `home`.** La comprobación
-explícita de la configuración de snapper agregaría un segundo comando y un
-punto de falla más. Si la config no está, `snapper` falla y el error se
-reporta igual.
-
-**No se hace copia manual de archivos.** Copiar el home a mano duplicaría
-lo que snapper ya hace con subvolumes y no sería atómico.
+- **Sin runner inyectado.** `Create` llama a `system.CommandPath` y
+  `system.RunCombined`, que resuelven el binario por `PATH`. Alcanza con un
+  `snapper` falso adelante en el `PATH`: **no hubo que tocar la firma ni la
+  implementación** para testearlo y la API queda intacta. Es el patrón que usa
+  `internal/snapshots` con sus tools.
+- **El label vacío se rechaza antes de tocar el disco.** Una snapshot sin
+  descripción no se puede identificar después, así que llamarla sería dejar
+  basura en el timeline. Se valida el argumento primero
+  (`strings.TrimSpace(label) == ""`). El label viaja como **un** argumento (no
+  hay shell que lo parta), así que admite espacios.
+- **El error de snapper trae la salida.** `fmt.Errorf("snapper -c home: %s",
+  out)` en vez de solo el error: la salida dice *qué* falló (config inexistente,
+  permiso, disco lleno).
 
 ## Archivos
 
 | Archivo | Qué hace |
 |---|---|
-| `snapshot.go` | Todo el módulo: la función `Create` y su verificación de `snapper` en el `PATH`. |
-
-Cobertura: este módulo **no tiene archivo de test propio**. No es posible
-probar `Create` sin `snapper` instalado y con un subvolume `home`
-configurado, así que la cobertura es manual. La lógica de decisión
-(que el fallo sea warning y no bloqueo) vive en `internal/update`.
-
-## Qué NO hace
-
-- **No copia archivos.** Delega en `snapper`.
-- **No bloquea la operación** si falla. Solo informa.
-- **No lista, no borra y no poda snapshots.** Eso es `internal/snapshots`.
-- **No toca otros subvolumes.** Solo `home`.
-- **No restaura.** Solo crea.
+| `snapshot.go` | `Create`: valida el label, chequea snapper, pide la snapshot. |
+| `snapshot_test.go` | 6 tests contra un `snapper` falso en el `PATH`. |

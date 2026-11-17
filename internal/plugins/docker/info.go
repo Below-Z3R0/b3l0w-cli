@@ -42,9 +42,7 @@ type infoRaw struct {
 func GetInfo(ctx context.Context, runner Runner) (Info, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if runner == nil {
-		runner = Exec
-	}
+	runner = runnerDe(runner)
 	out, err := runner(ctx, "info", "--format", "json")
 	if err != nil {
 		return Info{}, err

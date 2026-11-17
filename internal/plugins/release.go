@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-// ReleaseOptions describe un release selectivo de dev a main.
+// releaseBranch es la rama que publica producción. El repo de plugins
+// tiene una sola rama: la dev se borró después de mergearla a main.
+const releaseBranch = "main"
+
+// ReleaseOptions describe un release selectivo de plugins a main.
 type ReleaseOptions struct {
 	RepoDir      string
 	ManifestPath string
@@ -18,11 +22,16 @@ type ReleaseOptions struct {
 	Push         bool
 }
 
-// Release publica producción desde dev a main. Copia solo las carpetas
-// de los plugins elegidos, limpia tests/docs/dev deps y regenera el
-// catálogo desde lo que quedó en main, no desde dev. Un plugin nuevo
-// que no está en main entra con su carpeta y su fila; uno que no se
-// releasea no aparece.
+// Release publica producción desde la rama actual a main. Solo toca las
+// carpetas de los plugins elegidos, limpia tests/docs/dev deps y
+// regenera el catálogo desde lo que quedó en main. Un plugin nuevo
+// entra con su carpeta y su fila; uno que no se releasea no aparece.
+//
+// El repo de plugins ya no tiene rama dev (se borró el 2026-11-04,
+// después de mergearla a main). Por eso el release corre sobre main:
+// prunea los artefactos de desarrollo en el lugar y commitea ahí. No
+// hay checkout de otra rama porque no hay rama de trabajo a la que
+// volver, y no hay merge dev->main porque dev no existe.
 func Release(opts ReleaseOptions) error {
 	repo := opts.RepoDir
 	if repo == "" {
@@ -32,8 +41,12 @@ func Release(opts ReleaseOptions) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(branch) != "dev" {
-		return fmt.Errorf("release se corre desde dev (estás en %s)", strings.TrimSpace(branch))
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return fmt.Errorf("release necesita una rama: HEAD está desligado")
+	}
+	if branch != releaseBranch {
+		return fmt.Errorf("release se corre desde %s (estás en %s)", releaseBranch, branch)
 	}
 	dirty, err := git(repo, "status", "--porcelain")
 	if err != nil {
@@ -48,7 +61,7 @@ func Release(opts ReleaseOptions) error {
 		others = append(others, line)
 	}
 	if len(others) > 0 {
-		return fmt.Errorf("working tree sucio en dev; commiteá o stasheá antes del release: %s", strings.Join(others, ", "))
+		return fmt.Errorf("working tree sucio en %s; commiteá o stasheá antes del release: %s", branch, strings.Join(others, ", "))
 	}
 
 	entries, err := Collect(repo)
@@ -74,27 +87,17 @@ func Release(opts ReleaseOptions) error {
 		if opts.TargetAPI > 0 {
 			fmt.Printf("  → target plugin_api: %d\n", opts.TargetAPI)
 		}
-		fmt.Printf("  → copiar a main: %d plugins (sin tests/docs/dev deps)\n", len(targets))
+		fmt.Printf("  → publicar en %s: %d plugins (sin tests/docs/dev deps)\n", branch, len(targets))
 		for _, entry := range targets {
 			fmt.Printf("  → %s/\n", entry.Path)
 		}
-		fmt.Println("  → catalog.toml desde main" + manifestNote(opts.ManifestPath))
-		fmt.Println("  → commit en main")
+		fmt.Println("  → catalog.toml desde " + branch + manifestNote(opts.ManifestPath))
+		fmt.Println("  → commit en " + branch)
 		return nil
 	}
 
-	if _, err := git(repo, "checkout", "main"); err != nil {
-		return err
-	}
-	defer git(repo, "checkout", "dev")
-
-	args := []string{"checkout", "dev", "--"}
-	for _, entry := range targets {
-		args = append(args, entry.Path+"/")
-	}
-	if _, err := git(repo, args...); err != nil {
-		return err
-	}
+	// El release prunea sobre la rama actual: no hay dev de la que
+	// copiar ni una rama de trabajo a la que volver.
 	for _, entry := range targets {
 		if err := pruneProduction(filepath.Join(repo, entry.Path)); err != nil {
 			return fmt.Errorf("%s: %w", entry.Path, err)
@@ -127,16 +130,16 @@ func Release(opts ReleaseOptions) error {
 		if _, err := git(repo, "commit", "-m", msg); err != nil {
 			return err
 		}
-		fmt.Printf("  ✓ main: %s\n", msg)
+		fmt.Printf("  ✓ %s: %s\n", branch, msg)
 	} else {
-		fmt.Println("  · main ya estaba al día")
+		fmt.Printf("  · %s ya estaba al día\n", branch)
 	}
 
 	if opts.Push {
-		if _, err := git(repo, "push", "origin", "main"); err != nil {
+		if _, err := git(repo, "push", "origin", branch); err != nil {
 			return err
 		}
-		fmt.Println("  ✓ push origin main")
+		fmt.Printf("  ✓ push origin %s\n", branch)
 	}
 	return nil
 }
