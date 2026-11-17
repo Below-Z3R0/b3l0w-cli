@@ -55,13 +55,17 @@ escritorio, y ese release queda como "latest" sin tener el binario.
 
 ### Publicar un release
 
+> Los scripts de mantenedor viven en el repo **`Manteiner`** (`release/`),
+> clonado al lado de este. No están acá: necesitan la clave privada y este
+> repo se publica como paquete.
+
 Firmá **antes** de subir. Un release sin `SHA256SUMS.asc` está roto para
 el usuario final: `b3l0w install` y `b3l0w update --self` se niegan a
 instalar (fail-closed).
 
 ```bash
 export GNUPGHOME="$HOME/.gnupg-b3l0w"
-bash scripts/maintainers/release.sh Below-Z3R0/<repo> <tag> <asset>...
+bash release/release.sh Below-Z3R0/<repo> <tag> <asset>...
 ```
 
 El script calcula `SHA256SUMS`, lo firma, verifica la firma y recién
@@ -71,7 +75,7 @@ nada: el release nunca existe sin firma.
 Para firmar un release ya publicado (un forgot):
 
 ```bash
-bash scripts/maintainers/sign-release.sh Below-Z3R0/<repo> <tag>
+bash release/sign-release.sh Below-Z3R0/<repo> <tag>
 ```
 
 ### Gate de release
@@ -186,7 +190,7 @@ rsync -a --exclude .git --exclude packaging ../../ src/
 makepkg -f
 
 # publicar en b3l0w-packages (pide la passphrase)
-bash scripts/maintainers/repo-publish.sh --push packaging/*/*.pkg.tar.zst
+bash release/repo-publish.sh --push packaging/*/*.pkg.tar.zst
 ```
 
 El script reemplaza los symlinks `b3l0w.db` / `b3l0w.files` por copias
@@ -213,7 +217,7 @@ medio offline. El `.gitignore` de `keys/` bloquea `*.gpg`, `*-secret*` y
 ### Generar la clave (una sola vez)
 
 ```bash
-bash scripts/maintainers/gen-signing-key.sh
+bash release/gen-signing-key.sh
 ```
 
 Crea un `GNUPGHOME` dedicado, una clave RSA 4096 solo de firma con
