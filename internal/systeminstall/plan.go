@@ -49,9 +49,13 @@ func (p *Plan) filesMissing() bool {
 
 // Build arma el plan. dotfiles es el directorio con los archivos del
 // perfil (por ejemplo el `dotfiles/` del repo).
-func Build(profile systemdef.Profile, dotfiles string) *Plan {
+//
+// opts.Runner decide contra qué máquina se consulta el estado: nil usa
+// la máquina real. Yes y DryRun no aplican acá: Build solo lee.
+func Build(profile systemdef.Profile, dotfiles string, opts Options) *Plan {
+	run := opts.runner()
 	plan := &Plan{}
-	installed := installedPackages()
+	installed := installedPackages(run)
 
 	for _, pkg := range profile.Repo {
 		if !installed[pkg] {
@@ -65,7 +69,7 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 		}
 	}
 
-	flatpaks := installedFlatpaks()
+	flatpaks := installedFlatpaks(run)
 	for _, app := range profile.Flatpak {
 		if !flatpaks[app] {
 			plan.Flatpak = append(plan.Flatpak, app)
@@ -73,18 +77,18 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 	}
 
 	for _, name := range profile.Own {
-		if kitsystem.CommandPath(name) == "" {
+		if run.CommandPath(name) == "" {
 			plan.Own = append(plan.Own, name)
 		}
 	}
 
 	for _, service := range profile.Services {
-		if !serviceEnabled(service) {
+		if !serviceEnabled(run, service) {
 			plan.Services = append(plan.Services, service)
 		}
 	}
 
-	groups := userGroups()
+	groups := userGroups(run)
 	for _, group := range profile.Groups {
 		if !groups[group] {
 			plan.Groups = append(plan.Groups, group)
@@ -107,9 +111,9 @@ func Build(profile systemdef.Profile, dotfiles string) *Plan {
 	return plan
 }
 
-func installedPackages() map[string]bool {
+func installedPackages(run Runner) map[string]bool {
 	set := map[string]bool{}
-	out, err := kitsystem.Run("pacman", "-Qq")
+	out, err := run.Run("pacman", "-Qq")
 	if err != nil {
 		return set
 	}
@@ -121,9 +125,9 @@ func installedPackages() map[string]bool {
 	return set
 }
 
-func installedFlatpaks() map[string]bool {
+func installedFlatpaks(run Runner) map[string]bool {
 	set := map[string]bool{}
-	out, err := kitsystem.Run("flatpak", "list", "--app", "--columns=application")
+	out, err := run.Run("flatpak", "list", "--app", "--columns=application")
 	if err != nil {
 		return set
 	}
@@ -135,15 +139,15 @@ func installedFlatpaks() map[string]bool {
 	return set
 }
 
-func serviceEnabled(name string) bool {
+func serviceEnabled(run Runner, name string) bool {
 	// is-enabled devuelve 0 para enabled/enabled-runtime/static.
-	_, err := kitsystem.Run("systemctl", "is-enabled", name)
+	_, err := run.Run("systemctl", "is-enabled", name)
 	return err == nil
 }
 
-func userGroups() map[string]bool {
+func userGroups(run Runner) map[string]bool {
 	set := map[string]bool{}
-	out, err := kitsystem.Run("id", "-nG")
+	out, err := run.Run("id", "-nG")
 	if err != nil {
 		return set
 	}

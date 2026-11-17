@@ -140,7 +140,7 @@ func installSystemCommand(args []string) int {
 		}
 	}
 
-	plan := systeminstall.Build(profile, dotfiles)
+	plan := systeminstall.Build(profile, dotfiles, systeminstall.Options{})
 	printPlan(profiles, plan)
 
 	if !apply {
