@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
 )
 
 // Las rutas y el parseo de argumentos de los servicios.
@@ -38,14 +36,6 @@ func servicePaths(args []string) (manifest, stateDir string, rest []string, dryR
 }
 
 // serviceDir devuelve el directorio del repo de un servicio.
-func serviceDir(svc services.Service) string {
-	home := homeDir()
-	if home == "" {
-		return ""
-	}
-	return filepath.Join(home, "Documents", "Github", repoName(svc.Repo))
-}
-
 func repoName(repo string) string {
 	parts := strings.Split(repo, "/")
 	return parts[len(parts)-1]

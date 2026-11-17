@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/registry"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/services"
@@ -174,7 +173,7 @@ func servicesStatus(args []string) int {
 		if state != nil {
 			variant = state.Variant
 		}
-		dir := serviceDir(*svc)
+		dir := services.ServiceDir(*svc)
 		ps, err := docker.PS(dir, services.ComposeFiles(*svc, variant))
 		if err != nil {
 			continue
@@ -343,7 +342,7 @@ func servicesLogs(args []string) int {
 			service = arg
 		}
 	}
-	dir := serviceDir(*svc)
+	dir := services.ServiceDir(*svc)
 	out, err := services.NewDocker().Logs(dir, services.ComposeFiles(*svc, ""), service, tail)
 	if err != nil {
 		output.Fail(err.Error())
@@ -370,7 +369,7 @@ func servicesSimple(args []string, action string) int {
 		output.Fail("servicio desconocido: " + rest[0])
 		return 1
 	}
-	dir := serviceDir(*svc)
+	dir := services.ServiceDir(*svc)
 	files := services.ComposeFiles(*svc, "")
 	docker := services.NewDocker()
 	if dryRun {
@@ -433,7 +432,7 @@ func servicesRemove(args []string) int {
 		output.Ok(fmt.Sprintf("%s removido (dry-run, no se tocó nada)", svc.ID))
 		return 0
 	}
-	dir := serviceDir(*svc)
+	dir := services.ServiceDir(*svc)
 	files := services.ComposeFiles(*svc, "")
 	if err := services.NewDocker().Remove(dir, files, purge); err != nil {
 		output.Fail(err.Error())
@@ -451,87 +450,31 @@ func servicesRemove(args []string) int {
 // servicesVariant cambia la variante de un servicio instalado.
 func servicesVariant(args []string) int {
 	manifest, stateDir, rest, _ := servicePaths(args)
-	m, err := services.LoadManifest(manifest)
-	if err != nil {
-		output.Fail(err.Error())
-		return 1
-	}
 	if len(rest) < 2 {
 		output.Fail("uso: b3l0w services variant <id> <variante>")
 		return 1
 	}
-	svc := m.Find(firstPositional(rest))
-	if svc == nil {
-		output.Fail("servicio desconocido: " + firstPositional(rest))
-		return 1
-	}
+	id := firstPositional(rest)
 	want := ""
 	for _, arg := range rest {
-		if !strings.HasPrefix(arg, "-") && arg != firstPositional(rest) {
+		if !strings.HasPrefix(arg, "-") && arg != id {
 			want = arg
 			break
 		}
 	}
-	state, err := services.LoadState(stateDir, svc.ID)
+	res, err := services.SwitchVariant(services.VariantOptions{
+		ManifestPath: manifest,
+		StateDir:     stateDir,
+		ID:           id,
+		Variant:      want,
+	})
 	if err != nil {
-		output.Fail(svc.ID + " no está instalado")
-		return 1
-	}
-	tags, err := services.NewRegistry("").Tags(svc.Image)
-	if err != nil {
 		output.Fail(err.Error())
 		return 1
 	}
-	published := services.AvailableVariants(tags, svc.Variants)
-	found := false
-	for _, v := range published {
-		if v == want {
-			found = true
-			break
-		}
-	}
-	if !found {
-		output.Fail(fmt.Sprintf("%s: la variante %q no está publicada (hay: %s)", svc.ID, want, strings.Join(published, ", ")))
-		return 1
-	}
-	tag := services.TagFor(*svc, want, tags)
-	image := svc.Image + ":" + tag
-	output.Step(fmt.Sprintf("%s → %s", svc.ID, want))
-	fmt.Printf("  imagen: %s\n", image)
-	fmt.Println("  → pull y recreate del stack")
-
-	docker := services.NewDocker()
-	if err := docker.Pull(svc.Image, tag); err != nil {
-		output.Fail(err.Error())
-		return 1
-	}
-	digest, _ := docker.ImageDigest(image)
-
-	// Recrear el stack es lo que hace que la variante se aplique.
-	//
-	// Antes solo se hacia el pull y se guardaba el estado: el
-	// contenedor seguía corriendo la imagen anterior y el estado
-	// decía otra cosa. Ademas el env con IMAGE es lo que le dice a
-	// compose que imagen levantar.
-	dir := serviceDir(*svc)
-	files := services.ComposeFiles(*svc, want)
-	if err := docker.Up(dir, files, map[string]string{"IMAGE": tag}); err != nil {
-		output.Fail(err.Error())
-		return 1
-	}
-
-	state.Previous = state.Image
-	state.PreviousTag = state.Tag
-	state.Variant = want
-	state.Image = image
-	state.Tag = tag
-	state.Digest = digest
-	state.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := state.Save(stateDir); err != nil {
-		output.Fail(err.Error())
-		return 1
-	}
-	output.Ok(fmt.Sprintf("%s ahora usa %s (%s)", svc.ID, want, tag))
+	output.Step(fmt.Sprintf("%s → %s", res.ID, res.Variant))
+	fmt.Printf("  imagen: %s\n", res.Image)
+	output.Ok(fmt.Sprintf("%s ahora usa %s (%s)", res.ID, res.Variant, res.Tag))
 	return 0
 }
 
