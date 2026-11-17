@@ -3,11 +3,9 @@ package main
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins"
-	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
 	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
 	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
@@ -29,8 +27,6 @@ func pluginsCommand(args []string) int {
 		return 1
 	case "build":
 		return pluginsBuild(args[1:])
-	case "release":
-		return pluginsRelease(args[1:])
 	case "enable":
 		return pluginsEnable(args[1:])
 	case "disable":
@@ -48,7 +44,7 @@ func pluginsCommand(args []string) int {
 	case "search":
 		return pluginsSearch(args[1:])
 	}
-	output.Fail("uso: b3l0w plugins [build|release|enable|disable|install|update|list|remove|info|search]\n" +
+	output.Fail("uso: b3l0w plugins [build|enable|disable|install|update|list|remove|info|search]\n" +
 		aliasHelp("plugins"))
 	return 1
 }
@@ -110,51 +106,6 @@ func pluginsBuild(args []string) int {
 		return 1
 	}
 	output.Ok(fmt.Sprintf("%d plugins: catalog.toml y plugins.json actualizados", len(entries)))
-	return 0
-}
-
-func pluginsRelease(args []string) int {
-	_, registry, manifest, _, rest, dryRun := pluginPaths(args)
-	push := false
-	yes := false
-	targetAPI := 0
-	var slugs []string
-	for _, arg := range rest {
-		switch {
-		case arg == "--push":
-			push = true
-		case arg == "--yes":
-			yes = true
-		case strings.HasPrefix(arg, "--api="):
-			n, err := strconv.Atoi(strings.TrimPrefix(arg, "--api="))
-			if err != nil || n < 1 {
-				output.Fail("--api debe ser un entero positivo")
-				return 1
-			}
-			targetAPI = n
-		case strings.HasPrefix(arg, "--plugin="):
-			slugs = append(slugs, strings.TrimPrefix(arg, "--plugin="))
-		case strings.HasPrefix(arg, "--"):
-			output.Fail("flag desconocido: " + arg)
-			return 1
-		default:
-			slugs = append(slugs, arg)
-		}
-	}
-	if !yes && !dryRun && !confirm.Confirm("Release plugins a main? [Y/n]", yes, true) {
-		return 0
-	}
-	if err := plugins.Release(plugins.ReleaseOptions{
-		RepoDir:      registry,
-		ManifestPath: manifest,
-		Slugs:        slugs,
-		TargetAPI:    targetAPI,
-		DryRun:       dryRun,
-		Push:         push,
-	}); err != nil {
-		output.Fail(err.Error())
-		return 1
-	}
 	return 0
 }
 

@@ -149,22 +149,6 @@ func TestCheckCatalog(t *testing.T) {
 	}
 }
 
-func TestSelectRelease(t *testing.T) {
-	entries := []Entry{
-		{ID: "b3l0w/audio", Path: "audio"},
-		{ID: "b3l0w/wallpaper", Path: "wallpaper"},
-	}
-	if got, err := selectRelease(entries, nil); err != nil || len(got) != 2 {
-		t.Fatalf("sin filtro debería devolver todo: %v %v", got, err)
-	}
-	if got, err := selectRelease(entries, []string{"wallpaper"}); err != nil || len(got) != 1 || got[0].Path != "wallpaper" {
-		t.Fatalf("filtro por slug: %v %v", got, err)
-	}
-	if _, err := selectRelease(entries, []string{"no-existe"}); err == nil {
-		t.Fatal("esperaba error con un slug inexistente")
-	}
-}
-
 func TestManifestRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "plugins.json")
 	m := &Manifest{Version: 1, Plugins: []Entry{

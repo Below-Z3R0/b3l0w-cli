@@ -14,7 +14,7 @@ import (
 func pluginPaths(args []string) (src, registry, manifest, noctalia string, rest []string, dryRun bool) {
 	home, _ := os.UserHomeDir()
 	src = filepath.Join(home, "Documents/Github")
-	registry = filepath.Join(src, "b3l0w-plugins")
+	registry = filepath.Join(src, "Plugins/b3l0w-plugins")
 	// Sin --manifest, el catálogo sale del registry (caché -> red -> embed).
 	manifest = ""
 	noctalia = filepath.Join(home, ".local", "share", "noctalia", "plugins")
