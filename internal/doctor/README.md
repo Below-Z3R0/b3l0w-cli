@@ -93,7 +93,7 @@ son errores.
 
 | Archivo | Qué tiene |
 |---|---|
-| `doctor.go` | los tipos (`Level`, `Result`, `Check`, `Env`), `checks()` con los nueve chequeos, `Run`, `RunWith`, `defaultEnv`, `countErrors`, `hasDependency` |
+| `doctor.go` | los tipos (`Level`, `Result`, `Check`, `Env`), `checks()` con los nueve chequeos, `Run`, `RunWith`, `runChecks`, `defaultEnv`, `hasDependency` |
 | `doctor_test.go` | los tests: cada chequeo en su estado ok, aviso y error, más los códigos de salida |
 | `helpers_test.go` | helpers de test: `capturarSalida` (atrapa stdout y stderr y saca los códigos ANSI) y `contiene` |
 

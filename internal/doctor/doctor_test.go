@@ -198,23 +198,45 @@ func TestChecksCubrenTodosLosChequeos(t *testing.T) {
 	}
 }
 
-func TestCountErrorsCuentaSoloLosErrores(t *testing.T) {
-	res := []Result{
-		{Level: LevelOk, Message: "ok"},
-		{Level: LevelWarn, Message: "aviso"},
-		{Level: LevelError, Message: "error 1"},
-		{Level: LevelOk, Message: "ok"},
-		{Level: LevelError, Message: "error 2"},
+func TestRunChecksCuentaCadaFalloUnaVez(t *testing.T) {
+	check := func(niveles []Level, extra int) Check {
+		return Check{Name: "test", Run: func() ([]Result, int) {
+			out := make([]Result, len(niveles))
+			for i, n := range niveles {
+				out[i] = Result{Level: n, Message: "x"}
+			}
+			return out, extra
+		}}
 	}
 
-	if got := countErrors(res); got != 2 {
-		t.Errorf("esperaba 2 errores, obtuve %d", got)
+	casos := []struct {
+		nombre string
+		checks []Check
+		want   int
+		msg    string
+	}{
+		{"todo ok", []Check{check([]Level{LevelOk, LevelOk}, 0)}, 0, ""},
+		{"un error no cuenta doble", []Check{check([]Level{LevelError}, 0)}, 1, "1 chequeos fallaron"},
+		{"dos errores del mismo chequeo", []Check{check([]Level{LevelError, LevelError}, 0)}, 1, "2 chequeos fallaron"},
+		{"un aviso no es error", []Check{check([]Level{LevelWarn}, 0)}, 0, ""},
+		{"un extra sin Result si suma", []Check{check([]Level{LevelOk}, 1)}, 1, "1 chequeos fallaron"},
+		{"dos chequeos, un error cada uno", []Check{
+			check([]Level{LevelError}, 0),
+			check([]Level{LevelError}, 0),
+		}, 1, "2 chequeos fallaron"},
 	}
-	if got := countErrors(nil); got != 0 {
-		t.Errorf("esperaba 0 errores sobre una lista vacía, obtuve %d", got)
-	}
-	if got := countErrors([]Result{{Level: LevelWarn}}); got != 0 {
-		t.Errorf("un aviso no es un error: esperaba 0, obtuve %d", got)
+
+	for _, c := range casos {
+		t.Run(c.nombre, func(t *testing.T) {
+			var codigo int
+			_, stderr := capturarSalida(t, func() { codigo = runChecks(c.checks) })
+			if codigo != c.want {
+				t.Errorf("exit: esperaba %d, obtuve %d", c.want, codigo)
+			}
+			if c.msg != "" && !contiene(stderr, c.msg) {
+				t.Errorf("esperaba %q en stderr:\n%s", c.msg, stderr)
+			}
+		})
 	}
 }
 
@@ -239,8 +261,8 @@ func TestChequeoActualizador(t *testing.T) {
 		e.SystemBinary = func() string { return "" }
 		r := correrCheck(t, e, m, "actualizador")
 		assertUnResultado(t, r, LevelError, "no hay cachy-update ni arch-update")
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 }
@@ -267,8 +289,8 @@ func TestChequeoPacman(t *testing.T) {
 		}
 		r := correrCheck(t, e, m, "pacman")
 		assertUnResultado(t, r, LevelError, "no hay pacman: esto no es un sistema Arch")
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 }
@@ -334,8 +356,8 @@ func TestChequeoProgramas(t *testing.T) {
 		}
 		r := correrCheck(t, e, manifestConUnPrograma(), "programas")
 		assertUnResultado(t, r, LevelError, "kitty-shapes: no such file")
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 
@@ -349,8 +371,8 @@ func TestChequeoProgramas(t *testing.T) {
 		}
 		r := correrCheck(t, e, manifestConUnPrograma(), "programas")
 		assertNiveles(t, r, []Level{LevelWarn, LevelError})
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 }
@@ -386,8 +408,8 @@ func TestChequeoPlugins(t *testing.T) {
 		e.PluginsDir = func() string { return dir }
 		r := correrCheck(t, e, manifestVacio(), "plugins")
 		assertUnResultado(t, r, LevelError, "es accesible por otros")
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 }
@@ -490,8 +512,8 @@ func TestChequeoNoctalia(t *testing.T) {
 		if !contiene(r.resultados[1].Message, `auto_update="daily"`) {
 			t.Errorf("esperaba el error de auto_update, obtuve %q", r.resultados[1].Message)
 		}
-		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+		if r.errores != 0 {
+			t.Errorf("el error va en el Result, no en el contador: obtuve %d", r.errores)
 		}
 	})
 }
@@ -560,8 +582,9 @@ func TestChequeoFirmas(t *testing.T) {
 			}}
 		}
 		r := correrCheck(t, e, m, "firmas")
+		// Firmas no devuelve Results: el conteo va en el segundo valor.
 		if r.errores != 1 {
-			t.Errorf("esperaba 1 error, obtuve %d", r.errores)
+			t.Errorf("esperaba 1 release sin firma, obtuve %d", r.errores)
 		}
 		if !contiene(r.stderr, "SIN FIRMA") {
 			t.Errorf("esperaba SIN FIRMA en stderr, obtuve %q", r.stderr)
