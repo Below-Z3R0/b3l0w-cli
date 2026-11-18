@@ -161,7 +161,11 @@ func (r *Registry) Digest(image, tag string) (string, error) {
 // solo si el registry los expone; sin eso se toma el "-latest".
 func LatestTag(tags []string, variant string) string {
 	for _, tag := range tags {
-		if tag == variant+"-latest" {
+		// El tag puede ser exactamente la variante ("rocm") o llevar
+		// el sufijo ("rocm-latest", "rocm-1.2.3"). AvailableVariants
+		// ya acepta la forma exacta; si LatestTag no, una variante
+		// publicada cae al primer tag del registry, que es de otra.
+		if tag == variant || tag == variant+"-latest" {
 			return tag
 		}
 	}

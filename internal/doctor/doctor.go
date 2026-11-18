@@ -106,10 +106,20 @@ func Run(m *config.Manifest) int {
 // El env es la costura para los tests: con un env falso la suite
 // corre entera sin tocar la máquina.
 func RunWith(m *config.Manifest, env *Env) int {
+	return runChecks(env.checks(m))
+}
+
+// runChecks corre los chequeos, imprime cada resultado y devuelve 0 o 1.
+//
+// El conteo lo hace el Level del Result, no un contador aparte: el
+// segundo valor de Check.Run es solo para errores que no tienen un
+// Result propio (hoy ninguno), y sumarlo además del Result contaba
+// cada fallo dos veces.
+func runChecks(checks []Check) int {
 	output.Step("Chequeos")
 
 	errores := 0
-	for _, c := range env.checks(m) {
+	for _, c := range checks {
 		resultados, extra := c.Run()
 		for _, r := range resultados {
 			switch r.Level {
@@ -142,7 +152,7 @@ func (e *Env) checks(m *config.Manifest) []Check {
 				if bin := e.SystemBinary(); bin != "" {
 					return []Result{{Level: LevelOk, Message: fmt.Sprintf("actualizador del sistema: %s", bin)}}, 0
 				}
-				return []Result{{Level: LevelError, Message: "no hay cachy-update ni arch-update"}}, 1
+				return []Result{{Level: LevelError, Message: "no hay cachy-update ni arch-update"}}, 0
 			},
 		},
 		{
@@ -152,7 +162,7 @@ func (e *Env) checks(m *config.Manifest) []Check {
 				if path := e.CommandPath("pacman"); path != "" {
 					return []Result{{Level: LevelOk, Message: fmt.Sprintf("pacman: %s", path)}}, 0
 				}
-				return []Result{{Level: LevelError, Message: "no hay pacman: esto no es un sistema Arch"}}, 1
+				return []Result{{Level: LevelError, Message: "no hay pacman: esto no es un sistema Arch"}}, 0
 			},
 		},
 		{
@@ -184,7 +194,7 @@ func (e *Env) checks(m *config.Manifest) []Check {
 						out = append(out, Result{Level: LevelOk, Message: fmt.Sprintf("%s: %s", status.Name, status.Version)})
 					}
 				}
-				return out, countErrors(out)
+				return out, 0
 			},
 		},
 		{
@@ -197,9 +207,9 @@ func (e *Env) checks(m *config.Manifest) []Check {
 				case os.IsNotExist(err):
 					return []Result{{Level: LevelWarn, Message: fmt.Sprintf("plugins: %s todavía no existe", dir)}}, 0
 				case err != nil:
-					return []Result{{Level: LevelError, Message: fmt.Sprintf("plugins: %v", err)}}, 1
+					return []Result{{Level: LevelError, Message: fmt.Sprintf("plugins: %v", err)}}, 0
 				case info.Mode().Perm()&0o077 != 0:
-					return []Result{{Level: LevelError, Message: fmt.Sprintf("plugins: %s es accesible por otros (modo %o)", dir, info.Mode().Perm())}}, 1
+					return []Result{{Level: LevelError, Message: fmt.Sprintf("plugins: %s es accesible por otros (modo %o)", dir, info.Mode().Perm())}}, 0
 				default:
 					return []Result{{Level: LevelOk, Message: fmt.Sprintf("plugins: %s (privado)", dir)}}, 0
 				}
@@ -241,7 +251,7 @@ func (e *Env) checks(m *config.Manifest) []Check {
 				default:
 					out = append(out, Result{Level: LevelError, Message: fmt.Sprintf("plugins: auto_update=%q; poné \"none\" para que b3l0w controle las actualizaciones", v)})
 				}
-				return out, countErrors(out)
+				return out, 0
 			},
 		},
 		{
@@ -280,17 +290,6 @@ func (e *Env) checks(m *config.Manifest) []Check {
 			},
 		},
 	}
-}
-
-// countErrors cuenta los resultados que son error.
-func countErrors(resultados []Result) int {
-	n := 0
-	for _, r := range resultados {
-		if r.Level == LevelError {
-			n++
-		}
-	}
-	return n
 }
 
 // hasDependency busca un comando en PATH o un paquete instalado.

@@ -150,6 +150,12 @@ func TestLatestTag(t *testing.T) {
 	if got := LatestTag([]string{"intel-latest"}, "amd"); got != "" {
 		t.Fatalf("LatestTag = %q, quería vacío", got)
 	}
+	// Un tag que es exactamente la variante también es suyo: si no,
+	// una variante publicada cae al primer tag del registry, que puede
+	// ser de otra. AvailableVariants ya acepta la forma exacta.
+	if got := LatestTag([]string{"cpu", "rocm"}, "rocm"); got != "rocm" {
+		t.Fatalf("LatestTag con tag exacto = %q, quería rocm", got)
+	}
 }
 
 func TestDescribeGPU(t *testing.T) {

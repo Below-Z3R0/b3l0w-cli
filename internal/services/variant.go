@@ -15,6 +15,10 @@ type VariantOptions struct {
 	StateDir     string
 	ID           string
 	Variant      string
+
+	// Registry y Docker son para los tests: nil usa los reales.
+	Registry *Registry
+	Docker   *DockerAdapter
 }
 
 // VariantResult es lo que el cambio produjo, para que el llamador lo
@@ -51,7 +55,11 @@ func SwitchVariant(opts VariantOptions) (*VariantResult, error) {
 		return nil, fmt.Errorf("%s no está instalado", svc.ID)
 	}
 
-	tags, err := NewRegistry("").Tags(svc.Image)
+	reg := opts.Registry
+	if reg == nil {
+		reg = NewRegistry("")
+	}
+	tags, err := reg.Tags(svc.Image)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +72,10 @@ func SwitchVariant(opts VariantOptions) (*VariantResult, error) {
 	tag := TagFor(*svc, opts.Variant, tags)
 	image := svc.Image + ":" + tag
 
-	docker := NewDocker()
+	docker := opts.Docker
+	if docker == nil {
+		docker = NewDocker()
+	}
 	if err := docker.Pull(svc.Image, tag); err != nil {
 		return nil, err
 	}
