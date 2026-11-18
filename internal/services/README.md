@@ -176,7 +176,8 @@ el usuario).
 `manifest.go` (manifiesto y estado local) · `services.json` (embebido) ·
 `docker.go` (adapter compose v2, con env para el `IMAGE`) ·
 `registry.go` (tags y digest de GHCR) · `install.go` (`Installer`) ·
-`rollback.go` (digest, rollback, borrado de imágenes) · `hardware.go`
+`rollback.go` (digest, rollback, borrado de imágenes) · `variant.go`
+(`SwitchVariant`, cambiar de variante) · `hardware.go`
 (detección, ranking, recomendación) · `doctor.go` (chequeos del host) ·
 `report.go` (`CheckRegistry`, `Sync`, render) · `search.go` (filtro).
 
@@ -191,7 +192,8 @@ temporales, estado con `Installer.StateDir` y `Installer.RepoDir`.
 de pull y de up, `ImageInUse`) · `hardware_paths_test.go` (detección con
 `/proc` y `/sys` falsos, matriz de variantes, ranking, `Recommend`) ·
 `install_test.go` (update por digest, resolución de variante, elección de
-tag) · `manifest_test.go` (parseo, validaciones, round-trip del
+tag) · `variant_test.go` (`SwitchVariant`: pull, recreate con el tag correcto,
+estado previo para el rollback, rechazos sin tocar docker) · `manifest_test.go` (parseo, validaciones, round-trip del
 manifiesto y del estado, `ListStates`) · más los previos
 `hardware_test.go`, `search_test.go` y `docker_env_test.go`.
 
