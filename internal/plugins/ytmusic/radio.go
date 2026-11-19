@@ -31,6 +31,20 @@ func newSessionID() string {
 
 // Radio crea una sesión de automix para un videoId y devuelve su primera tanda.
 func Radio(ctx context.Context, c *Client, dataDir, videoID, sessionID string) (Session, error) {
+	session, err := buildRadio(ctx, c, videoID, sessionID)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := SaveSession(dataDir, session); err != nil {
+		return Session{}, err
+	}
+	return session, nil
+}
+
+// buildRadio arma la sesión pero NO la escribe. El rebase de `next` lo usa para
+// no reemplazar la cola vieja por la corta antes de tiempo: si el guardado
+// final falla, la sesión en disco queda intacta (Y4).
+func buildRadio(ctx context.Context, c *Client, videoID, sessionID string) (Session, error) {
 	videoID = strings.TrimSpace(videoID)
 	if videoID == "" {
 		return Session{}, fmt.Errorf("radio: falta el videoId semilla")
@@ -46,7 +60,7 @@ func Radio(ctx context.Context, c *Client, dataDir, videoID, sessionID string) (
 	if sessionID == "" {
 		sessionID = newSessionID()
 	}
-	session := Session{
+	return Session{
 		ID:           sessionID,
 		Seed:         videoID,
 		PlaylistID:   radioPlaylistPrefix + videoID,
@@ -54,11 +68,7 @@ func Radio(ctx context.Context, c *Client, dataDir, videoID, sessionID string) (
 		Queue:        songs,
 		Cursor:       0,
 		CreatedAt:    nowUnix(),
-	}
-	if err := SaveSession(dataDir, session); err != nil {
-		return Session{}, err
-	}
-	return session, nil
+	}, nil
 }
 
 // SaveSession persiste la cola y deja el puntero a la sesión activa.
@@ -137,7 +147,10 @@ func Next(ctx context.Context, c *Client, dataDir, id string) (NextResult, error
 		// La radio no dio más: se siembra otra desde la última canción y se
 		// sigue. Rendirse acá deja el botón "siguiente" muerto a los 50 temas.
 		last := session.Queue[len(session.Queue)-1]
-		rebased, rebaseErr := Radio(ctx, c, dataDir, last.VideoID, session.ID)
+		// buildRadio, no Radio: la sesión nueva no se escribe hasta que el
+		// merge esté completo. Si el guardado final falla, la cola vieja
+		// sigue en disco en lugar de quedar truncada (Y4).
+		rebased, rebaseErr := buildRadio(ctx, c, last.VideoID, session.ID)
 		if rebaseErr != nil {
 			return NextResult{}, fmt.Errorf("la radio se agotó y no se pudo sembrar otra desde %s: %w", last.VideoID, rebaseErr)
 		}

@@ -28,6 +28,9 @@ type playerFile struct {
 	Session string `json:"session,omitempty"`
 	Socket  string `json:"socket"`
 	Started int64  `json:"startedAt"`
+	// StartTime es el campo 22 de /proc/<pid>/stat. Es lo único que distingue
+	// nuestro proceso de un PID reciclado: el número solo no alcanza (Y1).
+	StartTime uint64 `json:"startTime,omitempty"`
 }
 
 func playerPath(dataDir string) string { return filepath.Join(dataDir, "player.json") }
@@ -134,16 +137,20 @@ func Play(dataDir string, song Song, session string) (PlayerState, error) {
 	pid := cmd.Process.Pid
 	// Sin Wait el hijo queda a cargo de init (setsid ya lo separó del árbol).
 	go func() { _ = cmd.Wait() }()
+	// Se guarda la identidad del proceso junto al PID: `stop` la compara antes
+	// de matar, para no matar a un ajeno si el número se recicló (Y1).
+	started, _ := processStartTime(pid)
 
 	state := playerFile{
-		PID:     pid,
-		VideoID: song.VideoID,
-		Title:   song.Title,
-		Artist:  song.Artist,
-		Seconds: song.Seconds,
-		Session: session,
-		Socket:  socket,
-		Started: nowUnix(),
+		PID:       pid,
+		VideoID:   song.VideoID,
+		Title:     song.Title,
+		Artist:    song.Artist,
+		Seconds:   song.Seconds,
+		Session:   session,
+		Socket:    socket,
+		Started:   nowUnix(),
+		StartTime: started,
 	}
 	if err := writeJSON(playerPath(dataDir), state); err != nil {
 		return PlayerState{}, fmt.Errorf("play: %w", err)
@@ -167,11 +174,11 @@ func Pause(dataDir string) (PlayerState, error) {
 	if err != nil {
 		return PlayerState{}, err
 	}
-	paused, err := ipcBool(state.Socket, "pause")
+	paused, err := ipcBool(socketPath(dataDir), "pause")
 	if err != nil {
 		return PlayerState{}, fmt.Errorf("pause: mpv no responde (%v): %w", state.VideoID, err)
 	}
-	if _, err := ipcCommand(state.Socket, []any{"set_property", "pause", !paused}); err != nil {
+	if _, err := ipcCommand(socketPath(dataDir), []any{"set_property", "pause", !paused}); err != nil {
 		return PlayerState{}, fmt.Errorf("pause: %w", err)
 	}
 	return Status(dataDir)
@@ -179,11 +186,10 @@ func Pause(dataDir string) (PlayerState, error) {
 
 // Resume fuerza reproducir (sin alternar): lo usa el panel al cambiar de pista.
 func Resume(dataDir string) (PlayerState, error) {
-	state, err := loadPlayer(dataDir)
-	if err != nil {
+	if _, err := loadPlayer(dataDir); err != nil {
 		return PlayerState{}, err
 	}
-	if _, err := ipcCommand(state.Socket, []any{"set_property", "pause", false}); err != nil {
+	if _, err := ipcCommand(socketPath(dataDir), []any{"set_property", "pause", false}); err != nil {
 		return PlayerState{}, fmt.Errorf("resume: %w", err)
 	}
 	return Status(dataDir)
@@ -192,26 +198,28 @@ func Resume(dataDir string) (PlayerState, error) {
 // Seek salta a un segundo absoluto. La barra de progreso del panel lo usa
 // cuando el usuario clickea una posición.
 func Seek(dataDir string, seconds int) (PlayerState, error) {
-	state, err := loadPlayer(dataDir)
-	if err != nil {
+	if _, err := loadPlayer(dataDir); err != nil {
 		return PlayerState{}, err
 	}
 	if seconds < 0 {
 		seconds = 0
 	}
-	if _, err := ipcCommand(state.Socket, []any{"seek", float64(seconds), "absolute"}); err != nil {
+	if _, err := ipcCommand(socketPath(dataDir), []any{"seek", float64(seconds), "absolute"}); err != nil {
 		return PlayerState{}, fmt.Errorf("seek: %w", err)
 	}
 	return Status(dataDir)
 }
 
-// Stop mata el grupo entero y limpia el estado.
+// Stop mata el grupo entero y limpia el estado. Antes de mandar señal valida
+// que el PID siga siendo el nuestro: si el número se recicló, matar el grupo
+// sería matar procesos ajenos (Y1). Un `player.json` viejo, sin `startTime`,
+// no se puede validar y no se mata: se descarta el estado (fail-closed).
 func Stop(dataDir string) error {
 	state, err := loadPlayer(dataDir)
 	if err != nil {
 		return nil // no había nada sonando
 	}
-	if state.PID > 0 {
+	if ours(state) {
 		// -pid: el grupo que creó setsid (sh + yt-dlp + mpv).
 		if err := syscall.Kill(-state.PID, syscall.SIGTERM); err != nil {
 			_ = syscall.Kill(state.PID, syscall.SIGTERM)
@@ -229,7 +237,9 @@ func Stop(dataDir string) error {
 			}
 		}
 	}
-	_ = os.Remove(state.Socket)
+	// El socket sale del dataDir, nunca del campo `socket` del JSON: un
+	// player.json editado a mano no puede hacer borrar un archivo arbitrario (Y2).
+	_ = os.Remove(socketPath(dataDir))
 	_ = os.Remove(playerPath(dataDir))
 	return nil
 }
@@ -248,24 +258,24 @@ func Status(dataDir string) (PlayerState, error) {
 		Artist:   state.Artist,
 		Duration: state.Seconds,
 		Session:  state.Session,
-		Socket:   state.Socket,
+		Socket:   socketPath(dataDir),
 		Started:  state.Started,
-		Playing:  alive(state.PID),
+		Playing:  ours(state),
 	}
 	if !out.Playing {
 		_ = os.Remove(playerPath(dataDir))
-		_ = os.Remove(state.Socket)
+		_ = os.Remove(socketPath(dataDir))
 		return out, nil
 	}
 	// EOF: mpv queda en idle (--idle=yes). Es la señal de "pasa a la siguiente"
 	// y llega ANTES de que el proceso muera, que es lo que rompía el autoplay.
-	if eof, err := ipcBool(state.Socket, "eof-reached"); err == nil && eof {
+	if eof, err := ipcBool(socketPath(dataDir), "eof-reached"); err == nil && eof {
 		out.Ended = true
 		out.Playing = false
-		if position, err := ipcNumber(state.Socket, "time-pos"); err == nil {
+		if position, err := ipcNumber(socketPath(dataDir), "time-pos"); err == nil {
 			out.Position = int(position)
 		}
-		if duration, err := ipcNumber(state.Socket, "duration"); err == nil {
+		if duration, err := ipcNumber(socketPath(dataDir), "duration"); err == nil {
 			out.Duration = int(duration)
 		}
 		return out, nil
@@ -275,7 +285,7 @@ func Status(dataDir string) (PlayerState, error) {
 	// va a arrancar: se informa `starting` pero la pista sigue siendo la
 	// que suena. Antes, este caso devolvía position=0 y duration=0 y el
 	// panel mostraba "0:00 / 0:00" para siempre.
-	position, err := ipcNumber(state.Socket, "time-pos")
+	position, err := ipcNumber(socketPath(dataDir), "time-pos")
 	if err != nil {
 		out.Starting = true
 		// La duración conocida por el catálogo sirve de referencia mientras
@@ -283,11 +293,11 @@ func Status(dataDir string) (PlayerState, error) {
 		out.Duration = state.Seconds
 		return out, nil
 	}
-	duration, _ := ipcNumber(state.Socket, "duration")
+	duration, _ := ipcNumber(socketPath(dataDir), "duration")
 	if duration <= 0 {
 		duration = float64(state.Seconds)
 	}
-	paused, _ := ipcBool(state.Socket, "pause")
+	paused, _ := ipcBool(socketPath(dataDir), "pause")
 	out.Position = int(position)
 	out.Duration = int(duration)
 	out.Paused = paused
@@ -308,6 +318,48 @@ func alive(pid int) bool {
 	}
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
+}
+
+// processStartTime lee el campo 22 de /proc/<pid>/stat (starttime, en ticks
+// desde el boot). Junto al PID es la identidad del proceso: el número solo se
+// recicla y `stop` terminaría matando a otro (Y1).
+//
+// El campo `comm` (2) puede tener espacios y paréntesis, así que se corta
+// después del último ')': los campos siguientes van separados por espacios.
+func processStartTime(pid int) (uint64, bool) {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, false
+	}
+	text := string(raw)
+	cut := strings.LastIndex(text, ")")
+	if cut < 0 {
+		return 0, false
+	}
+	fields := strings.Fields(text[cut+1:])
+	// fields[0] es el estado (campo 3); starttime es el 22 → índice 19.
+	if len(fields) < 20 {
+		return 0, false
+	}
+	value, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return value, true
+}
+
+// ours dice si el PID guardado sigue siendo el proceso que arrancamos. Sin
+// `startTime` (player.json de una versión anterior) no se puede probar y se
+// responde que no: es preferible dejar un mpv huérfano a matar un ajeno.
+func ours(state playerFile) bool {
+	if state.PID <= 0 || state.StartTime == 0 {
+		return false
+	}
+	if !alive(state.PID) {
+		return false
+	}
+	current, ok := processStartTime(state.PID)
+	return ok && current == state.StartTime
 }
 
 // ── IPC de mpv ───────────────────────────────────────────────────────────

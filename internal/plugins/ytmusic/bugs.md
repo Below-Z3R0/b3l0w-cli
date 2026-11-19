@@ -43,11 +43,11 @@ salida (`P<N>`) corresponde al hallazgo. Las salidas citadas son literales.
 
 | ID | Sev | Qué | Línea | Estado |
 |---|---|---|---|---|
-| Y1 | CRÍTICO | `Stop` mata el grupo de procesos del PID que dice `player.json`, **sin validar que sea el nuestro**: mata procesos ajenos | `player.go:209-235` | abierto |
-| Y2 | ALTO | `Status` y `Stop` borran el archivo que dice el campo `socket` de `player.json`: borrado de archivo arbitrario | `player.go:232,257` | abierto |
-| Y3 | ALTO | `findRenderer` camina el map en el orden **aleatorio** de Go: el token de continuación (y el `videoId`) cambian entre llamadas al mismo payload | `parse.go:75-94,170-188` | abierto |
-| Y4 | ALTO | El rebase de `next` escribe la cola **truncada** en disco antes del guardado final: si ese guardado falla, se pierde la cola | `radio.go:140` + `radio.go:58,65-73` | abierto |
-| Y5 | ALTO | `writeJSON` usa un `.tmp` de **nombre fijo**: dos escritores del mismo archivo se pisan, uno falla con ENOENT y la actualización del otro se pierde | `model.go:142-152` | abierto |
+| Y1 | CRÍTICO | `Stop` mata el grupo de procesos del PID que dice `player.json`, **sin validar que sea el nuestro**: mata procesos ajenos | `player.go:209-235` | arreglado |
+| Y2 | ALTO | `Status` y `Stop` borran el archivo que dice el campo `socket` de `player.json`: borrado de archivo arbitrario | `player.go:232,257` | arreglado |
+| Y3 | ALTO | `findRenderer` camina el map en el orden **aleatorio** de Go: el token de continuación (y el `videoId`) cambian entre llamadas al mismo payload | `parse.go:75-94,170-188` | arreglado |
+| Y4 | ALTO | El rebase de `next` escribe la cola **truncada** en disco antes del guardado final: si ese guardado falla, se pierde la cola | `radio.go:140` + `radio.go:58,65-73` | arreglado |
+| Y5 | ALTO | `writeJSON` usa un `.tmp` de **nombre fijo**: dos escritores del mismo archivo se pisan, uno falla con ENOENT y la actualización del otro se pierde | `model.go:142-152` | arreglado |
 | Y6 | MEDIO | `Play` no tiene timeout en ningún punto: un `yt-dlp` colgado cuelga el comando para siempre | `player.go:51,88` + `cli/root.go:244,305` | abierto |
 | Y7 | MEDIO | `Play` deja el proceso de reproducción **huérfano** si el estado no se puede guardar | `player.go:148` | abierto |
 | Y8 | MEDIO | `EnsureDir` no ajusta los permisos de un directorio que ya existe: el socket de mpv puede quedar en un dir `0755` | `model.go:90-95` | abierto |
@@ -65,6 +65,61 @@ salida (`P<N>`) corresponde al hallazgo. Las salidas citadas son literales.
 | Y20 | BAJO | El paquete no compila fuera de Unix (`syscall.Kill`, `Setsid`) y no tiene build tag | `player.go:127,216` | abierto |
 
 Totales: **1 CRÍTICO, 4 ALTO, 8 MEDIO, 7 BAJO** (20 hallazgos, todos reproducidos).
+
+---
+
+## Arreglados
+
+Ola del 2026-11-19: los 5 hallazgos CRÍTICOS y ALTOS. Cada arreglo tiene un test
+que se verificó **revirtiéndolo**: con el código viejo falla con el mensaje del
+bug, no con un error de compilación. Los tests están en `fixes_test.go`.
+
+| ID | Arreglo | Test |
+|---|---|---|
+| Y1 | `player.json` guarda `startTime` (campo 22 de `/proc/<pid>/stat`); `Stop` sólo manda señal si coincide, y `Status` sólo dice "reproduciendo" si coincide | `TestStopNoMataUnPIDQueNoEsNuestro` |
+| Y2 | El socket se deriva siempre de `dataDir`; el campo `socket` del JSON no se usa para borrar ni para conectar | `TestNoSeBorraElArchivoQueDiceElSocket` |
+| Y3 | `findRenderer` recorre las claves ordenadas, igual que `collectRenderers` | `TestFindRendererEsDeterminista` |
+| Y4 | `Radio` se parte en `buildRadio` (no escribe) + guardado; el rebase de `next` usa `buildRadio` y escribe una sola vez, ya mergeado | `TestElRebaseNoTruncaLaColaEnDisco` |
+| Y5 | `writeJSON` crea el temporal con `os.CreateTemp`: nombre único por escritor | `TestWriteJSONConcurrenteNoPierdeEscrituras` |
+
+**Y1 — `player.go`.** `processStartTime` lee `/proc/<pid>/stat` cortando después
+del último `)` (el campo `comm` puede traer espacios y paréntesis). `ours()`
+exige PID vivo **y** starttime igual. Un `player.json` anterior a este cambio no
+tiene `startTime`: no se puede validar, así que `stop` no mata (fail-closed) y se
+limita a descartar el estado. Es el costo de no volver a matar un ajeno.
+
+**Y2 — `player.go`.** `Pause`, `Resume`, `Seek`, `Status` y `Stop` usan
+`socketPath(dataDir)` en lugar de `state.Socket`. El campo sigue en el JSON como
+dato informativo, pero ya no decide sobre el filesystem.
+
+**Y3 — `parse.go`.** El orden de un map de Go es aleatorio; con más de un
+candidato, `continuationOf` devolvía tokens distintos para el mismo payload. Se
+ordenan las claves antes de bajar.
+
+**Y4 — `radio.go`.** `Radio` = `buildRadio` + `SaveSession`. El camino de rebase
+llama a `buildRadio`, hace el merge en memoria y guarda una sola vez. Si ese
+guardado falla, la sesión en disco queda como estaba en vez de quedar con la
+cola corta.
+
+**Y5 — `model.go`.** Un `.tmp` fijo hacía que dos escritores del mismo archivo
+se pisaran: el primero renombraba y al segundo le daba ENOENT. Ahora cada uno
+tiene su temporal y el rename final sigue siendo atómico.
+
+### Verificación de los arreglos
+
+```console
+$ go build ./... && go vet ./internal/plugins/ytmusic/... && go test ./internal/plugins/ytmusic/... -count=2
+ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic
+ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli
+```
+
+Los fixtures de `player_ipc_test.go` y `player_stop_test.go` se actualizaron al
+contrato nuevo: el socket vive en `<dataDir>/mpv.sock` y el `playerFile` lleva el
+starttime real del proceso de prueba. Sin eso, los tests viejos probaban un
+contrato que ya no existe.
+
+**Sigue abierto:** Y6–Y20 (8 MEDIO y 7 BAJO).
+
 
 ---
 
