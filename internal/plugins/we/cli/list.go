@@ -13,25 +13,43 @@ import (
 func cmdList(args []string) int {
 	asJSON, root, typ, query := false, "", "", ""
 	for i := 0; i < len(args); i++ {
+		a := args[i]
+		value := func() (string, bool) {
+			if _, after, found := strings.Cut(a, "="); found {
+				return after, true
+			}
+			if i+1 < len(args) {
+				i++
+				return args[i], true
+			}
+			return "", false
+		}
 		switch {
-		case args[i] == "--json":
+		case a == "--json":
 			asJSON = true
-		case args[i] == "--root" && i+1 < len(args):
-			i++
-			root = args[i]
-		case strings.HasPrefix(args[i], "--root="):
-			root = strings.TrimPrefix(args[i], "--root=")
-		case args[i] == "--type" && i+1 < len(args):
-			i++
-			typ = args[i]
-		case args[i] == "--query" && i+1 < len(args):
-			i++
-			query = args[i]
-		case args[i] == "-h" || args[i] == "--help":
+		case a == "--root" || strings.HasPrefix(a, "--root="):
+			v, ok := value()
+			if !ok {
+				return fail("--root necesita un valor")
+			}
+			root = v
+		case a == "--type" || strings.HasPrefix(a, "--type="):
+			v, ok := value()
+			if !ok {
+				return fail("--type necesita un valor")
+			}
+			typ = v
+		case a == "--query" || strings.HasPrefix(a, "--query="):
+			v, ok := value()
+			if !ok {
+				return fail("--query necesita un valor")
+			}
+			query = v
+		case a == "-h" || a == "--help":
 			fmt.Println("uso: b3l0w we list [--json] [--root DIR] [--type video|scene|web] [--query TXT]")
 			return 0
 		default:
-			return fail("opción desconocida: %s", args[i])
+			return fail("opción desconocida: %s", a)
 		}
 	}
 
@@ -39,6 +57,9 @@ func cmdList(args []string) int {
 	if err != nil {
 		return fail("%v", err)
 	}
+	// El total va aparte: el resumen dice "X de Y" y con filtro Y es el
+	// tamaño del catálogo, no el de la selección.
+	total := len(items)
 	items = we.Filter(items, typ, query)
 
 	if asJSON {
@@ -62,7 +83,7 @@ func cmdList(args []string) int {
 	if err := tw.Flush(); err != nil {
 		return fail("escribir tabla: %v", err)
 	}
-	fmt.Fprintf(os.Stderr, "\n%d de %d wallpapers\n", len(items), len(items))
+	fmt.Fprintf(os.Stderr, "\n%d de %d wallpapers\n", len(items), total)
 	return 0
 }
 

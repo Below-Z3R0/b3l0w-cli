@@ -398,13 +398,15 @@ func runStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "salida JSON")
 	dataDirFlag := fs.String("data-dir", "", "directorio de datos del plugin")
+	// Igual que el resto de los comandos: el token puede venir por flag.
+	token := fs.String("token", "", "token de AniList")
 	fs.Parse(args)
 	dir := *dataDirFlag
 	if dir == "" {
 		dir = anilist.DataDir("", "b3l0w/anilist")
 	}
 	hasToken := true
-	if _, err := anilist.Token("", "ANILIST_TOKEN", dir); err != nil {
+	if _, err := anilist.Token(*token, "ANILIST_TOKEN", dir); err != nil {
 		hasToken = false
 	}
 	coversDir := filepath.Join(dir, "covers")

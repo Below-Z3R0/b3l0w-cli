@@ -160,6 +160,9 @@ géneros y la distribución de notas.
 `go test ./internal/plugins/anilist/` — los de GraphQL y de descarga corren
 contra `httptest.Server`; ninguno toca la API real.
 
+`go test ./internal/plugins/anilist/cli/` — los de la capa de parseo y salida
+usan un `RoundTripper` falso; tampoco tocan la API real.
+
 | Archivo | Qué cubre |
 |---|---|
 | `stats_test.go` | traducción de `statistics`, fallback desde la lista, slices vacíos, TTL del caché, usuario o cuenta ajena, error sin escribir caché |
@@ -167,3 +170,4 @@ contra `httptest.Server`; ninguno toca la API real.
 | `library_test.go` | paginación, merge por `mediaId`, orden por título, `Partial` cuando una lista falla |
 | `libraryfile_test.go` | `{}` como lista vacía, entradas reales, JSON inválido |
 | `token_test.go` | precedencia flag → env → `token.json`, error sin filtrar el secreto |
+| `cli/root_test.go` | despacho y códigos de salida, flags de cada comando, stdout con `--json` como **un solo** documento JSON, errores a stderr, `status` y el caché de carátulas |
