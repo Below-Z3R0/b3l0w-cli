@@ -55,6 +55,7 @@ están sin firma en el segundo valor, sin `Result`. Es el contrato que usa
 
 | ID | Arreglo | Test |
 |---|---|---|
+| C1 | Arreglado en `ac95ce8` (PR #23): `runChecks` cuenta cada fallo una sola vez; los 4 chequeos con `LevelError` + `extra=1` y los 2 con `countErrors` quedaron con `extra=0` | `TestRunChecksCuentaCadaFalloUnaVez` |
 | M1 | `hasDependency` deja de ser una función libre y pasa a `Env.disponible` con `PackageInstalled` inyectable: la consulta a pacman (-Q) se puede simular sin correr el pacman real | `TestHasDependency` |
 
 ## Arreglados (BAJO)
