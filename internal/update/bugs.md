@@ -14,25 +14,35 @@ reprodujeron con tests temporales en `t.TempDir()` (archivo
 Estado de la suite al cerrar la revisión: `go test ./internal/update/ -count=1`
 → **ok** (0.036s), 31 tests verdes, cobertura **50.0 %**. `go vet` limpio.
 
+## Cierre de los ALTO (A1-A4)
+
+Después de la revisión original se cerraron los cuatro hallazgos ALTO.
+Cada arreglo tiene su test, y **cada test se revirtió a mano para
+comprobar que falla** (ver "Cómo se verificaron", abajo).
+
+Estado de la suite hoy: `go test ./internal/update/ -count=1` → **ok**,
+**41 tests verdes**, cobertura **64.2 %**. `go vet` y `gofmt` limpios.
+
+
 ## Resumen
 
-| ID | Sev | Qué | Línea |
-|---|---|---|---|
-| C1 | CRÍTICO | `--dotfiles --dry-run` crea una **snapshot real** de snapper: el dry-run no es un dry-run | `update.go:361` |
-| A1 | ALTO | `updateDotfiles` aborta con código 1 si `noctalia` no está instalado: la validación del TOML se confunde con "no hay Noctalia" | `update.go:335-339` |
-| A2 | ALTO | `updateServices` ignora el error de cada servicio: un servicio que no se actualiza se reporta como si todo bien | `update.go:234-237` |
-| A3 | ALTO | `checkDesktop` compara siempre contra los paquetes `-git`, aunque el canal sea `stable` | `update.go:578` |
-| A4 | ALTO | `dryRun` anuncia una actualización comparando strings: `"v0.5.0"` vs `"0.5.0"` se ven distintos | `update.go:156` |
-| M1 | MEDIO | `Run` con `--self` pide confirmación de **todas** las capas, no solo del CLI | `update.go:94` |
-| M2 | MEDIO | `updateDotfiles` hace el pull aunque el preview haya fallado: el error del preview se descarta | `update.go:372` |
-| M3 | MEDIO | `updateDotfiles` solo valida el TOML de Noctalia, no el de Umbriel | `update.go:335` |
-| M4 | MEDIO | El estado de dotfiles se deriva de `os.UserHomeDir()` en vez de `$HOME`: un `HOME` distinto rompe la ruta | `update.go:342-347` |
-| M5 | MEDIO | `updatePlugins` solo usa la ruta de plugins de Noctalia si el comando existe: sin Noctalia, `LoadDefault` decide | `update.go:188-206` |
-| M6 | MEDIO | `check` y `checkDesktop` mezclan red con salida: un timeout de AUR no distingue "todo bien" de "no se consultó" | `update.go:578-582` |
-| B1 | BAJO | `Run` sale con 0 cuando el usuario cancela: un script no puede distinguir "cancelado" de "hecho" | `update.go:95-97` |
-| B2 | BAJO | `syncRegistry` no distingue los kinds: un fallo de sync no dice qué categoría falló | `update.go:261-265` |
-| B3 | BAJO | `confirmPrompt` con `--self` solo lista "b3l0w", pero `Run` ejecuta el CLI primero y corta: el prompt no lo dice | `update.go:445-469` |
-| B4 | BAJO | `localVersion` no distingue "no instalado" de "pacman falló" | `update.go:612-622` |
+| ID | Sev | Qué | Línea | Estado |
+|---|---|---|---|---|
+| C1 | CRÍTICO | `--dotfiles --dry-run` crea una **snapshot real** de snapper: el dry-run no es un dry-run | `update.go:361` | arreglado |
+| A1 | ALTO | `updateDotfiles` aborta con código 1 si `noctalia` no está instalado: la validación del TOML se confunde con "no hay Noctalia" | `update.go:335-339` | **arreglado** |
+| A2 | ALTO | `updateServices` ignora el error de cada servicio: un servicio que no se actualiza se reporta como si todo bien | `update.go:234-237` | **arreglado** |
+| A3 | ALTO | `checkDesktop` compara siempre contra los `-git`, aunque el canal sea `stable` | `update.go:578` | **arreglado** |
+| A4 | ALTO | `dryRun` anuncia una actualización comparando strings: `"v0.5.0"` vs `"0.5.0"` se ven distintos | `update.go:156` | **arreglado** |
+| M1 | MEDIO | `Run` con `--self` pide confirmación de **todas** las capas, no solo del CLI | `update.go:94` | pendiente |
+| M2 | MEDIO | `updateDotfiles` hace el pull aunque el preview haya fallado: el error del preview se descarta | `update.go:372` | pendiente |
+| M3 | MEDIO | `updateDotfiles` solo valida el TOML de Noctalia, no el de Umbriel | `update.go:335` | pendiente |
+| M4 | MEDIO | El estado de dotfiles se deriva de `os.UserHomeDir()` en vez de `$HOME`: un `HOME` distinto rompe la ruta | `update.go:342-347` | pendiente |
+| M5 | MEDIO | `updatePlugins` solo usa la ruta de plugins de Noctalia si el comando existe: sin Noctalia, `LoadDefault` decide | `update.go:188-206` | pendiente |
+| M6 | MEDIO | `check` y `checkDesktop` mezclan red con salida: un timeout de AUR no distingue "todo bien" de "no se consultó" | `update.go:578-582` | pendiente |
+| B1 | BAJO | `Run` sale con 0 cuando el usuario cancela: un script no puede distinguir "cancelado" de "hecho" | `update.go:95-97` | pendiente |
+| B2 | BAJO | `syncRegistry` no distingue los kinds: un fallo de sync no dice qué categoría falló | `update.go:261-265` | pendiente |
+| B3 | BAJO | `confirmPrompt` con `--self` solo lista "b3l0w", pero `Run` ejecuta el CLI primero y corta: el prompt no lo dice | `update.go:445-469` | pendiente |
+| B4 | BAJO | `localVersion` no distingue "no instalado" de "pacman falló" | `update.go:612-622` | pendiente |
 
 ---
 
@@ -119,10 +129,13 @@ o `dryRun` debería incluir el preview de dotfiles (que hoy sí hace,
 
 ### A1 — Sin `noctalia` instalado, el update de dotfiles aborta
 
-**Ubicación:** `update.go:335-339`.
+**Estado: ARREGLADO.** Test: `TestBug_A1_SinNoctaliaElUpdateDeDotfilesNoAborta`
+(contraste: `TestBug_A1_ConNoctaliaElTOMLInvalidoSigueAbortando`).
 
-**Qué pasa.** `updateDotfiles` valida el TOML de Noctalia **antes** de
-todo:
+**Ubicación:** `update.go:335-339` (original).
+
+**Qué pasaba.** `updateDotfiles` validaba el TOML de Noctalia **antes de
+todo**:
 
 ```go
 if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
@@ -145,22 +158,13 @@ mismo código de salida.
 **Reproducción (verificado).** Con un repo que tiene `noctalia/config.toml`
 y un `PATH` sin `noctalia`:
 
-```go
-updateDotfiles(Options{DotfilesDir: repo})
-// updateDotfiles = 1
-// stderr: "✗ repo TOML does not validate:"     ← mensaje vacío, sin causa
+```
+updateDotfiles = 1
+stderr: "✗ repo TOML does not validate:"     ← mensaje vacío, sin causa
 ```
 
-El mensaje está **vacío**: `out` es "" porque el comando ni siquiera
-existió, así que el usuario ve "repo TOML does not validate:" sin ninguna
-pista.
-
-**Consecuencia.** En una máquina sin Noctalia (o antes de instalarlo), el
-update de dotfiles **no funciona en absoluto** y dice una cosa falsa. El
-README (`README.md:84-88`) presenta la validación como una protección
-("Validar el TOML de Noctalia antes de tocar nada"), no como un requisito.
-
-**Fix propuesto.** Distinguir "no está instalado" de "no valida":
+**Arreglo aplicado.** La validación solo corre si el validador está
+instalado; si no, se avisa y se sigue:
 
 ```go
 if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
@@ -175,65 +179,62 @@ if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
 }
 ```
 
-El mismo patrón se repite en `updatePlugins` (`update.go:188`), que sí
-comprueba `HaveCommand("noctalia")` antes de usarlo — la inconsistencia
-está dentro del mismo archivo.
+El mensaje de error del TOML inválido **no cambia**: si el validador está
+y el TOML no valida, el update sigue abortando con 1 y el mismo texto.
+Eso es lo que fija el test de contraste: el arreglo no puede ser "no
+validar nunca".
+
+El mismo patrón (`HaveCommand`) ya lo usaba `updatePlugins`
+(`update.go:188`); ahora las dos mitades del módulo son consistentes.
+
+**M3 sigue pendiente:** el TOML de Umbriel todavía no se valida.
 
 ---
 
 ### A2 — `updateServices` descarta el error de cada servicio
 
-**Ubicación:** `update.go:234-237`.
+**Estado: ARREGLADO.** Tests: `TestBug_A2_ElErrorDeUnServicioLlegaAlCodigoDeSalida`
+y `TestBug_A2_RunPropagaElFalloDeServicios`.
 
-**Qué pasa.** El bucle de `updateServices`:
+**Ubicación:** `update.go:234-237` y `update.go:131` (original).
+
+**Qué pasaba.** El bucle de `updateServices` imprimía el error y seguía
+con el siguiente servicio, pero la función **siempre** devolvía 0:
 
 ```go
 newState, err := in.Update(*svc, state, true, yes)
 if err != nil {
     output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
-    continue
+    continue          // ← el error se imprime y se pierde
 }
+...
+return 0             // update.go:243
 ```
 
-Se **imprime** el error y se sigue con el siguiente servicio. El problema
-está dos líneas más arriba y en el `return`:
-
-```go
-func updateServices(yes bool) int {
-    ...
-    return 0        // update.go:243
-}
-```
-
-La función **siempre** devuelve 0. Y en `Run`:
+Y en `Run` el return ni siquiera se miraba:
 
 ```go
 if servicesWanted {
-    updateServices(opts.Yes)      // update.go:131 — el return se descarta
+    updateServices(opts.Yes)   // update.go:131 — el return se descarta
 }
 ```
 
-Ni siquiera mira el código de retorno. Consecuencia: si los tres servicios
-Docker fallan al actualizarse, `b3l0w update` imprime tres `✗` y después
-`✓ update complete` y sale con **código 0**. Un script que automate el
-update no puede saber que nada se actualizó.
+Consecuencia: si los servicios fallan al actualizarse, `b3l0w update`
+imprime tres `✗` y después `✓ update complete` y sale con **código 0**.
 
-El README (`README.md:34-36`) dice que `updateServices` "sigue con el
-resto de los servicios" — eso está bien, seguir está bien. Lo que falta
-es que el **resultado** se refleje en el código de salida.
-
-**Fix propuesto.** Contar los fallos y devolver 1 si hubo alguno, y que
-`Run` respete ese código:
+**Arreglo aplicado.** Se cuentan los fallos y el resultado vuelve por la
+cadena:
 
 ```go
 fallos := 0
 for _, state := range states {
     ...
     if err != nil {
-        output.Fail(...)
+        output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
         fallos++
         continue
     }
+    ...
 }
 if fallos > 0 {
     return 1
@@ -241,33 +242,44 @@ if fallos > 0 {
 return 0
 ```
 
-Y en `Run`: `if code := updateServices(opts.Yes); code != 0 { return code }`.
+y en `Run`:
+
+```go
+if servicesWanted {
+    if code := updateServices(opts.Yes); code != 0 {
+        return code
+    }
+}
+```
+
+**Lo que NO cambió:** el update sigue con el resto de los servicios (el
+README lo promete: "sigue con el resto de los servicios"). Lo que cambia
+es el **resultado**: ahora el error se refleja en el código de salida.
+
+**Nota sobre el orden.** El código de `updateServices` se propaga antes de
+los dotfiles, así que un fallo de servicio ahora corta la cadena (como ya
+pasaba con `updatePrograms`). Es el mismo contrato que el resto de las
+capas.
 
 ---
 
 ### A3 — `checkDesktop` compara contra los paquetes `-git` aunque el canal sea `stable`
 
-**Ubicación:** `update.go:578` y `update.go:600-604`.
+**Estado: ARREGLADO.** Test: `TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal`.
 
-**Qué pasa.** `checkDesktop` pregunta al AUR por los paquetes **-git**,
-siempre:
+**Ubicación:** `update.go:578` y `update.go:600-604` (original).
+
+**Qué pasaba.** `checkDesktop` preguntaba al AUR por los paquetes
+**-git**, siempre:
 
 ```go
 remote, err := versioncheck.AUR([]string{"umbriel-git", "noctalia-git"})
 ```
 
-Y `desktopUpdate` (la otra mitad del módulo) **sí** respeta el canal:
-
-```go
-pkgs := []string{"umbriel-git", "noctalia-git"}
-if ch == channel.Stable {
-    pkgs = []string{"umbriel", "noctalia"}
-}
-```
-
-Las dos mitades del mismo archivo discrepan. En un sistema de canal
-`stable`, `b3l0w update --check` pregunta por `umbriel-git` (que no está
-instalado) y por lo tanto dice "no instalado", mientras el sistema tiene
+Y `desktopUpdate` (la otra mitad del módulo) **sí** respetaba el canal.
+Las dos mitades del mismo archivo discrepaban: en un sistema de canal
+`stable`, `b3l0w update --check` preguntaba por `umbriel-git` (que no
+está instalado) y decía "no instalado", cuando el sistema tiene
 `umbriel` instalado y al día.
 
 **Reproducción (verificado).** Con el canal en `stable` y un `pacman`
@@ -279,11 +291,8 @@ checkDesktop (canal stable) dice:
  ! noctalia-git: no instalado (stable)"
 ```
 
-El usuario ve que sus dos programas de escritorio "no están instalados",
-cuando el canal dice que deberían ser `umbriel` y `noctalia`.
-
-**Fix propuesto.** Compartir la selección de paquetes entre las dos
-funciones. Extraer un helper:
+**Arreglo aplicado.** La selección de paquetes se extrajo a un helper
+compartido por las dos mitades:
 
 ```go
 func desktopPackages(ch string) []string {
@@ -294,16 +303,21 @@ func desktopPackages(ch string) []string {
 }
 ```
 
-y usarlo en `checkDesktop` (`update.go:578`) y en `desktopUpdate`
-(`update.go:601-604`).
+`checkDesktop` usa `aurLookup(desktopPackages(ch))` y `desktopUpdate`
+usa `desktopPackages(ch)`. Los dos caminos no pueden volver a
+divergir.
 
 ---
 
 ### A4 — El dry-run compara versiones como strings
 
-**Ubicación:** `update.go:156`.
+**Estado: ARREGLADO.** Tests: `TestBug_A4_ElDryRunComparaLasVersionesComoNumeros`
+y `TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes`.
 
-**Qué pasa.** `dryRun` decide si hay que actualizar comparando strings:
+**Ubicación:** `update.go:156` y `update.go:504` (original).
+
+**Qué pasaba.** `dryRun` decidía si había que actualizar comparando
+strings:
 
 ```go
 if tag, err := selfupdate.Check(); err == nil && tag != "" && tag != version.Version {
@@ -312,29 +326,42 @@ if tag, err := selfupdate.Check(); err == nil && tag != "" && tag != version.Ver
 ```
 
 `version.Version` viene del `-ldflags`. El `PKGBUILD` lo inyecta como
-`v$pkgver` (`packaging/b3l0w-cli/PKGBUILD:35`), o sea **con** la `v`. Pero
-el README de `internal/version` (`README.md:29-35`) muestra la forma
-`-X ...version.Version=v0.1.0` y el propio módulo tiene un helper
-`withV` (`internal/selfupdate/selfupdate.go:138-143`) que existe
-**precisamente** porque "el ldflags puede venir con ella (v0.2.0) o sin
-ella (0.2.0)".
+`v$pkgver`, o sea **con** la `v`. Pero el README de `internal/version`
+muestra la forma `-X ...version.Version=v0.1.0` y el propio módulo tiene
+un helper `withV` que existe **precisamente** porque "el ldflags puede
+venir con ella (v0.2.0) o sin ella (0.2.0)".
 
 Si el binario fue compilado con la versión **sin** la `v` ("0.5.0"), el
 dry-run muestra "b3l0w: 0.5.0 -> v0.5.0": un plan que dice que hay que
-actualizar a la versión que ya tenés. El mismo bug está en `check`
-(`update.go:504`), que compara igual.
+actualizar a la versión que ya tenés. El mismo bug estaba en `check`
+(`update.go:504`), que comparaba igual.
 
-**Fix propuesto.** Usar la comparación numérica que ya existe en
-`internal/selfupdate` (o `vercmp`, que el propio módulo usa en
-`update.go:626-636`):
+**Arreglo aplicado.** La comparación es numérica, no de strings:
 
 ```go
-if tag, err := selfupdate.Check(); err == nil && tag != "" &&
-    selfupdate.CompareVersions(tag, version.Version) > 0 {
+func versionMasNueva(remota, local string) bool {
+    r := numerosVersion(remota)
+    l := numerosVersion(local)
+    for i := 0; i < 3; i++ {
+        if r[i] != l[i] {
+            return r[i] > l[i]
+        }
+    }
+    return false
+}
 ```
 
-La función `compareVersions` de `internal/selfupdate` es privada; habría
-que exportarla o usar `vercmp` como hace el resto del módulo.
+`numerosVersion` saca el prefijo `v`, corta los sufijos (`-dev`,
+`+build`) y lee los tres primeros números. Es la misma regla con la que
+`internal/selfupdate` decide si baja un release, replicada acá para no
+tocar otro paquete (el `compareVersions` de `selfupdate` es privado).
+
+El dry-run ahora solo anuncia la actualización cuando el release es
+**más nuevo**, y `check` avisa por la misma vía (`avisoVersionCLI`, que
+además conserva el `if version.Version` con "dev" que ya tenía).
+
+**Efecto secundario bueno:** un release más viejo que el binario ya no
+genera un plan de "downgrade".
 
 ---
 
@@ -700,16 +727,30 @@ de pacman y un mensaje en stderr que lo diga) de los demás errores.
 
 ## Cómo verifiqué
 
-Tests temporales en `internal/update/zz_probe_test.go` (package `update`),
-ejecutados con `go test ./internal/update/ -run TestProbe -v` y borrados al
-terminar. Cubrieron: el snapshot en dry-run (C1, por `updateDotfiles` y
-por `Run`), el prompt con `--self` (M1), la validación de Noctalia sin el
+La revisión original se hizo con tests temporales en
+`internal/update/zz_probe_test.go` (package `update`), ejecutados con
+`go test ./internal/update/ -run TestProbe -v` y borrados al terminar.
+Cubrieron: el snapshot en dry-run (C1, por `updateDotfiles` y por
+`Run`), el prompt con `--self` (M1), la validación de Noctalia sin el
 binario instalado (A1), `checkDesktop` con canal `stable` (A3). El bug A2
-(es el error de un servicio individual) es **por inspección**: no se
+(es el error de un servicio individual) era **por inspección**: no se
 reprodujo porque `updateServices` necesita Docker y estados reales, pero
 el `return 0` incondicional de `update.go:243` y el `return` descartado de
-`update.go:131` son verificables leyendo el código. El estado final del
-worktree no tiene archivos de prueba nuevos.
+`update.go:131` son verificables leyendo el código.
+
+**El cierre de A1-A4 es verificable de punta a punta.** Los cuatro
+arreglos se probaron con tests permanentes (`alto_test.go`) y, además,
+**cada arreglo se revirtió a mano** para comprobar que su test falla: un
+test que no falla al revertir el bug no prueba el bug. El detalle está
+en "Cómo se verificaron", más abajo.
+
+A2 se volvió verificable sin Docker gracias al punto de inyección
+`updateService`: el test simula que el update del servicio falla y
+comprueba que el error llega al código de salida.
+
+El worktree no tiene archivos de prueba temporales: los que se usaron
+para la revisión original se borraron, y los de A1-A4 son permanentes
+(`alto_test.go`).
 
 ---
 
@@ -718,3 +759,40 @@ worktree no tiene archivos de prueba nuevos.
 | ID | Arreglo | Test |
 |---|---|---|
 | C1 | `updateDotfiles` no crea la snapshot cuando `opts.DryRun`: el flag promete no tocar nada y una snapshot es escribir. `--adopt` en dry-run tampoco ejecuta (registra estado y no tiene preview). | `TestDryRunNoCreaSnapshot` (y `TestSinDryRunSiCreaSnapshot` como contraste) |
+| A1 | La validación del TOML de Noctalia solo corre si el validador está instalado. Sin `noctalia` se avisa y el update sigue; con el validador y el TOML inválido, el abort con código 1 y el mensaje son los de siempre. | `TestBug_A1_SinNoctaliaElUpdateDeDotfilesNoAborta` + `TestBug_A1_ConNoctaliaElTOMLInvalidoSigueAbortando` (contraste) |
+| A2 | `updateServices` cuenta los fallos y devuelve 1 si hubo alguno; `Run` respeta ese código. El update sigue con el resto de los servicios (no cambia el contrato del README), lo que cambia es el resultado. | `TestBug_A2_ElErrorDeUnServicioLlegaAlCodigoDeSalida` + `TestBug_A2_RunPropagaElFalloDeServicios` |
+| A3 | La selección de paquetes del escritorio se extrajo a `desktopPackages(ch)`, compartido por `checkDesktop` y `desktopUpdate`: las dos mitades ya no pueden divergir. | `TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal` |
+| A4 | La comparación de versiones del CLI es numérica (`versionMasNueva`), no de strings: `"v0.5.0"` y `"0.5.0"` son la misma versión. El dry-run y el `check` usan la misma regla. | `TestBug_A4_ElDryRunComparaLasVersionesComoNumeros` + `TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes` |
+
+### Cómo se verificaron
+
+Cada test de A1-A4 se revirtió a mano (el bloque exacto del arreglo se
+volvió a poner como estaba) y el test tiene que **fallar**. Los seis
+tests fallaron al revertir y pasaron al restaurar:
+
+```
+A1  TestBug_A1_SinNoctaliaElUpdateDeDotfilesNoAborta: FALLA (bien)
+A2  TestBug_A2_ElErrorDeUnServicioLlegaAlCodigoDeSalida: FALLA (bien)
+A2  TestBug_A2_RunPropagaElFalloDeServicios: FALLA (bien)
+A3  TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal: FALLA (bien)
+A4  TestBug_A4_ElDryRunComparaLasVersionesComoNumeros: FALLA (bien)
+A4  TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes: FALLA (bien)
+```
+
+### Puntos de inyección
+
+Para probar A2, A3 y A4 sin tocar la red ni Docker, el módulo ahora tiene
+cuatro variables inyectables (el mismo patrón que ya usa
+`internal/selfupdate` con `apiURL`/`replaceFile`):
+
+| Variable | Sustituye a |
+|---|---|
+| `selfCheck` | `selfupdate.Check` (releases del CLI) |
+| `aurLookup` | `versioncheck.AUR` (consulta al AUR) |
+| `registrySync` | `registry.Sync` (sync de las DB del registry) |
+| `updateService` | `(*services.Installer).Update` (update de un servicio) |
+
+Los tests los sustituyen por fakes y los restauran con `t.Cleanup`.
+Ninguno toca la red, el home del usuario ni binarios del sistema: el
+`PATH` y el `HOME` van a temporales y el manifiesto de servicios sale del
+caché local del registry (`XDG_STATE_HOME` temporal).

@@ -29,6 +29,21 @@ import (
 	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
+// Inyectables para los tests.
+//
+// El módulo llama a la red (GitHub, AUR) y a Docker. Los tests no
+// pueden tocar ninguno de los dos, así que estas variables se
+// sustituyen por fakes. Es el mismo patrón que ya usa internal/selfupdate
+// con apiURL y replaceFile.
+var (
+	selfCheck     = selfupdate.Check
+	aurLookup     = versioncheck.AUR
+	registrySync  = registry.Sync
+	updateService = func(in *services.Installer, svc services.Service, state *services.State, rebuild, yes bool) (*services.State, error) {
+		return in.Update(svc, state, rebuild, yes)
+	}
+)
+
 // Options son las banderas de `b3l0w update`.
 type Options struct {
 	System      bool
@@ -128,7 +143,9 @@ func Run(m *config.Manifest, opts Options) int {
 		}
 	}
 	if servicesWanted {
-		updateServices(opts.Yes)
+		if code := updateServices(opts.Yes); code != 0 {
+			return code
+		}
 	}
 	if dotfilesWanted {
 		if code := updateDotfiles(opts); code != 0 {
@@ -153,7 +170,7 @@ func dryRun(m *config.Manifest, opts Options) int {
 	output.Step("Dry-run: no se toca nada")
 
 	if opts.Self || !anySelector {
-		if tag, err := selfupdate.Check(); err == nil && tag != "" && tag != version.Version {
+		if tag, err := selfCheck(); err == nil && tag != "" && versionMasNueva(tag, version.Version) {
 			output.Step(fmt.Sprintf("  b3l0w: %s -> %s", version.Version, tag))
 		} else {
 			output.Step(fmt.Sprintf("  b3l0w: %s (sin cambios)", version.Version))
@@ -226,19 +243,27 @@ func updateServices(yes bool) int {
 		Registry: services.NewRegistry(""),
 		StateDir: services.DefaultStateDir(),
 	}
+	// Un servicio que no se actualiza se sigue contando como fallo:
+	// se sigue con el resto (para ver todos los errores), pero el
+	// resultado tiene que llegar al codigo de salida.
+	fallos := 0
 	for _, state := range states {
 		svc := m.Find(state.ID)
 		if svc == nil {
 			continue
 		}
-		newState, err := in.Update(*svc, state, true, yes)
+		newState, err := updateService(in, *svc, state, true, yes)
 		if err != nil {
 			output.Fail(fmt.Sprintf("%s: %v", state.ID, err))
+			fallos++
 			continue
 		}
 		if newState.UpdatedAt != state.UpdatedAt {
 			output.Ok(fmt.Sprintf("%s actualizado", state.ID))
 		}
+	}
+	if fallos > 0 {
+		return 1
 	}
 	return 0
 }
@@ -259,7 +284,7 @@ func syncRegistry(systemWanted, servicesWanted, pluginsWanted bool) {
 		kinds = append(kinds, registry.Plugins)
 	}
 	for _, kind := range kinds {
-		if _, err := registry.Sync(kind, nil); err != nil {
+		if _, err := registrySync(kind, nil); err != nil {
 			output.Warn(err.Error())
 		}
 	}
@@ -332,10 +357,19 @@ func updateDotfiles(opts Options) int {
 	}
 
 	// Validar el TOML de Noctalia antes de tocar nada.
+	//
+	// Solo si el validador está instalado: si Noctalia no está, el
+	// TOML puede estar perfectamente y lo que falta es el programa que
+	// lo valida. Antes esto abortaba con 1 y decía "repo TOML does not
+	// validate", que era falso.
 	if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
-		if out, err := kitsystem.RunCombined("noctalia", "config", "validate", path); err != nil {
-			output.Fail("repo TOML does not validate: " + out)
-			return 1
+		if kitsystem.HaveCommand("noctalia") {
+			if out, err := kitsystem.RunCombined("noctalia", "config", "validate", path); err != nil {
+				output.Fail("repo TOML does not validate: " + out)
+				return 1
+			}
+		} else {
+			output.Warn("noctalia no está instalado: no se valida el TOML del repo")
 		}
 	}
 
@@ -512,11 +546,7 @@ func updatePrograms(m *config.Manifest) int {
 func check(m *config.Manifest) int {
 	output.Step("b3l0w")
 	output.Ok(fmt.Sprintf("versión: %s", version.Version))
-	if !strings.Contains(version.Version, "dev") {
-		if latest, err := selfupdate.Check(); err == nil && latest != "" && latest != version.Version {
-			output.Warn(fmt.Sprintf("b3l0w: %s -> %s", version.Version, latest))
-		}
-	}
+	avisoVersionCLI()
 
 	output.Step("Estado de las actualizaciones")
 
@@ -558,6 +588,24 @@ func check(m *config.Manifest) int {
 	return 0
 }
 
+// avisoVersionCLI avisa si hay una versión del CLI más nueva que la
+// local.
+//
+// La comparación es numérica: "v0.5.0" y "0.5.0" son la misma
+// versión, así que no se avisa de una actualización que ya se tiene.
+func avisoVersionCLI() {
+	if strings.Contains(version.Version, "dev") {
+		return
+	}
+	latest, err := selfCheck()
+	if err != nil || latest == "" {
+		return
+	}
+	if versionMasNueva(latest, version.Version) {
+		output.Warn(fmt.Sprintf("b3l0w: %s -> %s", version.Version, latest))
+	}
+}
+
 // checkPlugins compara el registry con lo instalado y avisa si falta
 // un script de backend.
 func checkPlugins() {
@@ -584,10 +632,23 @@ func checkPlugins() {
 	}
 }
 
+// desktopPackages da los paquetes del escritorio según el canal.
+//
+// Las dos mitades del módulo (el check y el comando a mano) tienen que
+// preguntar por los mismos paquetes: si una pregunta por los -git y la
+// otra por los estables, el check dice que no está instalado lo que
+// sí lo está.
+func desktopPackages(ch string) []string {
+	if ch == channel.Stable {
+		return []string{"umbriel", "noctalia"}
+	}
+	return []string{"umbriel-git", "noctalia-git"}
+}
+
 // checkDesktop compara lo instalado con AUR. Sin red es un warning.
 func checkDesktop() {
 	ch := channel.Current()
-	remote, err := versioncheck.AUR([]string{"umbriel-git", "noctalia-git"})
+	remote, err := aurLookup(desktopPackages(ch))
 	if err != nil {
 		output.Warn("escritorio: no se pudo consultar AUR")
 		return
@@ -610,10 +671,7 @@ func checkDesktop() {
 // desktopUpdate no ejecuta pacman: muestra el comando y el canal.
 func desktopUpdate() int {
 	ch := channel.Current()
-	pkgs := []string{"umbriel-git", "noctalia-git"}
-	if ch == channel.Stable {
-		pkgs = []string{"umbriel", "noctalia"}
-	}
+	pkgs := desktopPackages(ch)
 	output.Step("Escritorio")
 	fmt.Printf("  canal: %s\n", ch)
 	fmt.Printf("  b3l0w todavía no ejecuta pacman.\n\n")
@@ -631,6 +689,44 @@ func localVersion(pkg string) string {
 		return ""
 	}
 	return fields[1]
+}
+
+// versionMasNueva dice si la versión remota es más nueva que la local.
+//
+// Numérica, no de strings: "v0.5.0" y "0.5.0" son la misma versión
+// (el ldflags puede traerla con o sin la "v") y "0.10.0" es más
+// nueva que "0.9.0" aunque como string parezca al revés. Los
+// sufijos (-dev, +build) se ignoran: "v0.5.0-dev" es la misma
+// versión que "v0.5.0".
+//
+// Es la misma regla con la que internal/selfupdate decide si baja un
+// release, replicada acá para no tocar otro paquete.
+func versionMasNueva(remota, local string) bool {
+	r := numerosVersion(remota)
+	l := numerosVersion(local)
+	for i := 0; i < 3; i++ {
+		if r[i] != l[i] {
+			return r[i] > l[i]
+		}
+	}
+	return false
+}
+
+// numerosVersion saca los tres primeros números de una versión:
+// "v0.5.0-dev" -> {0, 5, 0}. Lo que no es número cuenta como 0.
+func numerosVersion(v string) [3]int {
+	var out [3]int
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	for i, parte := range strings.Split(v, ".") {
+		if i >= 3 {
+			break
+		}
+		out[i], _ = strconv.Atoi(parte)
+	}
+	return out
 }
 
 // compareVersions usa vercmp (pacman): -1 local < remoto, 0 igual,

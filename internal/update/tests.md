@@ -6,11 +6,11 @@ Qué prueba cada test del módulo y qué quedó sin cubrir.
 
 | Métrica | Valor |
 |---|---|
-| Tests | 31 |
-| Verdes | 31 |
+| Tests | 41 |
+| Verdes | 41 |
 | **Rojos** | **0** |
 | Saltados | 0 |
-| Cobertura | **50.0 %** |
+| Cobertura | **64.2 %** |
 | Comando | `go test ./internal/update/ -count=1 -cover` |
 
 Cobertura por función (medida con `go tool cover -func`):
@@ -23,23 +23,26 @@ Cobertura por función (medida con `go tool cover -func`):
 | `localVersion` | 100.0 % | |
 | `compareVersions` | 100.0 % | |
 | `desktopUpdate` | 100.0 % | |
+| `desktopPackages` | 100.0 % | nueva: la selección por canal |
+| `versionMasNueva` | 100.0 % | nueva: la comparación numérica |
+| `dryRun` | 100.0 % | |
+| `updateDotfiles` | 81.7 % | |
 | `updatePrograms` | 86.7 % | |
-| `updateDotfiles` | 74.1 % | |
-| `dryRun` | 61.1 % | |
+| `updateServices` | 75.0 % | antes 15 % |
+| `syncRegistry` | 70.0 % | antes 50 % |
+| `avisoVersionCLI` | 71.4 % | nueva: el aviso de versión del check |
+| `Run` | 60.9 % | antes 51.1 % |
 | `updateSystem` | 55.6 % | |
-| `Run` | 51.1 % | |
-| `syncRegistry` | 50.0 % | |
-| `updateServices` | 15.0 % | |
+| `checkDesktop` | 58.3 % | antes 0 % |
+| `numerosVersion` | 88.9 % | nueva |
 | **`updatePlugins`** | **0.0 %** | |
 | **`selfUpdate`** | **0.0 %** | |
 | **`check`** | **0.0 %** | |
 | **`checkPlugins`** | **0.0 %** | |
-| **`checkDesktop`** | **0.0 %** | |
 
-Cinco funciones con 0 % de cobertura, entre ellas **`check`** — la que
-implementa `b3l0w update --check`, el comando que el usuario usa para
-"saber si hay que actualizar" — y **`checkDesktop`**, que ya tiene un bug
-probado (A3).
+Antes de cerrar A1-A4 eran 31 tests y 50.0 % de cobertura, con cinco
+funciones en 0 %. Hoy quedan cuatro, y las que eran 0 % que se podían
+alcanzar (`checkDesktop`) ya no lo están.
 
 ## Mapa de los archivos
 
@@ -48,6 +51,9 @@ probado (A3).
 | `update_test.go` | 25 tests: los selectores del prompt y su orden, `defaultDotfilesDir`, `fileExists`, `localVersion` y `compareVersions` (parseo, fallback a 0 sin vercmp o con salida inválida, y semántica real de epoch/pkgrel/vacío), `updatePrograms`, `updateServices`, `updateSystem`, `updateDotfiles`, `desktopUpdate` y el despacho de `Run` |
 | `dotfiles_test.go` | 3 tests de regresión de bugs: el dry-run muestra los conflictos y no escribe nada, el dry-run anuncia cuántos conflictos hay, y los huérfanos se avisan |
 | `confirm_test.go` | 1 test: la tabla completa de `confirmPrompt`, una fila por combinación de capas |
+| `dryrun_test.go` | 3 tests de regresión del bug C1: el dry-run no crea snapshot, sin dry-run sí la crea, y `--adopt --dry-run` no escribe el estado |
+| `alto_test.go` | 6 tests de regresión de los hallazgos ALTO (A1-A4), uno por hallazgo y sus contrastes |
+
 
 ## Detalle de cada test
 
@@ -110,28 +116,52 @@ cambiado y sea un conflicto de verdad, no un "kept").
 |---|---|
 | `TestConfirmPrompt` | La tabla completa de `confirmPrompt`: una fila por combinación de capas (todas, y cada una sola). Fija el formato exacto del prompt, incluido el espacio final |
 
+### `alto_test.go` (6 tests)
+
+Los tests de los hallazgos ALTO. Cada uno **falla si se revierte su
+arreglo**: se comprobó revirtiendo cada arreglo a mano y viendo que el
+test correspondiente pasa a rojo.
+
+| Test | Qué fija |
+|---|---|
+| `TestBug_A1_SinNoctaliaElUpdateDeDotfilesNoAborta` | **A1.** Sin `noctalia` en el PATH, el update de dotfiles no aborta con 1 ni dice "repo TOML does not validate": avisa que el TOML no se validó y sigue. El `PATH` va a un temporal vacío, así que el validador no existe |
+| `TestBug_A1_ConNoctaliaElTOMLInvalidoSigueAbortando` | **A1, contraste.** Con un `noctalia` fake que falla, el update sigue abortando con 1 y el mismo mensaje: el arreglo no puede ser "no validar nunca" |
+| `TestBug_A2_ElErrorDeUnServicioLlegaAlCodigoDeSalida` | **A2.** Con un servicio instalado cuyo update falla, `updateServices` devuelve 1 y nombra el servicio que falló. El manifiesto sale del caché local del registry (`XDG_STATE_HOME` temporal) y el update del servicio se simula por el punto de inyección `updateService`: ni red ni Docker |
+| `TestBug_A2_RunPropagaElFalloDeServicios` | **A2, la otra mitad.** `Run(--yes --services)` devuelve 1 cuando un servicio falla: el código de `updateServices` ya no se descarta |
+| `TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal` | **A3.** El check del escritorio pregunta al AUR por `umbriel`/`noctalia` en canal `stable` y por `umbriel-git`/`noctalia-git` en `edge`. La consulta se intercepta por `aurLookup` y se mira qué paquetes se pidieron |
+| `TestBug_A4_ElDryRunComparaLasVersionesComoNumeros` | **A4.** El dry-run solo anuncia una actualización cuando el release es más nuevo: `"v0.5.0"` contra `"0.5.0"` no es una actualización, `"v0.6.0"` contra `"0.5.0"` sí, `"v0.4.0"` contra `"0.5.0"` no (sería un downgrade) y `"v0.10.0"` contra `"0.9.0"` sí. 7 casos |
+| `TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes` | **A4, la otra mitad.** El `check` no avisa de una versión que ya se tiene, y sí avisa de una más nueva |
+
+### `dryrun_test.go` (3 tests)
+
+| Test | Qué fija |
+|---|---|
+| `TestDryRunNoCreaSnapshot` | **C1.** `--dotfiles --dry-run` no llama a `snapper`: el log del fake tiene que quedar vacío |
+| `TestSinDryRunSiCreaSnapshot` | **C1, contraste.** Sin dry-run la snapshot se pide: si este test falla, el anterior pasaría por la razón equivocada |
+| `TestDryRunNoAdopta` | `--adopt --dry-run` no escribe el estado de dotfiles |
+
 ## Qué quedó sin cubierto (y por qué)
 
 | Caso | Por qué no está | Consecuencia |
 |---|---|---|
-| **`check` completo** | Necesita `system.List` (cachy-update), AUR y la API de GitHub | **0 % de cobertura.** Es `b3l0w update --check`, el comando que el usuario usa para saber si hay que actualizar. Ninguna de sus ramas (sistema, programas, releases, desktop, plugins) está probada |
-| **`checkDesktop`** | Necesita red (AUR) | **0 %.** **Bug A3 (ALTO)**, verificado con un `pacman` fake: con canal `stable` pregunta por `umbriel-git` y dice "no instalado" |
+| **`check` completo** | Necesita `system.List` (cachy-update), la API de GitHub (releases sin firma) y el registry de plugins | **0 % de cobertura.** Es `b3l0w update --check`, el comando que el usuario usa para saber si hay que actualizar. Ninguna de sus ramas (sistema, programas, releases, plugins) está probada |
+| **`checkDesktop`** | Necesitaba red (AUR) | **58.3 %.** **Bug A3 (ALTO) cerrado**: el check pregunta por los paquetes del canal. Lo que no está probado es el caso "no se pudo consultar AUR" |
 | **`checkPlugins`** | Necesita el registry y los plugins instalados | **0 %.** El bucle de comparación de versiones por plugin no está probado |
 | **`selfUpdate`** | Baja un release de GitHub y reemplaza el binario en ejecución | **0 %.** Toda la rama que reporta "b3l0w vX -> vY" |
 | **`updatePlugins`** | Corre `noctalia` y puede clonar el repo con git | **0 %.** **Bug M5 (MEDIO)**: el camino elegido depende de que `plugins.Sources()` no falle, y ese error no se distingue del "no hay sources" |
-| **`updateServices` con estados** | Necesita Docker y servicios instalados | 15 %: solo la salida temprana (sin estado). **Bug A2 (ALTO)**: el error de cada servicio se imprime pero no llega al código de salida |
-| **La validación del TOML de Noctalia** | `noctalia config validate` no está en el PATH de los tests | **Bug A1 (ALTO)**, verificado: sin el binario, `updateDotfiles` sale con 1 y dice "repo TOML does not validate:" (mensaje vacío). **M3 (MEDIO)**: el TOML de Umbriel no se valida nunca |
-| **El snapshot en dry-run** | El fake de `snapper` en los tests no deja marker | **Bug C1 (CRÍTICO)**, verificado con un marker: `--dotfiles --dry-run` **crea una snapshot real**. Ningún test lo detecta porque `fakeBin` (sin marker) no falla si se ejecuta |
+| **`updateServices` con estados** | El estado se arma en un temporal, pero el update real necesita el registry de imágenes | 75 %: la salida temprana (sin estado), el caso "el manifiesto no carga" y el caso "el servicio falla". **Bug A2 (ALTO) cerrado**: el error de cada servicio llega al código de salida |
+| **La validación del TOML de Noctalia** | `noctalia config validate` no está en el PATH de los tests | **Bug A1 (ALTO) cerrado**: sin el binario, `updateDotfiles` avisa y sigue en vez de salir con 1. **M3 (MEDIO)**: el TOML de Umbriel no se valida nunca |
+| **El snapshot en dry-run** | El fake de `snapper` en los tests no deja marker | **Bug C1 (CRÍTICO) cerrado**: `dryrun_test.go` mete un `snapper` que loguea y verifica que el log queda vacío |
 | **El prompt con `--self` solo** | `TestConfirmPrompt` prueba `confirmPrompt` directo, no la combinación de flags que produce `Run` | **Bug M1 (MEDIO)**, verificado: el prompt dice "Update b3l0w, system, programs, plugins, services, dotfiles?" cuando solo se actualiza el CLI |
-| **El dry-run con versiones comparadas como strings** | El test usa una versión local inyectada | **Bug A4 (ALTO)**: `"0.5.0"` vs `"v0.5.0"` se ven distintos y el dry-run anuncia una actualización inexistente |
+| **El dry-run con versiones comparadas como strings** | La versión local se inyecta con `version.Version` | **Bug A4 (ALTO) cerrado**: `alto_test.go` prueba 7 combinaciones de versiones locales y remotas |
 | **`Run` con `--system` y `--programs` juntos** | `cmd/b3l0w/update.go:63-66` lo rechaza **antes** de llegar al módulo | Correcto, pero es un invariante que vive en el cmd y no en el paquete: si alguien llama `update.Run` directamente, la comprobación no está |
-| **`syncRegistry`** | Descarga de `raw.githubusercontent.com` | 50 %: solo el camino sin kinds. **Bug B2 (BAJO)**: el error de un kind no se distingue del de otro |
+| **`syncRegistry`** | Descarga de `raw.githubusercontent.com` | 70 %: el camino sin kinds y el de un kind. **Bug B2 (BAJO)**: el error de un kind no se distingue del de otro |
 | **`updateSystem` con actualizador real** | `cachy-update` es interactivo (news, confirmaciones, kernel) | El camino feliz no está. El README (`README.md:139-140`) lo reconoce |
-| **`updateDotfiles` sin `--adopt`** | Escribe en `~/.config` de verdad | 74 %: falta el camino que aplica archivos de verdad y el que resuelve un conflicto con `--force` |
+| **`updateDotfiles` sin `--adopt`** | Escribe en `~/.config` de verdad | 81.7 %: falta el camino que aplica archivos de verdad y el que resuelve un conflicto con `--force` |
 | **El preview de conflictos que falla** | Requiere un estado corrupto | **Bug M2 (MEDIO)**: el `err == nil &&` de `update.go:372` descarta el error del preview |
 | **`Run` con todas las capas** | Cada capa necesita su entorno | Solo hay tests con `--programs` y con `--dry-run --programs` |
 | **La cancelación** | Se prueba sin terminal, no respondiendo "n" | **Bug B1 (BAJO)**: cancelar sale con 0, igual que completar |
-| **La concurrencia** | No hay `t.Parallel()` | Los tests usan `t.Setenv` y capturan `os.Stdout` global: **no pueden** correr en paralelo. Es una restricción real del diseño de los tests, no un bug |
+| **La concurrencia** | No hay `t.Parallel()` | Los tests usan `t.Setenv`, capturan `os.Stdout` global y ahora sustituyen variables de paquete (`selfCheck`, `aurLookup`, `registrySync`, `updateService`): **no pueden** correr en paralelo. Es una restricción real del diseño de los tests, no un bug |
 | **La captura de stdout** | `capturarSalida` reemplaza `os.Stdout` globalmente | Si dos tests corrieran en paralelo, sus salidas se mezclarían. Hoy no es un problema |
 
 ## Cómo correr la suite

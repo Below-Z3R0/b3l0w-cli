@@ -35,6 +35,26 @@ Un error corta la cadena, salvo en dos casos: `updatePrograms` no se
 detiene en el primer programa que falla, y `updateServices` sigue con el
 resto de los servicios.
 
+El **código de salida** refleja el resultado: si un servicio no se
+actualizó, `updateServices` devuelve 1 y `Run` devuelve ese 1 (igual que
+hace `updatePrograms`). Un script que automatiza el update puede así
+saber que algo falló.
+
+## Versiones del CLI
+
+La comparación de versiones es **numérica**, no de strings: el `-ldflags`
+puede inyectar la versión con o sin la `v` (`v0.5.0` o `0.5.0`) y las dos
+son la misma versión. El dry-run solo anuncia una actualización cuando el
+release es **más nuevo** que el binario, y nunca propone un downgrade.
+
+## Escritorio: un solo camino por canal
+
+`desktopPackages(canal)` es la única fuente de verdad de qué paquetes del
+escritorio existen: `umbriel`/`noctalia` en `stable` y `umbriel-git`/
+`noctalia-git` en `edge`. La usan las dos mitades del módulo: el `--check`
+y el comando a mano. Si una preguntara por un canal distinto de la otra,
+el check diría que lo que tenés instalado no está instalado.
+
 ## Flags
 
 | Flag | Efecto |
@@ -87,6 +107,11 @@ Antes de escribir, `snapshot.Create("b3l0w pre-dotfiles")` intenta una
 snapshot de `home` con snapper. Si snapper no está o no hay config para
 `home`, solo avisa: la protección real es el merge.
 
+El TOML de Noctalia del repo se valida antes de tocar nada, **pero solo
+si el validador está instalado**: sin `noctalia` en el PATH se avisa
+("noctalia no está instalado: no se valida el TOML del repo") y el update
+sigue. Un TOML que no valida sigue abortando el update con código 1.
+
 El estado (`~/.local/state/b3l0w/dotfiles.json`) guarda el sha256 de la
 última versión aplicada por archivo:
 
@@ -128,9 +153,22 @@ con salida inválida, y semántica real de epoch/pkgrel/vacío);
 de `Run` (cancelación sin `--yes`, programas ausentes y plan del
 `--dry-run`).
 
+`alto_test.go` cubre las regresiones de los cuatro hallazgos ALTO
+(A1-A4): sin `noctalia` el update de dotfiles no aborta (y con un TOML
+inválido sigue abortando), el error de un servicio llega al código de
+salida (y `Run` lo propaga), el check del escritorio pregunta por los
+paquetes del canal, y las versiones del CLI se comparan numéricamente.
+Cada uno de esos tests **falla si se revierte su arreglo**: se comprobó
+revirtiendo cada arreglo a mano.
+
 Los tests acotan `PATH` y `HOME` a temporales y usan fakes de `vercmp`,
 `pacman`, `snapper`, `noctalia` y `cachy-update` que dejan un marker si
 se ejecutan: si el código toca el sistema, el test falla.
+
+Para lo que depende de la red o de Docker hay **puntos de inyección**:
+`selfCheck` (releases del CLI), `aurLookup` (AUR), `registrySync` (DB del
+registry) y `updateService` (update de un servicio) son variables de
+paquete que los tests sustituyen por fakes.
 
 ## Qué no está testeado y por qué
 
@@ -141,8 +179,8 @@ se ejecutan: si el código toca el sistema, el test falla.
 - `updatePrograms` con programas instalados: ejecuta `<prog> update`.
 - `updatePlugins`: corre `noctalia` y puede clonar el repo con `git`.
 - `syncRegistry`: HTTP a raw.githubusercontent.com y escritura del caché.
-- `check`, `checkDesktop`, `checkPlugins`: API de GitHub, AUR y
-  `cachy-update -l`.
+- `check`: la API de GitHub (releases sin firma) y `cachy-update -l`.
+- `checkPlugins`: el registry de plugins y el loop de comparación.
 - `updateDotfiles` sin `--adopt`: snapshot real con snapper antes de
   escribir en `~/.config`.
 
