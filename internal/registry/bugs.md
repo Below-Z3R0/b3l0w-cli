@@ -257,4 +257,5 @@ estado final del worktree no tiene archivos de probe.
 
 | ID | Arreglo | Test |
 |---|---|---|
+| B1 | `fetch` lee `maxSize+1` bytes y falla si llegó el byte de más: ya no trunca en silencio un JSON que después se cachea | `TestFetchRechazaUnaRespuestaGigante`, `TestFetchAceptaJustoElLimite` |
 | A1 | `Load` valida el `Kind` contra `paths` antes de la cascada. Un Kind inexistente devuelve `categoría desconocida` en vez de caer al embebido y devolver otra categoría con `err nil` | `TestLoadRechazaUnaCategoriaDesconocida`, `TestLoadConCategoriaValidaSigueFuncionando` |

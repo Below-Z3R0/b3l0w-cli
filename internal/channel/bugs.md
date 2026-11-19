@@ -299,3 +299,9 @@ archivos de probe.
 | ID | Arreglo | Test |
 |---|---|---|
 | A1 | `Current()` acepta solo `stable` o `edge`. Un valor desconocido en el archivo se ignora y se cae a `Detect()`. | `TestCurrentIgnoraUnCanalDesconocido` |
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `Set` escribe a un temporal y renombra: un corte deja el canal viejo, no uno a medias | `TestSetNoDejaTemporales` |

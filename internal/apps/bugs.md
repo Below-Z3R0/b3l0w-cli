@@ -313,4 +313,5 @@ estado final del worktree no tiene archivos de probe.
 
 | ID | Arreglo | Test |
 |---|---|---|
+| B1 | `humanizar` redondea al alza: 30 minutos son "1 h", no "0 h" | `TestHumanizarNoDaCeroHoras` |
 | A2 | `exec()` devuelve el `ExitCode()` real de pacman con `errors.As` sobre `*osexec.ExitError` (el import va con alias porque la función local se llama `exec`). Un 127 ya no se confunde con un 1 | `TestExecPropagaElExitCode`, `TestExecDevuelveCeroCuandoTodoVaBien` |

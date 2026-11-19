@@ -22,7 +22,9 @@ func TestLoadSinArchivoDevuelveDefault(t *testing.T) {
 func TestSaveLoadRoundtrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "programs.json")
 	m := Default()
-	m.Add("otro", "github:algo/otro")
+	if _, err := m.Add("otro", "github:algo/otro"); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.Save(path); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -44,14 +46,40 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 
 func TestAddEsIdempotente(t *testing.T) {
 	m := Default()
-	if m.Add("boot-preview", "x") {
+	if ok, _ := m.Add("boot-preview", "github:algo/boot-preview"); ok {
 		t.Fatal("agregar uno existente devolvió true")
 	}
-	if m.Add("nuevo", "x") != true {
-		t.Fatal("agregar uno nuevo devolvió false")
+	if ok, err := m.Add("nuevo", "github:algo/nuevo"); !ok || err != nil {
+		t.Fatalf("agregar uno nuevo devolvió false: %v", err)
 	}
-	if m.Add("nuevo", "y") {
+	if ok, _ := m.Add("nuevo", "github:algo/nuevo"); ok {
 		t.Fatal("agregar dos veces devolvió true la segunda")
+	}
+}
+
+// TestAddValidaAlRegistrar fija que un programa mal cargado falla al
+// registrarse, no tres comandos después al instalarlo.
+func TestAddValidaAlRegistrar(t *testing.T) {
+	casos := []struct {
+		nombre string
+		name   string
+		source string
+	}{
+		{"nombre vacío", "", "github:algo/x"},
+		{"nombre con /", "a/b", "github:algo/x"},
+		{"nombre ..", "..", "github:algo/x"},
+		{"fuente sin github:", "x", "gitlab:algo/x"},
+		{"fuente con ruta extra", "x", "github:algo/x/extra"},
+		{"fuente sin repo", "x", "github:algo"},
+	}
+	for _, c := range casos {
+		m := Default()
+		if ok, err := m.Add(c.name, c.source); ok || err == nil {
+			t.Errorf("%s: Add(%q, %q) = (%v, %v), quería false y error", c.nombre, c.name, c.source, ok, err)
+		}
+		if m.Get(c.name) != nil {
+			t.Errorf("%s: el programa inválido quedó en el manifiesto", c.nombre)
+		}
 	}
 }
 

@@ -4,8 +4,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Schema es la versión del formato del manifiesto.
@@ -84,18 +86,43 @@ func (m *Manifest) Get(name string) *Program {
 }
 
 // Add registra un programa con su fuente. Devuelve false si ya estaba.
-func (m *Manifest) Add(name, source string) bool {
+func (m *Manifest) Add(name, source string) (bool, error) {
 	return m.AddProgram(Program{Name: name, Source: source})
 }
 
 // AddProgram registra un programa completo. Devuelve false si ya estaba:
 // es idempotente.
-func (m *Manifest) AddProgram(p Program) bool {
+//
+// Valida el nombre y la fuente al registrar, no al instalar: un programa
+// mal cargado falla tres comandos después, cuando el usuario ya se olvidó
+// de lo que escribió.
+func (m *Manifest) AddProgram(p Program) (bool, error) {
+	if err := validarPrograma(p); err != nil {
+		return false, err
+	}
 	if m.Get(p.Name) != nil {
-		return false
+		return false, nil
 	}
 	m.Programs = append(m.Programs, p)
-	return true
+	return true, nil
+}
+
+// validarPrograma comprueba lo mínimo para que el programa se pueda
+// instalar: un nombre que sea un componente de ruta y una fuente
+// github:owner/repo.
+func validarPrograma(p Program) error {
+	if p.Name == "" || p.Name == "." || p.Name == ".." || strings.ContainsAny(p.Name, `/\`) {
+		return fmt.Errorf("nombre de programa inválido: %q", p.Name)
+	}
+	if p.Source == "" {
+		return nil
+	}
+	resto, ok := strings.CutPrefix(p.Source, "github:")
+	if !ok || strings.Count(resto, "/") != 1 ||
+		strings.HasPrefix(resto, "/") || strings.HasSuffix(resto, "/") {
+		return fmt.Errorf("fuente no soportada para %s: %q (usá github:owner/repo)", p.Name, p.Source)
+	}
+	return nil
 }
 
 // Remove borra un programa. Devuelve false si no estaba.

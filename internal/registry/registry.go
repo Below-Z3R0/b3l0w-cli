@@ -165,9 +165,14 @@ func fetch(kind Kind) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: HTTP %d", kind, resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
+	// LimitReader trunca en silencio y el JSON partido se cachearía:
+	// se lee un byte de más para detectar el desbordamiento.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(data)) > maxSize {
+		return nil, fmt.Errorf("%s: la respuesta supera los %d bytes", kind, maxSize)
 	}
 	if len(data) == 0 {
 		return nil, fmt.Errorf("%s: respuesta vacía", kind)

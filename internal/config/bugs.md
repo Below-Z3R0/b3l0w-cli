@@ -252,3 +252,9 @@ terminar. Cubrieron: la versión 99 aceptada (A1), los tres JSON
 semiválidos que devuelven un manifiesto vacío (A2), y el puntero de `Get`
 caducado por un `Remove` (A3). El estado final del worktree no tiene
 archivos de probe.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `AddProgram` valida el nombre (componente de ruta) y la fuente (`github:owner/repo`) al registrar, no al instalar. Firma `(bool, error)` | `TestAddValidaAlRegistrar` |

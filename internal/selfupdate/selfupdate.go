@@ -24,7 +24,7 @@ import (
 const (
 	repo  = "Below-Z3R0/b3l0w-cli"
 	asset = "b3l0w-linux-amd64"
-	api   = "https://api.github.com/repos/" + repo + "/releases?per_page=30"
+	api   = "https://api.github.com/repos/" + repo + "/releases?per_page=100"
 )
 
 // Inyectables. En producción son los reales; los tests los sustituyen

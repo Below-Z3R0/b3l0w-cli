@@ -13,6 +13,7 @@ package apps
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -171,7 +172,12 @@ func humanizar(d time.Duration) string {
 		return fmt.Sprintf("%d días", dias)
 	case dias == 1:
 		return "1 día"
-	default:
-		return fmt.Sprintf("%d h", int(d.Hours()))
 	}
+	// Redondear al alza: 30 minutos son "1 h", no "0 h"; y 26 horas
+	// ya son "1 día", no "1 día" por el piso de la división.
+	horas := int(math.Ceil(d.Hours()))
+	if horas < 1 {
+		return "menos de 1 h"
+	}
+	return fmt.Sprintf("%d h", horas)
 }
