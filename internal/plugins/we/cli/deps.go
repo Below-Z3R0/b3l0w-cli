@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/plugins/we"
@@ -14,17 +15,31 @@ func cmdDeps(args []string) int {
 	asJSON := false
 	root := ""
 	for i := 0; i < len(args); i++ {
+		a := args[i]
+		value := func() (string, bool) {
+			if _, after, found := strings.Cut(a, "="); found {
+				return after, true
+			}
+			if i+1 < len(args) {
+				i++
+				return args[i], true
+			}
+			return "", false
+		}
 		switch {
-		case args[i] == "--json":
+		case a == "--json":
 			asJSON = true
-		case args[i] == "--root" && i+1 < len(args):
-			i++
-			root = args[i]
-		case args[i] == "-h" || args[i] == "--help":
+		case a == "--root" || strings.HasPrefix(a, "--root="):
+			v, ok := value()
+			if !ok {
+				return fail("--root necesita un valor")
+			}
+			root = v
+		case a == "-h" || a == "--help":
 			fmt.Println("uso: b3l0w we deps [--json] [--root DIR]")
 			return 0
 		default:
-			return fail("opción desconocida: %s", args[i])
+			return fail("opción desconocida: %s", a)
 		}
 	}
 	if root == "" {

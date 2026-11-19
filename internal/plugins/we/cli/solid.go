@@ -81,6 +81,8 @@ func cmdSolid(args []string) int {
 				return fail("--size inválido: %s", v)
 			}
 			width, height = pw, ph
+		default:
+			return fail("opción desconocida: %s", a)
 		}
 	}
 

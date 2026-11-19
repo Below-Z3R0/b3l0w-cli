@@ -139,9 +139,10 @@ func cmdScan(args []string) int {
 			}
 		default:
 			// Una ruta suelta se toma como carpeta.
-			if !strings.HasPrefix(a, "-") {
-				dirs = append(dirs, a)
+			if strings.HasPrefix(a, "-") {
+				return fail("opción desconocida: %s", a)
 			}
+			dirs = append(dirs, a)
 		}
 	}
 

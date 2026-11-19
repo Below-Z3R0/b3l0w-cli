@@ -180,3 +180,6 @@ plugin, en la raíz del repo).
 | `cli/solid.go` | `we solid`: PNG de un color + tope de `--size` |
 | `cli/thumbs.go` | `we scan --thumbs`: miniaturas JPEG en paralelo |
 | `cli/deps.go` | `we deps`: tabla o JSON del estado del entorno |
+| `cli/*_test.go` | suite del subpaquete de comandos: parseo de flags, salida y códigos de exit |
+| `cli/tests.md` | qué prueba cada test del subpaquete `wecli` |
+| `cli/bugs.md` | bugs del subpaquete `wecli` y sus arreglos |
