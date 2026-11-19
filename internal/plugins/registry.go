@@ -134,6 +134,9 @@ func Collect(registryDir string) ([]Entry, error) {
 		if !strings.HasSuffix(meta.ID, "/"+name) {
 			return nil, fmt.Errorf("%s: el id %q no termina en /%s", name, meta.ID, name)
 		}
+		// El build acepta una API más nueva a propósito: el catálogo se
+		// publica con plugins que pueden pedir más y el runtime es el que
+		// decide. Solo se rechaza lo que no es una API.
 		if meta.PluginAPI < 1 {
 			return nil, fmt.Errorf("%s: plugin_api inválido (%d)", meta.ID, meta.PluginAPI)
 		}
@@ -303,6 +306,33 @@ var (
 	reDeps = regexp.MustCompile(`(?m)^dependencies\s*=\s*\[([^\]]*)\]`)
 )
 
+// listaDeArray parte un array TOML ya capturado.
+//
+// Un array multilínea trae comentarios `#` y saltos de línea adentro; sin
+// limpiarlos, un comentario se vuelve un ítem y una coma dentro de un
+// comentario parte el array de más.
+func listaDeArray(bruto string) []string {
+	var out []string
+	for _, item := range strings.Split(bruto, ",") {
+		// El comentario llega al fin de la LÍNEA, no al fin del array:
+		// cortar hasta el final del string se comía el ítem siguiente.
+		if i := strings.Index(item, "#"); i >= 0 {
+			if j := strings.Index(item[i:], "\n"); j >= 0 {
+				item = item[:i] + item[i+j:]
+			} else {
+				item = item[:i]
+			}
+		}
+		item = strings.Trim(strings.TrimSpace(item), `"`)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+var ()
+
 func readPluginMeta(path string) (pluginMeta, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -338,20 +368,12 @@ func parsePluginMeta(text string) (pluginMeta, error) {
 		meta.Description = mm[1]
 	}
 	if mm := reTags.FindStringSubmatch(text); mm != nil {
-		for _, tag := range strings.Split(mm[1], ",") {
-			tag = strings.Trim(strings.TrimSpace(tag), `"`)
-			if tag != "" {
-				meta.Tags = append(meta.Tags, tag)
-			}
+		for _, tag := range listaDeArray(mm[1]) {
+			meta.Tags = append(meta.Tags, tag)
 		}
 	}
 	if mm := reDeps.FindStringSubmatch(text); mm != nil {
-		for _, dep := range strings.Split(mm[1], ",") {
-			dep = strings.Trim(strings.TrimSpace(dep), `"`)
-			if dep != "" {
-				meta.Dependencies = append(meta.Dependencies, dep)
-			}
-		}
+		meta.Dependencies = listaDeArray(mm[1])
 	}
 	if meta.ID == "" || meta.Version == "" {
 		return meta, fmt.Errorf("plugin.toml sin id o version")

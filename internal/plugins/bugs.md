@@ -464,3 +464,14 @@ Los tres caminos de borrado/ejecución fuera del directorio privado, con
 | B2 | `extractPlugin` busca por el nombre del plugin, no por el prefijo `<repo>-<rama>`: renombrar el repo ya no rompe el install | `TestExtractPluginNoDependeDelNombreDelRepo`, `TestExtractPluginIgnoraOtrosPlugins` |
 | B3 | `updateFromSource` imprime origen -> destino (`meta.Version -> entry.Version`), como el camino sin source | código |
 | B4 | `DependenciesFrom(m, dir)` separa la lectura del manifiesto y el home real: el test ya no depende de la red | `TestDependencies`, `TestDependenciesSinPluginToml` |
+
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A2 | `Discover` usa `os.Stat` como `Find`: sigue el symlink en vez de describir el link | código |
+| A3 | `--dry-run` no agrega el source a Noctalia: el flag promete no tocar nada | código |
+| A4 | `installOne` descarga el tarball **antes** de borrar la versión instalada: un fallo de red deja la que funcionaba | código |
+| A5 | `listaDeArray` limpia los comentarios hasta el fin de **línea** y no hasta el fin del array: un array TOML multilínea ya no pierde ítems | `TestParsePluginMetaArrayMultilinea`, `TestParsePluginMetaArrayConComaEnUnComentario` |
+| A6 | `AutoUpdate` matchea la clave exacta con `reAutoUpdate`, no por prefijo: `auto_update_mode` ya no gana | `TestAutoUpdateNoConfundeClaves` |
+| A7 | `repairSourceRepo` se llama desde `UpdateSource`, como prometía su docstring | código |
+| A8 | Descartado: el build acepta una API más nueva a propósito (`TestCollectAcceptsNewAPI`); el runtime decide | `TestCollectAcceptsNewAPI` |

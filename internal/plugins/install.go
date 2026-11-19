@@ -32,8 +32,12 @@ func Install(m *Manifest, id, pluginsDir string, dryRun bool) error {
 	if sourceReady() {
 		return installFromSource(targets, dryRun)
 	}
-	if err := EnsureSource(); err == nil && sourceReady() {
-		return installFromSource(targets, dryRun)
+	// Un dry-run no toca el source de Noctalia: agregarlo es un cambio
+	// real y el flag promete no hacer ninguno.
+	if !dryRun {
+		if err := EnsureSource(); err == nil && sourceReady() {
+			return installFromSource(targets, dryRun)
+		}
 	}
 	for _, entry := range targets {
 		if err := installOne(entry, pluginsDir, dryRun); err != nil {
@@ -53,8 +57,10 @@ func Update(m *Manifest, id, pluginsDir string, dryRun bool) error {
 	if sourceReady() {
 		return updateFromSource(targets, dryRun)
 	}
-	if err := EnsureSource(); err == nil && sourceReady() {
-		return updateFromSource(targets, dryRun)
+	if !dryRun {
+		if err := EnsureSource(); err == nil && sourceReady() {
+			return updateFromSource(targets, dryRun)
+		}
 	}
 	for _, entry := range targets {
 		local := InstalledVersion(pluginsDir, entry)
@@ -204,7 +210,14 @@ func installOne(entry Entry, pluginsDir string, dryRun bool) error {
 		fmt.Printf("  → %s %s en %s\n", entry.ID, entry.Version, dest)
 		return nil
 	}
-	// Borrar la carpeta nueva y la vieja (b3l0w-<name>) si existen.
+	// La descarga va ANTES de borrar: si falla la red, la versión que
+	// estaba funcionando sigue en su lugar.
+	tmp, err := downloadTarball()
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	// Ahora sí, borrar la carpeta nueva y la vieja (b3l0w-<name>).
 	if err := os.RemoveAll(dest); err != nil {
 		return err
 	}
@@ -216,12 +229,6 @@ func installOne(entry Entry, pluginsDir string, dryRun bool) error {
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
-
-	tmp, err := downloadTarball()
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp)
 
 	// La carpeta raíz del tarball es <repo>-<rama>: cambia si el repo se
 	// renombra o la rama por defecto cambia. El nombre del plugin no.

@@ -57,29 +57,64 @@ func Load(path string) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}
+	// Un JSON válido pero sin campos (null, {}) no es un manifiesto: es
+	// un archivo vacío. Normalizarlo evita un nil que después paniquea.
+	if m.Programs == nil {
+		m.Programs = []Program{}
+	}
 	if m.Version == 0 {
 		m.Version = Schema
+	}
+	// Una versión futura trae campos que este binario no entiende:
+	// cargarla y volver a guardarla los perdería sin avisar.
+	if m.Version > Schema {
+		return nil, fmt.Errorf("el manifiesto es de una versión más nueva (%d > %d): actualizá b3l0w", m.Version, Schema)
 	}
 	return &m, nil
 }
 
 // Save escribe el manifiesto creando el directorio si hace falta.
+//
+// Escribe a un temporal y renombra: un corte deja el manifiesto viejo
+// entero, no uno a medias que el próximo Load no puede leer.
 func (m *Manifest) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	tmp, err := os.CreateTemp(dir, ".programs-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
-// Get devuelve el programa con ese nombre, o nil.
+// Get devuelve una copia del programa con ese nombre, o nil.
+//
+// Una copia, no un puntero dentro del slice: Remove compacta el slice y
+// el puntero quedaría apuntando a otro programa.
 func (m *Manifest) Get(name string) *Program {
 	for i := range m.Programs {
 		if m.Programs[i].Name == name {
-			return &m.Programs[i]
+			p := m.Programs[i]
+			return &p
 		}
 	}
 	return nil
@@ -129,7 +164,11 @@ func validarPrograma(p Program) error {
 func (m *Manifest) Remove(name string) bool {
 	for i := range m.Programs {
 		if m.Programs[i].Name == name {
-			m.Programs = append(m.Programs[:i], m.Programs[i+1:]...)
+			// Limpiar la cola antes de truncar: el array subyacente
+			// conservaría una copia del último elemento.
+			copy(m.Programs[i:], m.Programs[i+1:])
+			m.Programs[len(m.Programs)-1] = Program{}
+			m.Programs = m.Programs[:len(m.Programs)-1]
 			return true
 		}
 	}
