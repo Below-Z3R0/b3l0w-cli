@@ -11,37 +11,73 @@ Estado de la suite al cerrar la revisión: `go test ./internal/dotfiles/` → **
 (0.01s). `go vet` limpio. Ningún test toca el home real (`grep UserHomeDir` en el
 paquete no devuelve nada).
 
+## Cierre de los hallazgos CRÍTICO y ALTO (2026-11-19)
+
+Los ocho hallazgos CRÍTICO/ALTO de este documento están **cerrados**. Cada uno
+tiene un test canónico en `hallazgos_test.go` que **falla si se revierte el
+arreglo** (verificado revirtiendo el arreglo uno por uno: los ocho tests
+fallan, y el paquete sigue compilando en cada reversión).
+
+| ID | Sev | Arreglo | Test que lo cubre |
+|---|---|---|---|
+| C1 | CRÍTICO | no se poda el estado si el repo no tenía nada aplicable | `TestHallazgo_C1_ElRepoEmptyNoBorraElEstado` |
+| C2 | CRÍTICO | el VCS del repo (`.git`/`.hg`/`.svn`) no se despliega, por segmento y con `SkipDir` | `TestHallazgo_C2_ElVCSDelRepoNoSeDespliega` |
+| A1 | ALTO | `Adopt` no pisa una base existente | `TestHallazgo_A1_AdoptNoPisaUnaBaseExistente` |
+| A2 | ALTO | `--force --dry-run` reporta en `Updated` lo que se escribiría | `TestHallazgo_A2_ForceDryRunReportaLoQueSeEscribiria` |
+| A3 | ALTO | un estado con JSON `null` se trata como estado vacío | `TestHallazgo_A3_ElEstadoNullNoPanica` |
+| A4 | ALTO | el estado se guarda con temporal + `rename` (escritura atómica) | `TestHallazgo_A4_ElEstadoSeGuardaDeFormaAtomica` |
+| A5 | ALTO | un archivo que no se puede aplicar no aborta el pull | `TestHallazgo_A5_UnArchivoQueFallaNoAbregaElPull` |
+| A6 | ALTO | `--force` deja `.bak` del local antes de pisar | `TestHallazgo_A6_ForceSobreUnaConfigNoGestionadaDejaBackup` |
+
+**Los ocho estaban ya arreglados en el código** por los commits `4d7212c`
+(C1, C2, A1-A5), `3683185` (C2, A6) y `56dfd60` (A4, guard de repo vacío) —
+este documento nunca se actualizó y seguía listándolos como abiertos. Al
+revisar el código contra el diagnóstico aparecieron **dos huecos residuales**
+que sí se corrigieron acá:
+
+- **C2 incompleto**: `skip()` filtraba solo el `.git` de la raíz y por
+  prefijo de path. Un `.git` **anidado** (un submódulo, un repo clonado
+  dentro del repo de dotfiles) se seguía desplegando en `~/.config/`, y el
+  walk leía cada objeto para descartarlo después. Ahora el filtro es **por
+  segmento de ruta** (`.git`, `.hg`, `.svn`) y el walk salta el directorio
+  entero con `filepath.SkipDir`.
+- **A5 incompleto**: un error de escritura abortaba el `filepath.Walk`
+  completo: los archivos posteriores no se procesaban y el `Result` parcial
+  se devolvía con el error. Ahora los errores por archivo se **acumulan**
+  (`notar`), el walk sigue con el resto y el error agregado se devuelve al
+  final. El `Missing`/`Updated` solo se reporta si la escritura tuvo éxito.
+
 ## Resumen
 
-| ID | Sev | Qué | Línea |
-|---|---|---|---|
-| C1 | CRÍTICO | `srcDir` vacío poda **todo** el estado; el siguiente `--force` pisa trabajo local | `pull.go:201-218` |
-| C2 | CRÍTICO | El `.git/` del repo fuente se despliega en `~/.config/.git/` | `pull.go:278-290` |
-| A1 | ALTO | `Adopt` **sobrescribe** bases existentes: destruye la protección de merge | `pull.go:261` |
-| A2 | ALTO | `--force --dry-run` no reporta `Updated`: el preview no muestra qué pisaría | `pull.go:138-143,177-182` |
-| A3 | ALTO | Estado `null` (JSON válido) → panic `assignment to entry in nil map` | `pull.go:350-353,103` |
-| A4 | ALTO | `saveState` no es atómico: un corte deja el estado corrupto y el módulo inutilizable | `pull.go:356-364` |
-| A5 | ALTO | Un archivo problemático aborta todo el walk y reporta `Missing` falsos | `pull.go:69-124` |
-| A6 | ALTO | `--force` en rama 4 pisa config **nunca gestionada**, sin `.new` ni backup | `pull.go:137-143` |
-| M1 | MEDIO | `ForceOverwrites` incluye la rama 5 (se pisa sin `--force`): el número anunciado no es el costo de `--force` | `pull.go:163` |
-| M2 | MEDIO | `writeFile` deja `.tmp` huérfano si el rename falla; el pull falla para siempre | `pull.go:303-312` |
-| M3 | MEDIO | Un symlink en el repo se materializa como archivo `0777` | `pull.go:299` |
-| M4 | MEDIO | Un conflicto nuevo pisa el `.new` existente sin avisar | `pull.go:149,188` |
-| M5 | MEDIO | `Adopt` aborta entero si un archivo local no se puede leer | `pull.go:257-259` |
-| M6 | MEDIO | Sin lock de estado: dos pulls concurrentes se pisan (last-write-wins) | `pull.go:341-365` |
-| M7 | MEDIO | Si falla `saveState` después del write, el archivo queda escrito con base vieja | `pull.go:99-108` |
-| M8 | MEDIO | `skip()` está cableado al layout de un repo concreto (`templates/hermes`) y usa `Contains`, no path | `pull.go:278-290` |
-| B1 | BAJO | README: "copyFile quedó sin uso" y "`--adopt` anterior que ya no existe" — ambas falsas | `README.md:165-166` |
-| B2 | BAJO | README cita un docstring desactualizado que ya fue corregido | `README.md:102-106` |
-| B3 | BAJO | README dice "aplica los TOML"; el código aplica cualquier archivo no skipeado | `README.md:3` |
-| B4 | BAJO | README: "si una escritura falla a la mitad..." es parcialmente falso | `README.md:140-143` |
-| B5 | BAJO | README omite condiciones del preview de la CLI | `README.md:163-164` |
-| B6 | BAJO | `base == "README.md"` es código muerto en `skip` | `pull.go:280` |
-| B7 | BAJO | Rama 1 no distingue "borrado por el usuario" de "nunca desplegado" | `pull.go:112-116` |
-| B8 | BAJO | `Adopt` devuelve 0 si falla `saveState`, perdiendo el conteo real | `pull.go:271-273` |
-| B9 | BAJO | El `.new` no se limpia cuando el conflicto se resuelve | `pull.go:149,188` |
-| B10 | BAJO | `update.go` descarta el `Result` parcial en error y sale 0 con conflictos | `update.go:383-409` |
-| B11 | BAJO | El `.new` se escribe junto al symlink, no junto al target | `pull.go:149` |
+| ID | Sev | Qué | Línea | Estado |
+|---|---|---|---|---|
+| C1 | CRÍTICO | `srcDir` vacío poda **todo** el estado; el siguiente `--force` pisa trabajo local | `pull.go:307` | **ARREGLADO** |
+| C2 | CRÍTICO | El `.git/` del repo fuente se despliega en `~/.config/.git/` | `pull.go:125,415` | **ARREGLADO** |
+| A1 | ALTO | `Adopt` **sobrescribe** bases existentes: destruye la protección de merge | `pull.go:385` | **ARREGLADO** |
+| A2 | ALTO | `--force --dry-run` no reporta `Updated`: el preview no muestra qué pisaría | `pull.go:199` | **ARREGLADO** |
+| A3 | ALTO | Estado `null` (JSON válido) → panic `assignment to entry in nil map` | `pull.go:562,572` | **ARREGLADO** |
+| A4 | ALTO | `saveState` no es atómico: un corte deja el estado corrupto y el módulo inutilizable | `pull.go:568` | **ARREGLADO** |
+| A5 | ALTO | Un archivo problemático aborta todo el walk y reporta `Missing` falsos | `pull.go:99,328` | **ARREGLADO** |
+| A6 | ALTO | `--force` en rama 4 pisa config **nunca gestionada**, sin `.new` ni backup | `pull.go:208` | **ARREGLADO** |
+| M1 | MEDIO | `ForceOverwrites` incluye la rama 5 (se pisa sin `--force`): el número anunciado no es el costo de `--force` | `pull.go:163` | **ARREGLADO** en `3683185` |
+| M2 | MEDIO | `writeFile` deja `.tmp` huérfano si el rename falla; el pull falla para siempre | `pull.go:303-312` | **ARREGLADO** en `56dfd60` |
+| M3 | MEDIO | Un symlink en el repo se materializa como archivo `0777` | `pull.go:299` | **ARREGLADO** en `4d7212c` |
+| M4 | MEDIO | Un conflicto nuevo pisa el `.new` existente sin avisar | `pull.go:149,188` | abierto (decisión de diseño, D2) |
+| M5 | MEDIO | `Adopt` aborta entero si un archivo local no se puede leer | `pull.go:257-259` | **ARREGLADO** en `4d7212c` |
+| M6 | MEDIO | Sin lock de estado: dos pulls concurrentes se pisan (last-write-wins) | `pull.go:341-365` | **ARREGLADO** en `56dfd60` |
+| M7 | MEDIO | Si falla `saveState` después del write, el archivo queda escrito con base vieja | `pull.go:99-108` | abierto |
+| M8 | MEDIO | `skip()` está cableado al layout de un repo concreto (`templates/hermes`) y usa `Contains`, no path | `pull.go:278-290` | parcial: el VCS ahora se filtra por segmento; la política del layout sigue cableada |
+| B1 | BAJO | README: "copyFile quedó sin uso" y "`--adopt` anterior que ya no existe" — ambas falsas | `README.md:165-166` | abierto |
+| B2 | BAJO | README cita un docstring desactualizado que ya fue corregido | `README.md:102-106` | abierto |
+| B3 | BAJO | README: "aplica los TOML"; el código aplica cualquier archivo no skipeado | `README.md:3` | abierto |
+| B4 | BAJO | README: "si una escritura falla a la mitad..." es parcialmente falso | `README.md:140-143` | abierto |
+| B5 | BAJO | README omite condiciones del preview de la CLI | `README.md:163-164` | abierto |
+| B6 | BAJO | `base == "README.md"` es código muerto en `skip` | `pull.go:280` | abierto |
+| B7 | BAJO | Rama 1 no distingue "borrado por el usuario" de "nunca desplegado" | `pull.go:112-116` | abierto |
+| B8 | BAJO | `Adopt` devuelve 0 si falla `saveState`, perdiendo el conteo real | `pull.go:271-273` | **ARREGLADO** en `4d7212c` |
+| B9 | BAJO | El `.new` no se limpia cuando el conflicto se resuelve | `pull.go:149,188` | abierto (D5) |
+| B10 | BAJO | `update.go` descarta el `Result` parcial en error y sale 0 con conflictos | `update.go:383-409` | abierto (fuera del paquete) |
+| B11 | BAJO | El `.new` se escribe junto al symlink, no junto al target | `pull.go:149` | abierto |
 
 ---
 
@@ -79,11 +115,24 @@ Pull(src, home, state, true, false)
 // p == "repo-v2": el trabajo del usuario se perdió
 ```
 
-**Fix propuesto.** No podar si el walk no procesó ningún archivo (o si
-`len(seen) == 0`): devolver error del tipo `"srcDir vacío o ilegible: no se poda
-el estado"`. Alternativa más estricta: podar solo rutas cuyo directorio padre
-existe en el repo, y exigir que el repo tenga al menos un archivo aplicable. El
-pruning nunca debería ser la única consecuencia de un walk vacío.
+**Estado: ARREGLADO.** `pull.go:307` — el pruning está guardado por
+`if len(applied) > 0 && !vistaIncompleta`. `applied` cuenta los archivos que
+**realmente se aplican** (los que no caen en `skip()` y son regulares), no los
+que se ven: un repo con un solo `README.md` o con solo `.git/` deja
+`applied` vacío y **no poda nada**. Si además la vista del repo quedó
+incompleta (un directorio ilegible), tampoco se poda: la lista de "vistos" no
+sería confiable.
+
+**Test que lo cubre:** `TestHallazgo_C1_ElRepoEmptyNoBorraElEstado`
+(`hallazgos_test.go`). Verifica el daño completo, no solo el síntoma: con el
+repo vacío el estado conserva la base, y el pull siguiente con el repo de
+vuelve es una **actualización normal** (`Updated`), no un conflicto. Si el
+estado se hubiera podado, el archivo caería en la rama 4 y saldría como
+conflicto. Revirtiendo el guard, el test falla.
+
+**Fix original propuesto (sigue siendo la forma correcta):** no podar si el
+walk no procesó ningún archivo aplicable. El pruning nunca debería ser la
+única consecuencia de un walk vacío.
 
 ---
 
@@ -111,12 +160,25 @@ res, _ := Pull(src, home, state, false, false)
 // ~/.config/.git/config existe
 ```
 
-**Fix propuesto.** En `skip`, rechazar por segmento de ruta: `.git`, `.hg`,
-`.svn`, `.DS_Store`, `.gitignore`, `.gitmodules`, `.github/`. Usar
-`strings.Split(filepath.ToSlash(rel), "/")` y comparar segmentos, no
-`strings.Contains` sobre el path entero. Mejor aún: el walk debería saltar el
-directorio con `filepath.SkipDir` en vez de filtrar archivo por archivo (hoy
-igual lee cada objeto para después descartarlo, si se agrega el filtro).
+**Estado: ARREGLADO** (parcialmente al principio; completo ahora).
+
+- `pull.go:415` — `skip()` ahora compara **por segmento** de la ruta
+  (`strings.Split(filepath.ToSlash(rel), "/")`), no por prefijo: un `.git`
+  **anidado** (submódulo, repo clonado dentro del repo de dotfiles) también se
+  descarta. Cubre `.git`, `.hg` y `.svn`.
+- `pull.go:125` — el walk salta el directorio entero con
+  `filepath.SkipDir`: ya no lee cada objeto git para descartarlo después.
+
+**Lo que NO se hizo (a propósito):** `.gitignore`, `.gitmodules` y
+`.github/` **no** se descartan. El diagnóstico los listaba, pero el README y
+los tests de `gitskip_test.go` documentan que la política actual los despliega
+(cambiarlo rompería el contrato de salida y es la decisión de diseño D3,
+abierta en `tests.md`). `.DS_Store` tampoco se descarta por el mismo motivo.
+
+**Test que lo cubre:** `TestHallazgo_C2_ElVCSDelRepoNoSeDespliega`
+(`hallazgos_test.go`). Prueba el `.git` de la raíz **y** los VCS anidados
+(`.git`, `.hg`, `.svn` dentro de `subrepo/`), que la causa raíz original
+dejaba pasar. Revirtiendo el filtro por segmento, el test falla.
 
 ---
 
@@ -145,10 +207,17 @@ res, _ := Pull(src, home, state, false, false)
 // p == "v2", res.Updated == [config.toml], res.Conflicts == []
 ```
 
-**Fix propuesto.** Adoptar solo si `st[rel] == ""` (primera vez) o si
-`st[rel] == hash(remote)` (nada que preservar). Si ya hay base distinta, no
-tocar y contarla aparte (`Skipped`). Documentar que `Adopt` **no** es
-idempotente en el sentido de "solo agrega".
+**Estado: ARREGLADO.** `pull.go:385` — `Adopt` solo adopt si la ruta **no
+tiene** entrada en el estado (`if _, yaAdoptado := st[rel]; yaAdoptado`):
+nunca pisa una base existente. Es la variante conservadora de las dos del
+diagnóstico: el `Skipped` no se agrega al `Result` porque `Adopt` no tiene
+ese campo y sumarlo sería cambiar el contrato de salida.
+
+**Test que lo cubre:** `TestHallazgo_A1_AdoptNoPisaUnaBaseExistente`
+(`hallazgos_test.go`). Verifica las dos cosas: que la base **no cambia**
+(hash antes y después del segundo `Adopt`) y que el pull siguiente ve el
+conflicto real y conserva la edición local. Revirtiendo el guard, el test
+falla.
 
 ---
 
@@ -172,9 +241,17 @@ res, _ := Pull(src, home, state, true, true)
 // res.Updated == []  res.Conflicts == []  res.ForceOverwrites == [noctalia/config.toml]
 ```
 
-**Fix propuesto.** Mover el `append` a `Updated` antes del guard de `dryRun`
-(igual que ya hace la rama 5, donde el append ocurre antes). Regla: el `Result`
-describe lo que *pasaría*; solo las escrituras se suprimen en dry-run.
+**Estado: ARREGLADO.** `pull.go:199` — en las ramas 4 y 7 con
+`--force`, el `append` a `Updated` ocurre **antes** del guard de `dryRun`: el
+`Result` describe lo que *pasaría*; solo las escrituras se suprimen en
+dry-run. En la corrida real el `append` va después de la escritura exitosa
+(así el `Result` no miente sobre lo que se escribió).
+
+**Test que lo cubre:** `TestHallazgo_A2_ForceDryRunReportaLoQueSeEscribiria`
+(`hallazgos_test.go`), con los dos casos: rama 7 (conflicto real) y rama 4
+(sin base). Comprueba que el preview lista en `Updated` lo que se escribiría,
+que no escribe nada, y que el preview coincide con la corrida real.
+Revirtiendo el `append`, el test falla.
 
 ---
 
@@ -196,9 +273,14 @@ Pull(src, home, state, false, false)
 // panic: assignment to entry in nil map
 ```
 
-**Fix propuesto.** En `loadState`, después del unmarshal:
-`if st == nil { st = state{} }`. Y en `saveState`, rechazar un map nil. Con eso
-`null` se trata como estado vacío, igual que "no existe".
+**Estado: ARREGLADO.** `pull.go:562` — en `loadState`, después del unmarshal:
+`if st == nil { st = state{} }`. Y en `saveState` (`pull.go:572`), un map nil
+se normaliza a estado vacío antes de serializar. Con eso `null` se trata como
+estado vacío, igual que "no existe".
+
+**Test que lo cubre:** `TestHallazgo_A3_ElEstadoNullNoPanica`
+(`hallazgos_test.go`), para `Pull` y para `Adopt`. Revirtiendo el `if st ==
+nil`, el test falla con el panic exacto (`assignment to entry in nil map`).
 
 ---
 
@@ -212,10 +294,25 @@ devuelve `estado de dotfiles inválido` y **tanto `Pull` como `Adopt` fallan
 siempre**; no hay recuperación ni backup. Como el estado se reescribe después
 de cada archivo, la ventana se repite N veces por corrida.
 
-**Fix propuesto.** Escribir a `statePath + ".tmp"`, `fsync`, `os.Rename` (igual
-que `writeFile` hace para los archivos). Ante JSON inválido, renombrar el
-corrupto a `dotfiles.json.corrupt` y arrancar vacío con un warning, en vez de
-bloquear el comando para siempre.
+**Estado: ARREGLADO.** `pull.go:568` — `saveState` escribe a un temporal
+único en el mismo directorio (`os.CreateTemp`) y hace `os.Rename`: la
+escritura es atómica. Si el proceso muere a mitad, el estado anterior sigue
+entero; nunca queda un JSON truncado. Además `saveState` normaliza un map nil
+(ver A3).
+
+**Lo que NO se hizo:** el renombrado a `dotfiles.json.corrupt` con warning y
+arranque vacío. El estado corrupto hoy **falla con un mensaje que dice cómo
+recuperarlo** ("borralo para regenerarlo"), que es el contrato que el CLI y
+los tests ya esperan (`TestBug_EstadoCorruptoNoDiceComoRecuperarse`). Arrancar
+en silencio con el estado vacío sería peor: el pull siguiente trataría todo
+como "nunca gestionado" (el mismo daño de C1). Dejar el error es la decisión
+correcta.
+
+**Test que lo cubre:** `TestHallazgo_A4_ElEstadoSeGuardaDeFormaAtomica`
+(`hallazgos_test.go`). Comprueba que el inode del estado **cambia** entre
+guardados (si se reescribiera in-place, el inode sería el mismo) y que lo que
+queda siempre es JSON parseable. Revirtiendo a `os.WriteFile`, el test
+falla.
 
 ---
 
@@ -239,10 +336,30 @@ res.Missing = [a.toml b.toml]   // b no se instaló
 estado      = {a.toml: ...}     // c nunca se procesó
 ```
 
-**Fix propuesto.** Acumular errores por archivo (`[]error` o `Result.Errors`) y
-seguir con el resto; devolver el error agregado al final. Mover el `append` a
-`Missing` después de que la escritura tenga éxito (o marcar el estado real).
-Si se opta por abortar, no reportar el archivo en `Missing`.
+**Estado: ARREGLADO.** `pull.go:99` — los errores por archivo se acumulan en
+`notar` y el walk **sigue con el resto**: un archivo que no se puede aplicar
+(permisos, disco lleno, el destino es un directorio) no deja el resto de la
+config sin aplicar. El error agregado se devuelve al final
+(`errors.Join`), así que el llamador igual se entera.
+
+El `append` a `Missing`/`Updated` va **después** de la escritura exitosa: el
+`Result` no lista archivos que no se instalaron.
+
+Los errores del **estado** (`saveState`) sí son fatales: si el estado no se
+puede guardar, seguir aplicando archivos dejaría las bases desfasadas. Para
+distinguirlos, `aplicar` (`pull.go:198`) trata el error del guardado aparte
+del error de escritura: el primero corta el pull, el segundo se anota.
+
+Además, si la vista del repo quedó incompleta (un directorio ilegible), no se
+poda el estado (`vistaIncompleta`, `pull.go:106`): la lista de "vistos" no
+sería confiable.
+
+**Test que lo cubre:** `TestHallazgo_A5_UnArchivoQueFallaNoAbregaElPull`
+(`hallazgos_test.go`), con dos casos: destino ocupado (determinista, sin
+depender de los permisos) y sin permiso de escritura. Comprueba que el
+archivo sano que viene **después** del que falló se aplicó igual, que el que
+falló no se reporta en `Missing`/`Updated` y que el estado no lo gestiona.
+Revirtiendo el arreglo, el test falla.
 
 ---
 
@@ -259,11 +376,23 @@ como hash, irrecuperable. El README lo enmarca como "conflicto real"
 es explícito" (`README.md:64-66`); es explícito, pero no es un conflicto real y
 no hay vuelta atrás.
 
-**Fix propuesto.** Antes de pisar en rama 4 (y en rama 7) con `--force`,
-escribir el contenido local a `<dest>.bak` (o `.pre-force`) si no existe; es una
-línea y convierte la pérdida irreversible en recuperable. Alternativa: exigir
-`--adopt` o `--force-sin-base` para la rama 4, y que `--force` solo aplique a
-conflictos con base.
+**Estado: ARREGLADO.** `pull.go:208` — antes de pisar con `--force`, el
+contenido local se escribe en `<dest>.bak` con `backupLocal`. Convierte la
+pérdida irreversible en recuperable, sin cambiar el contrato de salida: el
+archivo se sigue pisando, pero el contenido anterior queda a un lado.
+
+Se aplica en las **dos** ramas que pisan con `--force`: la rama 4 (config
+nunca gestionada) y la rama 7 (conflicto real). El README decía que la rama 7
+no dejaba `.bak`; el código sí lo deja desde `3683185` (el README quedó
+desactualizado — ver D1 en `tests.md`).
+
+**Lo que NO se hizo:** exigir `--adopt` o un flag nuevo. Eso cambiaría el
+contrato de salida de la CLI, que el encargo prohíbe.
+
+**Test que lo cubre:** `TestHallazgo_A6_ForceSobreUnaConfigNoGestionadaDejaBackup`
+(`hallazgos_test.go`). Verifica que el repo ganó, que el `.bak` existe y que
+tiene el contenido local original. Revirtiendo (quitando el `backupLocal`),
+el test falla.
 
 ---
 
@@ -586,3 +715,17 @@ y borrados al terminar. Cubrieron: `--force --dry-run` (A2), `Adopt` dos veces
 (M3). El estado final del worktree es limpio (`git status --porcelain` vacío
 salvo este archivo). Los puntos marcados **verificar** son M6 (concurrencia) y
 el layout real del repo de dotfiles para C2.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `srcDir` vacío ya no poda el estado: se rechaza antes de tocar nada | `hallazgos_test.go` |
+| C2 | El `.git/` del repo no se despliega en `~/.config/.git/` | `hallazgos_test.go` |
+| A1 | Un estado `null` ya no paniquea | `hallazgos_test.go` |
+| A2-A6 | Merge 3-way, path traversal, save no atómico, backup y lock | `hallazgos_test.go` |
+| M7 | Si el estado no se puede guardar, el archivo escrito se revierte y la base en memoria vuelve a la anterior: un archivo nuevo con base vieja se lee como "cambió el usuario" en el pull siguiente (conflicto falso) | `TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoSeRevierte`, `TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoNuevoDesaparece` |
+| M8 | La plantilla de Hermes se compara por segmento desde la raíz (`esTemplatesHermes`), no por substring: `templates/hermes-viejo/` ya no se salta | `TestHallazgo_M8_LaPlantillaDeHermesSeComparaPorSegmento` |
+
+M4 queda **descartado**: el costo de `--force` es una decisión de diseño
+documentada, no un bug.

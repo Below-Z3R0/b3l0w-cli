@@ -69,8 +69,8 @@ repo gana — es explícito y el usuario lo pidió.
 pisaría `--force` y que sin él no se pisarían. Para anunciar el número
 real antes de decidir.
 
-Entra en esa lista solo la **rama 7** (ambos cambiaron: conflicto real).
-**No** entran las ramas 4 y 5:
+Entran en esa lista las **ramas 4 y 7** (las dos que `--force` resuelve a
+favor del repo). **No** entra la rama 5:
 
 - La rama 5 (el usuario no editó el archivo) se pisa igual con y sin
   `--force`: el repo manda siempre. Incluirla inflaría el número.
@@ -78,7 +78,8 @@ Entra en esa lista solo la **rama 7** (ambos cambiaron: conflicto real).
   resuelve, pero antes deja un `.bak` del contenido local.
 
 La lista se arma igual con y sin `--force`, así que se puede calcular el
-costo antes de decidir.
+costo antes de decidir. En un `--force --dry-run`, `Updated` lista lo que
+**se escribiría**: el `Result` describe lo que pasa, no lo que ya pasó.
 
 ## Adopt
 
@@ -162,9 +163,16 @@ en el estado y ya no aparece en el repo se reporta.
 ## Notas
 
 - `skip()` deja fuera lo que no es configuración de usuario: cualquier
-  `.md`, `outputs.toml` y `templates/hermes/`. Pero la ruta se marca
-  como vista igual, así que un `.md` que está en el repo no se reporta
-  como huérfano aunque figure en el estado.
+  `.md`, `outputs.toml`, `templates/hermes/` y **el interior de un repo
+  de control de versiones** (`.git`, `.hg`, `.svn`, por segmento de
+  ruta: un `.git` anidado también se descarta). La comparación es por
+  segmento, no por prefijo del path. Pero la ruta se marca como vista
+  igual, así que un `.md` que está en el repo no se reporta como
+  huérfano aunque figure en el estado.
+- Un archivo que **no se puede aplicar** (permisos, disco lleno, el
+  destino es un directorio) no aborta el pull: el error se anota, el
+  resto del repo se aplica igual y el error se devuelve al final.
+  `Missing` y `Updated` solo listan lo que se escribió de verdad.
 - La CLI todavía **no imprime** `Orphaned` ni `ForceOverwrites`
   (`internal/update/update.go` solo recorre `Updated`, `Kept`, `Missing`
   y `Conflicts`). Los campos están listos para usar; falta el `output`.
@@ -174,8 +182,11 @@ en el estado y ya no aparece en el repo se reporta.
   (rama 4), deja un `.bak` del contenido local al lado. Sin ese backup
   ese trabajo se perdía en silencio: el `.new` no alcanza porque el
   conflicto no se reporta cuando `--force` lo resuelve.
-- Cuando `--force` pisa un **conflicto real** (rama 7), no deja `.bak`:
-  el `.new` ya documenta el estado anterior y el usuario fue avisado.
+- Cuando `--force` pisa un **conflicto real** (rama 7), también deja
+  `.bak`: la resolución es en silencio (no queda `.new`) y sin el backup
+  el contenido anterior se perdería para siempre.
+- Un `.bak` previo se **sobreescribe** con el local más reciente: queda
+  el último, no el primero.
 
 ## Tests
 

@@ -45,3 +45,9 @@ usuario corre a mano.
   nombre de la distro, después el upstream).
 - `UpdateInteractive` no automatiza nada: no hay bandera `--yes` y el código no
   finge que la haya.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `Pending` parsea la salida real de `arch-update -l`: quita los códigos ANSI de las cabeceras (sin eso el conteo queda en cero), ignora `Flatpak Packages:` y solo cuenta líneas con forma de paquete | `TestPendingParseaLaSalidaRealDeArchUpdate`, `TestPendingNoCuentaLosPaquetesDeFlatpak`, `TestPendingNoCuentaLasLineasQueNoSonPaquetes` |

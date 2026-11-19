@@ -12,6 +12,7 @@ package programs
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +23,11 @@ import (
 
 // versionRe acepta "v1.2.3" y "1.2.3". Es la única forma de leer una
 // versión en todo el CLI.
-var versionRe = regexp.MustCompile(`v?(\d+\.\d+\.\d+)`)
+//
+// Los límites de palabra evitan que una terna pegada a otra palabra
+// cuente como versión ("abc1.2.3"), y el sufijo opcional acepta las
+// versiones con pre-release ("v1.2.3-rc.1").
+var versionRe = regexp.MustCompile(`\bv?(\d+\.\d+\.\d+)(?:[-+][0-9A-Za-z][0-9A-Za-z.+]*)?\b`)
 
 // Status es el estado de un programa en esta máquina.
 type Status struct {
@@ -34,12 +39,46 @@ type Status struct {
 }
 
 // ParseVersion saca la versión de la salida de `prog version`.
+//
+// Se queda con la primera terna que parece una versión. Las que tienen
+// forma de fecha (YYYY.MM.DD) se descartan: los tags de este proyecto
+// usan fechas ("desktop-2026.11.06-r1") y un copyright también las
+// tiene.
 func ParseVersion(out string) string {
-	match := versionRe.FindStringSubmatch(out)
-	if len(match) < 2 {
-		return ""
+	for _, match := range versionRe.FindAllStringSubmatch(out, -1) {
+		if len(match) < 2 || looksLikeDate(match[1]) {
+			continue
+		}
+		return "v" + match[1]
 	}
-	return "v" + match[1]
+	return ""
+}
+
+// looksLikeDate dice si una terna "N.N.N" es una fecha y no una versión.
+//
+// El año tiene cuatro dígitos, el mes va de 1 a 12 y el día de 1 a 31:
+// con eso "2026.11.06" es una fecha y "1.2.3" es una versión.
+func looksLikeDate(v string) bool {
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	if len(parts[0]) != 4 {
+		return false
+	}
+	year, err := strconv.Atoi(parts[0])
+	if err != nil || year < 1000 || year > 9999 {
+		return false
+	}
+	month, err := strconv.Atoi(parts[1])
+	if err != nil || month < 1 || month > 12 {
+		return false
+	}
+	day, err := strconv.Atoi(parts[2])
+	if err != nil || day < 1 || day > 31 {
+		return false
+	}
+	return true
 }
 
 // Current pregunta la versión a un binario.

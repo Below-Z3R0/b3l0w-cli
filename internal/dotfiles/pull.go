@@ -11,6 +11,10 @@
 // --force no cambia la lógica 3-way: solo resuelve los conflictos reales
 // (cambió el local y cambió el repo) a favor del repo. Un archivo que
 // solo editó el usuario se conserva aunque venga --force.
+//
+// Un archivo que no se puede aplicar (permisos, disco lleno, el destino
+// es un directorio) no aborta el pull: el error se anota y el resto del
+// repo se sigue aplicando. Los errores se devuelven juntos al final.
 package dotfiles
 
 import (
@@ -87,11 +91,40 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	// .git/) no tiene nada que aplicar y no debe podar el estado.
 	applied := make(map[string]bool)
 
+	// fallos: los errores por archivo. Un archivo que no se puede
+	// aplicar (permisos, disco lleno, el destino es un directorio) no
+	// aborta el pull entero: se anota el fallo, el walk sigue con el
+	// resto y los errores se devuelven juntos al final.
+	var fallos []error
+	notar := func(quien string, err error) {
+		fallos = append(fallos, fmt.Errorf("%s: %w", quien, err))
+	}
+	// vistaIncompleta: el walk no pudo ver todo el repo (un directorio
+	// ilegible, por ejemplo). Si no se vio todo, la lista de "vistos"
+	// no es confiable y no se puede podar el estado: hacerlo borraría
+	// las bases de archivos que el repo sigue teniendo.
+	vistaIncompleta := false
+
 	err = filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			// El repo entero ilegible es fatal: no hay nada que
+			// aplicar. Un directorio suelto ilegible no: se anota y
+			// el walk sigue con el resto.
+			if path == srcDir {
+				return err
+			}
+			vistaIncompleta = true
+			notar(path, err)
+			return nil
 		}
 		if info.IsDir() {
+			// Los directorios de control de versiones se saltan
+			// enteros: no se lee objeto por objeto para descartarlo
+			// después. El root nunca: que el repo esté dentro de un
+			// ".git" no vacía el repo.
+			if path != srcDir && vcsDir(info.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, err := filepath.Rel(srcDir, path)
@@ -102,7 +135,6 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 		if skip(rel) {
 			return nil
 		}
-		applied[rel] = true
 
 		// Solo se aplican archivos regulares. Un FIFO, un socket o un
 		// device bloquearían ReadFile para siempre; un symlink a un
@@ -114,13 +146,34 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			return nil
 		}
 		srcMode := src.Mode()
+		// Cuenta como aplicado recién ahora: un repo donde nada se
+		// puede aplicar (solo FIFOs, symlinks rotos) tampoco puede
+		// podar el estado.
+		applied[rel] = true
 
 		remote, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			notar(rel, err)
+			return nil
 		}
 		remoteHash := hash(remote)
 		dest := filepath.Join(homeDir, ".config", rel)
+
+		// conflicto deja el remoto al lado como <archivo>.new para que
+		// el usuario lo mergee, y avanza la base para que no se repita
+		// en cada pull. El local queda intacto.
+		conflicto := func() error {
+			res.Conflicts = append(res.Conflicts, rel)
+			if dryRun {
+				return nil
+			}
+			if err := writeFile(dest+".new", remote, srcMode); err != nil {
+				notar(rel, err)
+				return nil
+			}
+			st[rel] = remoteHash
+			return persistir()
+		}
 
 		local, lerr := os.ReadFile(dest)
 		localExists := lerr == nil
@@ -129,30 +182,58 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			// un directorio). No se puede calcular el 3-way: se
 			// conserva lo que hay y se reporta como conflicto, en vez
 			// de pisarlo creyendo que no existe.
-			res.Conflicts = append(res.Conflicts, rel)
-			if dryRun {
-				return nil
-			}
-			if err := writeFile(dest+".new", remote, srcMode); err != nil {
-				return err
-			}
-			st[rel] = remoteHash
-			return persistir()
+			return conflicto()
 		}
 		localHash := hash(local)
 		baseHash := st[rel]
 
-		// escribir aplica el remoto sobre el destino: conserva el modo
-		// del archivo local, no rompe symlinks y deja la base al día.
-		escribir := func() error {
-			if err := writeFile(resolveDest(dest), remote, srcMode); err != nil {
-				return err
+		// aplicar escribe el remoto sobre el destino, deja la base al
+		// día y lo anota en la lista. Con backup, deja antes un .bak
+		// del contenido local.
+		//
+		// En dry-run solo anota: no escribe nada. Un error al escribir
+		// el archivo no aborta el pull: se anota y el walk sigue con el
+		// resto. Un error al guardar el estado sí aborta: sin base al
+		// día, seguir dejaría las bases desfasadas.
+		aplicar := func(lista *[]string, backup bool) error {
+			if dryRun {
+				*lista = append(*lista, rel)
+				return nil
 			}
+			if backup {
+				// El backup va antes de pisar: el .new no alcanza,
+				// porque el conflicto no se reporta cuando --force
+				// lo resuelve en silencio. Sin esto, el trabajo local
+				// se pierde para siempre.
+				if err := backupLocal(dest, local); err != nil {
+					notar(rel, err)
+					return nil
+				}
+			}
+			destino := resolveDest(dest)
+			if err := writeFile(destino, remote, srcMode); err != nil {
+				notar(rel, err)
+				return nil
+			}
+			// La base anterior se guarda para poder volver atrás si el
+			// estado no se puede guardar: un archivo nuevo con la base
+			// vieja se lee como "cambió el usuario" en el pull
+			// siguiente (conflicto falso, M7).
+			baseVieja, habiaBase := st[rel]
 			st[rel] = remoteHash
 			if err := persistir(); err != nil {
+				if habiaBase {
+					st[rel] = baseVieja
+				} else {
+					delete(st, rel)
+				}
+				if rerr := revertir(destino, local, localExists); rerr != nil {
+					return fmt.Errorf("%w; y no se pudo revertir %s: %v", err, rel, rerr)
+				}
 				return err
 			}
 			res.Changed = true
+			*lista = append(*lista, rel)
 			return nil
 		}
 
@@ -165,15 +246,7 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 
 		case !localExists:
 			// Nunca existió: se instala.
-			if dryRun {
-				res.Missing = append(res.Missing, rel)
-				return nil
-			}
-			if err := escribir(); err != nil {
-				return err
-			}
-			res.Missing = append(res.Missing, rel)
-			return nil
+			return aplicar(&res.Missing, false)
 
 		case baseHash == "":
 			// Sin historial no hay forma de saber quién cambió: si es
@@ -188,30 +261,11 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			}
 			res.ForceOverwrites = append(res.ForceOverwrites, rel)
 			if force {
-				res.Updated = append(res.Updated, rel)
-				if dryRun {
-					return nil
-				}
 				// Esta config nunca estuvo gestionada: el usuario no
-				// sabe que existe. Antes de pisarla se deja un backup,
-				// porque aca el .new no alcanza (el conflicto no se
-				// reportó: --force lo resolvio en silencio).
-				if err := backupLocal(dest, local); err != nil {
-					return err
-				}
-				return escribir()
+				// sabe que existe. El backup va antes de pisarla.
+				return aplicar(&res.Updated, true)
 			}
-			res.Conflicts = append(res.Conflicts, rel)
-			if dryRun {
-				return nil
-			}
-			if err := writeFile(dest+".new", remote, srcMode); err != nil {
-				return err
-			}
-			// El conflicto ya se reportó: se avanza la base para que no
-			// se repita en cada pull.
-			st[rel] = remoteHash
-			return persistir()
+			return conflicto()
 
 		case localHash == baseHash:
 			// El usuario no lo tocó: el repo manda. Esto pasa con y sin
@@ -219,11 +273,7 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			if remoteHash == localHash {
 				return nil
 			}
-			res.Updated = append(res.Updated, rel)
-			if dryRun {
-				return nil
-			}
-			return escribir()
+			return aplicar(&res.Updated, false)
 
 		case remoteHash == baseHash:
 			// Solo cambió el local: se conserva, incluso con --force.
@@ -245,30 +295,11 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			// Ambos cambiaron: conflicto real.
 			res.ForceOverwrites = append(res.ForceOverwrites, rel)
 			if force {
-				res.Updated = append(res.Updated, rel)
-				if dryRun {
-					return nil
-				}
-				// Esta config nunca estuvo gestionada: el usuario no
-				// sabe que existe. Antes de pisarla se deja un backup,
-				// porque aca el .new no alcanza (el conflicto no se
-				// reportó: --force lo resolvio en silencio).
-				if err := backupLocal(dest, local); err != nil {
-					return err
-				}
-				return escribir()
+				// Con --force el conflicto se resuelve en silencio: no
+				// queda .new. El backup deja la resolución reversible.
+				return aplicar(&res.Updated, true)
 			}
-			res.Conflicts = append(res.Conflicts, rel)
-			if dryRun {
-				return nil
-			}
-			if err := writeFile(dest+".new", remote, srcMode); err != nil {
-				return err
-			}
-			// El conflicto ya se reportó: se avanza la base para que no
-			// se repita en cada pull.
-			st[rel] = remoteHash
-			return persistir()
+			return conflicto()
 		}
 	})
 	if err != nil {
@@ -278,28 +309,39 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 	// Podar el estado: lo que ya no está en el repo queda huérfano. Se
 	// reporta, pero el archivo local no se borra automáticamente.
 	//
-	// Si el walk no vio ningún archivo (srcDir vacío, clone incompleto,
-	// --dotfiles-dir apuntando a otro lado) no se poda: borrar el estado
-	// entero convertiría el próximo pull en una batería de conflictos y,
-	// con --force, en pérdida de trabajo local. Mejor no tocar nada.
-	if len(applied) == 0 {
-		return res, nil
-	}
-	var orphans []string
-	for rel := range st {
-		if !seen[rel] {
-			orphans = append(orphans, rel)
+	// Si el walk no aplicó ningún archivo (srcDir vacío, clone
+	// incompleto, --dotfiles-dir apuntando a otro lado) no se poda:
+	// borrar el estado entero convertiría el próximo pull en una
+	// batería de conflictos y, con --force, en pérdida de trabajo local.
+	// Mejor no tocar nada.
+	//
+	// Lo mismo si la vista del repo quedó incompleta: la lista de
+	// "vistos" no es confiable y podar borraría bases que el repo
+	// sigue teniendo.
+	if len(applied) > 0 && !vistaIncompleta {
+		var orphans []string
+		for rel := range st {
+			if !seen[rel] {
+				orphans = append(orphans, rel)
+			}
+		}
+		sort.Strings(orphans)
+		res.Orphaned = orphans
+		if len(orphans) > 0 {
+			for _, rel := range orphans {
+				delete(st, rel)
+			}
+			if err := persistir(); err != nil {
+				return res, err
+			}
 		}
 	}
-	sort.Strings(orphans)
-	res.Orphaned = orphans
-	if len(orphans) > 0 {
-		for _, rel := range orphans {
-			delete(st, rel)
-		}
-		if err := persistir(); err != nil {
-			return res, err
-		}
+
+	// Los fallos por archivo se devuelven juntos: el pull aplicó todo
+	// lo que pudo y el error dice qué quedó sin aplicar.
+	if len(fallos) > 0 {
+		return res, fmt.Errorf("no se pudieron aplicar %d archivo(s): %w",
+			len(fallos), errors.Join(fallos...))
 	}
 
 	return res, nil
@@ -324,6 +366,9 @@ func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 			return err
 		}
 		if info.IsDir() {
+			if path != srcDir && vcsDir(info.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, err := filepath.Rel(srcDir, path)
@@ -377,21 +422,49 @@ func Adopt(srcDir, homeDir, statePath string, dryRun ...bool) (int, error) {
 // skip deja fuera lo que no es configuración de usuario.
 func skip(rel string) bool {
 	base := filepath.Base(rel)
-	// El interior de un repo git no es un dotfile: sin esto el .git/
-	// entero se despliega en ~/.config/.git/.
-	if base == ".git" {
-		return true
-	}
-	if strings.HasPrefix(rel, ".git"+string(filepath.Separator)) {
-		return true
+	// El interior de un repo de control de versiones no es un dotfile:
+	// sin esto el .git/ entero se despliega en ~/.config/.git/. Se
+	// compara por segmento de la ruta, no por prefijo: un .git
+	// anidado (sub/.git/) también se descarta.
+	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
+		if vcsDir(seg) {
+			return true
+		}
 	}
 	if base == "README.md" || strings.HasSuffix(base, ".md") {
 		return true
 	}
-	if strings.Contains(rel, "templates/hermes") {
+	// La plantilla de Hermes del repo de dotfiles de b3l0w no es
+	// configuración del usuario. La comparación es por segmento y
+	// desde la raíz: "templates/hermes-viejo/" NO es la plantilla y sí
+	// se despliega (con un Contains se saltaba de más).
+	if esTemplatesHermes(rel) {
 		return true
 	}
 	if base == "outputs.toml" {
+		return true
+	}
+	return false
+}
+
+// esTemplatesHermes dice si la ruta es la plantilla de Hermes:
+// "templates/hermes" en la raíz del repo, con lo que haya debajo.
+//
+// Se compara por segmento, no por substring: "templates/hermes-viejo"
+// es otra carpeta.
+func esTemplatesHermes(rel string) bool {
+	seg := strings.Split(filepath.ToSlash(rel), "/")
+	if len(seg) < 2 {
+		return false
+	}
+	return seg[0] == "templates" && seg[1] == "hermes"
+}
+
+// vcsDir dice si un nombre es el de un directorio de control de
+// versiones. Esos directorios no son configuración del usuario.
+func vcsDir(name string) bool {
+	switch name {
+	case ".git", ".hg", ".svn":
 		return true
 	}
 	return false
@@ -448,6 +521,22 @@ func backupLocal(dest string, content []byte) error {
 	backup := dest + ".bak"
 	// Un .bak previo se sobreescribe: el último es el que importa.
 	return writeFile(backup, content, 0o644)
+}
+
+// revertir deja el destino como estaba: el contenido local anterior,
+// o lo borra si el archivo no existía.
+//
+// Se usa cuando el estado no se puede guardar después de escribir el
+// archivo: sin base al día, el pull siguiente leería el archivo nuevo
+// como un cambio del usuario (conflicto falso, M7).
+func revertir(destino string, local []byte, localExists bool) error {
+	if !localExists {
+		if err := os.Remove(destino); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writeFile(destino, local, 0o644)
 }
 
 // resolveDest sigue los symlinks del destino: escribir encima del link

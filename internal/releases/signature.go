@@ -7,9 +7,7 @@ package releases
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/internal/config"
 	"github.com/Below-Z3R0/b3l0w-cli/internal/selfupdate"
@@ -19,8 +17,13 @@ import (
 )
 
 // Inyectables para los tests.
+//
+// Las peticiones HTTP no pasan por acá: van por kit/releases, que es
+// donde están las bases (kit/releases.SetBases). Lo que se inyecta acá
+// son las dos consultas, para que un test no dependa de la red.
 var (
-	client = &http.Client{Timeout: 8 * time.Second}
+	latestTag    = releases.LatestTag
+	hasSignature = releases.HasSignature
 	// Un 404 del CDN justo después de publicar es transitorio: sin
 	// reintento, doctor marca SIN FIRMA un release que sí está firmado.
 	// El CLI no está en el manifiesto y su release se busca con la
@@ -51,14 +54,14 @@ func Check(m *config.Manifest) []Status {
 			continue
 		}
 		st := Status{Name: p.Name, Repo: repo}
-		tag, err := releases.LatestTag(repo)
+		tag, err := latestTag(repo)
 		if err != nil {
 			st.Err = err.Error()
 			out = append(out, st)
 			continue
 		}
 		st.Tag = tag
-		signed, err := releases.HasSignature(repo, tag)
+		signed, err := hasSignature(repo, tag)
 		if err != nil {
 			st.Err = err.Error()
 		} else {
@@ -79,7 +82,7 @@ func checkCLI() Status {
 		return st
 	}
 	st.Tag = tag
-	signed, err := releases.HasSignature(repo, tag)
+	signed, err := hasSignature(repo, tag)
 	if err != nil {
 		st.Err = err.Error()
 		return st
@@ -111,14 +114,18 @@ func Render(statuses []Status) int {
 }
 
 // githubRepo saca "owner/repo" de "github:owner/repo".
+//
+// Una fuente con una ruta extra ("github:owner/repo/extra") no es un
+// repo: la URL de la API que se armaría no existe y el error llega como
+// un 404 en vez de "fuente mal formada". Por eso el repo no puede traer
+// otra "/".
 func githubRepo(source string) (string, bool) {
 	if !strings.HasPrefix(source, "github:") {
 		return "", false
 	}
-	repo := strings.TrimPrefix(source, "github:")
-	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || owner == "" || name == "" {
+	owner, name, ok := strings.Cut(strings.TrimPrefix(source, "github:"), "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
 		return "", false
 	}
-	return repo, true
+	return owner + "/" + name, true
 }

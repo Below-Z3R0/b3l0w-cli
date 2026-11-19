@@ -479,3 +479,7 @@ archivos de prueba nuevos.
 | A1 | `Installed` (`pacman -Qq`, base local) separada de `Packaged` (`-Si`, disponibles). `Uninstall` usa `Installed`: ya no puede disparar `pacman -Rns` sobre un paquete de la distro. | `TestInstalledNoConfundeDisponibleConInstalado` |
 | A2 | `Uninstall` guarda el manifiesto **antes** de borrar el binario, y restaura la entrada en memoria si el save falla. | `TestUninstallNoBorraSiElManifiestoNoSeGuarda` |
 | M2 | `system.ReplaceBinary` escribe el binario con `0755` por defecto (y conserva el modo si el destino ya existía). `programs` y `selfupdate` lo usan. | `TestReplaceBinaryDejaEjecutable` |
+| M1 | `ParseVersion` filtra las ternas con forma de fecha (`looksLikeDate`: año de 4 dígitos, mes 1-12, día 1-31). `versionRe` además exige límite de palabra. | `TestParseVersionNoConfundeFechasConVersiones` |
+| M3 | `githubRepo` rechaza una `/` extra en el repo; `validateProgram` rechaza un asset que sea una ruta. | `TestAssetURLRechazaRutaExtra` |
+| M4 | `Uninstall` delega en `UninstallTo(name, m, path)` con la ruta del manifiesto explícita. | `TestUninstallGuardaEnLaRutaDelManifiesto` |
+| M5 | Cubierto por M3: el asset no se validaba antes de bajar y el fix es el mismo. | `TestInstallNoDescargaConManifiestoInvalido` |

@@ -124,7 +124,9 @@ func Prune(keep int) (int, error) {
 	}
 	// remove deja limine.conf desactualizado: sync regenera lo que queda.
 	if out, err := system.RunCombined("sudo", "limine-snapper-sync"); err != nil {
-		return 0, fmt.Errorf("sync: %v: %s", err, out)
+		// Las entradas YA se borraron: devolver 0 le miente al llamador,
+		// que reportaría "no se borró nada" con el disco ya cambiado.
+		return len(old), fmt.Errorf("sync: %v: %s", err, out)
 	}
 	return len(old), nil
 }

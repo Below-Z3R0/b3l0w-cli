@@ -252,3 +252,9 @@ ejecutados con `go test ./internal/registry/ -run TestProbe -v` y borrados al
 terminar. Cubrieron: `Kind` desconocido (A1), caché corrupta servida como
 válida (A2) y `Stat` vs `Load` sobre la misma caché de dos horas (A4). El
 estado final del worktree no tiene archivos de probe.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Load` valida el `Kind` contra `paths` antes de la cascada. Un Kind inexistente devuelve `categoría desconocida` en vez de caer al embebido y devolver otra categoría con `err nil` | `TestLoadRechazaUnaCategoriaDesconocida`, `TestLoadConCategoriaValidaSigueFuncionando` |

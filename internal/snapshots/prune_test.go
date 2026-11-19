@@ -317,8 +317,10 @@ func TestPrune_ErrorEnSync(t *testing.T) {
 	if err == nil {
 		t.Fatal("esperaba error si el sync falla")
 	}
-	if removed != 0 {
-		t.Fatalf("esperaba 0 entradas borradas, obtuve %d", removed)
+	// Las entradas SÍ se borraron: el sync es el que falló. Devolver 0
+	// le mentía al llamador, que reportaba "no se borró nada".
+	if removed != 2 {
+		t.Fatalf("esperaba 2 entradas borradas (el remove funcionó), obtuve %d", removed)
 	}
 	if !strings.HasPrefix(err.Error(), "sync:") {
 		t.Fatalf("el error del sync debería arrancar con 'sync:': %v", err)

@@ -27,8 +27,11 @@ func fakeSnapper(t *testing.T) string {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "args.log")
 	script := `#!/bin/sh
-for a in "$@"; do printf '%s\n' "$a" >> "$FAKE_LOG"; done
+printf '%s\x1f' "$@" >> "$FAKE_LOG"; printf '\n' >> "$FAKE_LOG"
 if [ -n "$FAKE_STDERR" ]; then printf '%s\n' "$FAKE_STDERR" >&2; fi
+if [ -n "$FAKE_FAIL_ON" ]; then
+  case "$*" in *"$FAKE_FAIL_ON"*) exit 1 ;; esac
+fi
 exit "${FAKE_EXIT:-0}"
 `
 	if err := os.WriteFile(filepath.Join(dir, "snapper"), []byte(script), 0o755); err != nil {
@@ -39,6 +42,7 @@ exit "${FAKE_EXIT:-0}"
 	t.Setenv("FAKE_LOG", log)
 	t.Setenv("FAKE_EXIT", "0")
 	t.Setenv("FAKE_STDERR", "")
+	t.Setenv("FAKE_FAIL_ON", "")
 	return log
 }
 
@@ -67,6 +71,17 @@ func argsDelFake(t *testing.T, log string) []string {
 	return strings.Split(texto, "\n")
 }
 
+// argsUltima devuelve los argumentos reales de la última invocación al fake:
+// el separador \x1f evita que un label con espacios se cuente como varios.
+func argsUltima(t *testing.T, log string) []string {
+	t.Helper()
+	lineas := argsDelFake(t, log)
+	if len(lineas) == 0 {
+		t.Fatal("el fake no se llamó")
+	}
+	return strings.Split(strings.TrimSuffix(lineas[len(lineas)-1], "\x1f"), "\x1f")
+}
+
 // TestCreateSinSnapperInstalado cubre el caso de una máquina donde snapper
 // no está: el módulo avisa y no intenta nada más.
 func TestCreateSinSnapperInstalado(t *testing.T) {
@@ -90,14 +105,20 @@ func TestCreateConSnapperInstalado(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
+	// Ahora hay dos invocaciones: el `list` que valida la config `home`
+	// y el `create`. La última tiene que ser el create.
+	llamadas := argsDelFake(t, log)
+	if len(llamadas) == 0 {
+		t.Fatal("el fake no se llamó")
+	}
+	ultima := argsUltima(t, log)
 	esperados := []string{"-c", "home", "create", "-d", "b3l0w pre-dotfiles"}
-	got := argsDelFake(t, log)
-	if len(got) != len(esperados) {
-		t.Fatalf("args = %v, quería %v", got, esperados)
+	if len(ultima) != len(esperados) {
+		t.Fatalf("args = %v, quería %v", ultima, esperados)
 	}
 	for i := range esperados {
-		if got[i] != esperados[i] {
-			t.Errorf("arg %d = %q, quería %q", i, got[i], esperados[i])
+		if ultima[i] != esperados[i] {
+			t.Errorf("arg %d = %q, quería %q", i, ultima[i], esperados[i])
 		}
 	}
 }
@@ -106,7 +127,8 @@ func TestCreateConSnapperInstalado(t *testing.T) {
 // que traer la salida del comando, si no el usuario no sabe qué pasó.
 func TestCreateConSnapperQueFalla(t *testing.T) {
 	fakeSnapper(t)
-	t.Setenv("FAKE_EXIT", "1")
+	// Falla solo el create: el list de la config home tiene que pasar.
+	t.Setenv("FAKE_FAIL_ON", "create")
 	t.Setenv("FAKE_STDERR", "Unknown config")
 
 	err := Create("b3l0w pre-dotfiles")
@@ -118,6 +140,24 @@ func TestCreateConSnapperQueFalla(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Unknown config") {
 		t.Errorf("error = %q, tenía que traer la salida de snapper", err)
+	}
+}
+
+// TestCreateSinConfigHome fija que la falta de la config `home` se detecta
+// ANTES del create: sin este chequeo, snapper falla con "Unknown config" y el
+// usuario no sabe si falta la config o si snapper se rompió.
+func TestCreateSinConfigHome(t *testing.T) {
+	fakeSnapper(t)
+	// Falla solo el `list`: el create ni se intenta.
+	t.Setenv("FAKE_FAIL_ON", "list")
+	t.Setenv("FAKE_STDERR", "Unknown config")
+
+	err := Create("b3l0w pre-dotfiles")
+	if err == nil {
+		t.Fatal("Create tenía que fallar sin config home")
+	}
+	if !strings.Contains(err.Error(), "no hay config `home`") {
+		t.Errorf("error = %q, tenía que decir que falta la config home", err)
 	}
 }
 
@@ -161,7 +201,7 @@ func TestCreateConLabelConEspacios(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got := argsDelFake(t, log)
+	got := argsUltima(t, log)
 	if len(got) != 5 {
 		t.Fatalf("args = %v, quería 5 argumentos", got)
 	}

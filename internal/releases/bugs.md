@@ -171,3 +171,10 @@ existencia y el uso real de `client` (M2), y `Check` contra un servidor que
 devuelve 404 en todo (confirma que el `switch` de `Render` reporta el 404
 como warning, no como "SIN FIRMA"). El estado final del worktree no tiene
 archivos de prueba nuevos.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `githubRepo` rechaza una `/` extra en el repo: `github:owner/repo/extra` ya no arma una URL que no existe | `TestGitHubRepoRechazaRutaExtra` |
+| M2 | Borrado `client`: declaración muerta que el comentario vendía como "inyectable para los tests". Las peticiones van por `kit/releases` | verificado con `grep -rn client internal/releases/*.go` (cero en producción) |

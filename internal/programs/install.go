@@ -1,6 +1,7 @@
 package programs
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,18 +17,57 @@ import (
 // AssetURL arma la URL del asset del último release a partir de la
 // fuente "github:owner/repo".
 func AssetURL(p config.Program) (string, error) {
-	if p.Asset == "" {
-		return "", fmt.Errorf("%s no tiene asset en el manifiesto (b3l0w program add --asset=…)", p.Name)
+	owner, repo, err := validateProgram(p)
+	if err != nil {
+		return "", err
 	}
-	if !strings.HasPrefix(p.Source, "github:") {
-		return "", fmt.Errorf("fuente no soportada para %s: %q (usá github:owner/repo)", p.Name, p.Source)
-	}
-	owner, repo, ok := strings.Cut(strings.TrimPrefix(p.Source, "github:"), "/")
-	if !ok || owner == "" || repo == "" {
-		return "", fmt.Errorf("fuente no soportada para %s: %q (usá github:owner/repo)", p.Name, p.Source)
-	}
-	return fmt.Sprintf("https://github.com/%s/%s/releases/latest/download/%s", owner, repo, p.Asset), nil
+	return assetURL(owner, repo, p.Asset), nil
 }
+
+// validateProgram comprueba que el manifiesto tenga lo mínimo para
+// bajar un asset: una fuente "github:owner/repo" y un asset que sea el
+// nombre de un archivo.
+//
+// La validación va ANTES de descargar: un manifiesto mal escrito tiene
+// que fallar con un error de configuración y no con un 404 de curl que
+// tapa la causa.
+func validateProgram(p config.Program) (owner, repo string, err error) {
+	if p.Asset == "" {
+		return "", "", fmt.Errorf("%s no tiene asset en el manifiesto (b3l0w program add --asset=…)", p.Name)
+	}
+	if strings.ContainsAny(p.Asset, `/\`) || p.Asset == "." || p.Asset == ".." {
+		return "", "", fmt.Errorf("el asset de %s no es un nombre de archivo: %q", p.Name, p.Asset)
+	}
+	owner, repo, err = githubRepo(p.Source)
+	if err != nil {
+		return "", "", fmt.Errorf("fuente no soportada para %s: %q (usá github:owner/repo)", p.Name, p.Source)
+	}
+	return owner, repo, nil
+}
+
+// assetURL arma la URL de descarga de un asset.
+func assetURL(owner, repo, asset string) string {
+	return fmt.Sprintf("https://github.com/%s/%s/releases/latest/download/%s", owner, repo, asset)
+}
+
+// githubRepo saca owner y repo de la fuente "github:owner/repo".
+//
+// Una fuente con una ruta extra ("github:owner/repo/extra") no es un
+// repo: la URL armada no existe y el error llegaría como un 404 de curl
+// en vez de "fuente mal formada". Por eso el repo no puede traer "/".
+func githubRepo(source string) (string, string, error) {
+	if !strings.HasPrefix(source, "github:") {
+		return "", "", errFuenteRara
+	}
+	owner, repo, ok := strings.Cut(strings.TrimPrefix(source, "github:"), "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", errFuenteRara
+	}
+	return owner, repo, nil
+}
+
+// errFuenteRara es el error de una fuente que no es "github:owner/repo".
+var errFuenteRara = errors.New("la fuente no es github:owner/repo")
 
 // InstallPath es donde se deja el binario de un programa.
 func InstallPath(name string) (string, error) {
@@ -62,10 +102,14 @@ func Install(p config.Program) (string, error) {
 // Valida el binario con `version` antes de pisar el que está: un asset
 // corrupto o de otra arquitectura no reemplaza algo que funciona.
 func InstallVerified(p config.Program, requireSignature bool) (string, error) {
-	url, err := AssetURL(p)
+	// El manifiesto se valida ANTES de bajar nada: si la fuente o el
+	// asset están mal, el error es de configuración y no un 404 de curl
+	// con una URL que no existe.
+	owner, repo, err := validateProgram(p)
 	if err != nil {
 		return "", err
 	}
+	url := assetURL(owner, repo, p.Asset)
 
 	tmp, err := fetch.ToTemp(url)
 	if err != nil {

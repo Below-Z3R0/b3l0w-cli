@@ -10,15 +10,29 @@ en `t.TempDir()` con `srcDir`, `homeDir` y `statePath` explícitos.
 
 | Métrica | Valor |
 |---|---|
-| Tests | 88 (56 previos + 32 nuevos) |
+| Tests | 96 (88 previos + 8 nuevos) |
 | Objetivos de fuzzing | 4 (2 previos + 2 nuevos) |
-| Verdes hoy | 78 |
-| **Rojos hoy (bugs reales)** | **10** |
+| Verdes hoy | 96 |
+| **Rojos hoy (bugs reales)** | **0** |
 | Fuzzing | 4 objetivos × 60 s: **0 hallazgos** |
 
-Los 10 rojos son los bugs que este módulo todavía tiene. Cada uno tiene
-un test que falla hoy y pasa con el fix. Están listados abajo. Los 22
-`TestEdge_` nuevos pasan: blindan comportamiento que ya funciona.
+Los 96 tests pasan. Los 8 `TestHallazgo_` nuevos son los que cubren los
+hallazgos CRÍTICO/ALTO: cada uno **falla si se revierte su arreglo**
+(verificado revirtiendo el arreglo uno por uno). Los 22 `TestEdge_` blindan
+comportamiento que ya funciona.
+
+## Los hallazgos CRÍTICO/ALTO y su test (`hallazgos_test.go`)
+
+| Test | Hallazgo | Qué falla si se revierte el arreglo |
+|---|---|---|
+| `TestHallazgo_C1_ElRepoEmptyNoBorraElEstado` | C1 | un repo vacío podaría el estado: el pull siguiente convertiría una actualización en conflicto |
+| `TestHallazgo_C2_ElVCSDelRepoNoSeDespliega` | C2 | el `.git` (u otro VCS, anidado o no) se desplegaría en `~/.config/` |
+| `TestHallazgo_A1_AdoptNoPisaUnaBaseExistente` | A1 | `Adopt` pisaría la base y la edición local se perdería en silencio |
+| `TestHallazgo_A2_ForceDryRunReportaLoQueSeEscribiria` | A2 | el preview con `--force` no diría qué se escribiría (`Updated` vacío) |
+| `TestHallazgo_A3_ElEstadoNullNoPanica` | A3 | un estado con JSON `null` panicaría: `assignment to entry in nil map` |
+| `TestHallazgo_A4_ElEstadoSeGuardaDeFormaAtomica` | A4 | el estado se reescribiría in-place: un corte dejaría el JSON truncado |
+| `TestHallazgo_A5_UnArchivoQueFallaNoAbregaElPull` | A5 | un archivo que no se puede aplicar abortaría el pull entero |
+| `TestHallazgo_A6_ForceSobreUnaConfigNoGestionadaDejaBackup` | A6 | `--force` pisaría una config nunca gestionada sin dejar `.bak` |
 
 ---
 
@@ -44,6 +58,7 @@ un test que falla hoy y pasa con el fix. Están listados abajo. Los 22
 | **`bak_test.go`** | **semántica del `.bak`: sobrescritura, symlink, dry-run** |
 | **`gitskip_test.go`** | **qué de `.git`/`.gitignore`/`.github` se despliega** |
 | **`fuzz_prop_test.go`** | **fuzzing por propiedades: el Result es la verdad** |
+| **`hallazgos_test.go`** | **los 8 hallazgos CRÍTICO/ALTO: un test por hallazgo, que falla si se revierte el arreglo** |
 
 ---
 

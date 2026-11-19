@@ -64,9 +64,33 @@ func (d *DockerAdapter) PruneImages() (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// restorePrevious deja el stack con la imagen anterior.
+//
+// Con tags mutables, volver atrás es volver al digest: el tag anterior
+// ya apunta a la imagen que se acaba de instalar, así que un pull de
+// ese tag baja lo nuevo y el rollback no vuelve atrás. Se baja el
+// digest anterior y se reetiqueta con el tag, que es lo que compose
+// levanta.
+func (in *Installer) restorePrevious(svc Service, prevDigest, prevTag, curDigest string) error {
+	d := NormalizeDigest(prevDigest)
+	if d == "" || d == NormalizeDigest(curDigest) {
+		if prevTag == "" {
+			return nil
+		}
+		return in.Docker.Pull(svc.Image, prevTag)
+	}
+	if err := in.Docker.PullDigest(svc.Image, d); err != nil {
+		return err
+	}
+	if prevTag == "" {
+		return nil
+	}
+	return in.Docker.TagImage(svc.Image+"@"+d, svc.Image+":"+prevTag)
+}
+
 // Rollback vuelve a la imagen anterior de un servicio. El estado
-// guarda el tag previo, así que volver atrás es un pull de otro tag:
-// no hace falta recompilar ni guardar imágenes localmente.
+// guarda el digest previo, así que volver atrás es un pull de ese
+// digest: no hace falta recompilar ni guardar imágenes localmente.
 func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	if state == nil {
 		return nil, fmt.Errorf("%s no está instalado", svc.ID)
@@ -77,7 +101,8 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	output.Step(fmt.Sprintf("%s · rollback", svc.ID))
 	fmt.Printf("  %s -> %s\n", state.Image, state.Previous)
 
-	if err := in.Docker.Pull(svc.Image, state.PreviousTag); err != nil {
+	prevDigest := NormalizeDigest(state.PreviousDigest)
+	if err := in.restorePrevious(svc, state.PreviousDigest, state.PreviousTag, state.Digest); err != nil {
 		return nil, fmt.Errorf("pull: %w", err)
 	}
 	current := *state
@@ -87,10 +112,17 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	rollbackTag := state.PreviousTag
 	state.Image = state.Previous
 	state.Tag = rollbackTag
-	digest, _ := in.Docker.ImageDigest(state.Previous)
-	state.Digest = digest
+	if prevDigest != "" {
+		// El digest es lo que se sabe con certeza: el inspect local
+		// puede devolver otra cosa.
+		state.Digest = svc.Image + "@" + prevDigest
+	} else {
+		digest, _ := in.Docker.ImageDigest(state.Previous)
+		state.Digest = digest
+	}
 	state.Previous = current.Image
 	state.PreviousTag = current.Tag
+	state.PreviousDigest = NormalizeDigest(current.Digest)
 	state.UpdatedAt = nowRFC3339()
 
 	dir := in.repoDir(svc)
@@ -107,7 +139,14 @@ func (in *Installer) Rollback(svc Service, state *State) (*State, error) {
 	}
 	// La imagen que se acaba de dejar de usar se borra: la PC no
 	// acumula imágenes de cada update.
-	if current.Image != "" && current.Image != state.Image {
+	if prevDigest != "" && NormalizeDigest(current.Digest) != prevDigest {
+		// Con tags mutables el tag ya apunta a la imagen nueva: la
+		// que quedó atrás se borra por su digest.
+		old := svc.Image + "@" + NormalizeDigest(current.Digest)
+		if in.Docker.RemoveImage(old) {
+			fmt.Printf("  ✓ borrada la imagen anterior: %s\n", old)
+		}
+	} else if current.Image != "" && current.Image != state.Image {
 		if in.Docker.RemoveImage(current.Image) {
 			fmt.Printf("  ✓ borrada la imagen anterior: %s\n", current.Image)
 		}

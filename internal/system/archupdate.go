@@ -7,6 +7,7 @@ package system
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -44,28 +45,100 @@ func List() (string, error) {
 
 // Pending cuenta los paquetes pendientes separando repo y AUR.
 //
-// El formato de -l es una sección por encabezado (==> Packages:,
-// ==> AUR packages:) y una línea por paquete con "->" o, si el paquete
-// no está en el repo, solo su versión. No se parsea el nombre: alcanza
-// con contar líneas de la sección.
+// El formato de `arch-update -l` (v4.4.6) es:
+//
+//	==> Looking for updates...
+//	==> Packages:
+//	<paquete> <versión>  ->  <versión>
+//	==> AUR Packages:
+//	...
+//	==> Flatpak Packages:
+//	...
+//
+// Dos cosas del script que hay que respetar:
+//
+//   - La salida va con color aunque no sea un tty: la cabecera real es
+//     "\x1b[1m\x1b[34m==>\x1b[0m\x1b[1m Packages:\x1b[0m". Sin quitar los
+//     códigos, ninguna cabecera se reconoce y el conteo queda en cero.
+//   - "Flatpak Packages:" no son paquetes de pacman: el doctor informa
+//     de los del repo y de los de AUR, así que no cuentan.
+//
+// Una línea cuenta como paquete si tiene la forma de una entrada:
+// "<nombre> <versión>", con o sin "-> <versión>". Un texto suelto
+// dentro de la sección no cuenta.
 func Pending(list string) (repo, aur int) {
 	section := ""
 	for _, line := range strings.Split(list, "\n") {
-		trimmed := strings.TrimSpace(line)
+		trimmed := strings.TrimSpace(sinANSI(line))
 		if trimmed == "" {
 			continue
 		}
 		if strings.HasPrefix(trimmed, "==>") {
-			section = strings.ToLower(trimmed)
+			section = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "==>")))
 			continue
 		}
-		if strings.Contains(section, "aur") {
+		if !esPaquete(trimmed) {
+			continue
+		}
+		switch {
+		case strings.Contains(section, "flatpak"):
+			// No son paquetes de pacman.
+		case strings.Contains(section, "aur"):
 			aur++
-		} else if strings.Contains(section, "package") {
+		case strings.Contains(section, "package"):
 			repo++
 		}
 	}
 	return repo, aur
+}
+
+// sinANSI quita los códigos de color de la salida del actualizador.
+func sinANSI(s string) string {
+	return ansiRegexp.ReplaceAllString(s, "")
+}
+
+// ansiRegexp matchea los códigos SGR que usa el actualizador.
+var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// esPaquete dice si la línea es una entrada de paquete del listado.
+//
+// El formato es "<nombre> <versión>" o "<nombre> <versión> -> <versión>":
+// el primer campo es un nombre de paquete y el segundo, una versión.
+func esPaquete(line string) bool {
+	campos := strings.Fields(line)
+	if len(campos) < 2 {
+		return false
+	}
+	return esNombreDePaquete(campos[0]) && esVersion(campos[1])
+}
+
+// esNombreDePaquete dice si el token parece un nombre de paquete:
+// letras, dígitos y los signos que pacman admite (- _ . + @).
+func esNombreDePaquete(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.', r == '+', r == '@':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// esVersion dice si el token parece una versión de pacman: arranca con
+// un número, o con "r" en los paquetes de VCS (r1234.abc-1).
+func esVersion(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] >= '0' && s[0] <= '9' {
+		return true
+	}
+	return s[0] == 'r' && len(s) > 1 && s[1] >= '0' && s[1] <= '9'
 }
 
 // UpdateInteractive corre el actualizador heredando la terminal.

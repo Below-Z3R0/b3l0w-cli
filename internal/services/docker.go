@@ -188,6 +188,25 @@ func (d *DockerAdapter) Pull(image, tag string) error {
 	return err
 }
 
+// PullDigest baja una imagen por su digest.
+//
+// Con tags mutables, volver atras a una imagen es volver a su
+// digest: el tag anterior ya apunta a la imagen nueva.
+func (d *DockerAdapter) PullDigest(image, digest string) error {
+	_, err := d.run("docker", "pull", image+"@"+digest)
+	return err
+}
+
+// TagImage etiqueta una imagen local con otro nombre.
+//
+// Es lo que hace posible el rollback: la imagen anterior se
+// reetiqueta con el tag anterior y compose la levanta sin bajar
+// nada.
+func (d *DockerAdapter) TagImage(source, target string) error {
+	_, err := d.run("docker", "tag", source, target)
+	return err
+}
+
 // Up levanta el stack. files es la lista de compose a usar: el
 // principal y el override de la variante.
 func (d *DockerAdapter) Up(dir string, files []string, env map[string]string) error {
@@ -250,6 +269,12 @@ func HTTPGet(url string, timeout time.Duration) (string, error) {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", err
+	}
+	// Un status que no sea 2xx no es una respuesta sana: el health
+	// check aceptaba cualquier status y daba por sano un servicio que
+	// contestaba 500 (y hasta copiaba el provider del cuerpo del error).
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
 	}
 	return string(data), nil
 }

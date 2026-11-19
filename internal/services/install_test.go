@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeRegistry levanta un registry falso y devuelve el Registry que
@@ -45,6 +46,182 @@ func fakeRegistry(t *testing.T, tags []string, digest string) (*Registry, string
 	host := strings.TrimPrefix(srv.URL, "https://")
 	reg := &Registry{BaseURL: srv.URL, Client: srv.Client()}
 	return reg, host
+}
+
+// TestVerifyHealthRechazaUn500: un status que no es 2xx no es un
+// servicio sano.
+//
+// Antes el health check miraba cualquier respuesta como buena: un 500
+// quedaba "healthy" y hasta se copiaba el provider del cuerpo del
+// error al estado.
+func TestVerifyHealthRechazaUn500(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"status":"error","provider":"CUDA"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	if _, err := HTTPGet(srv.URL, 2*time.Second); err == nil {
+		t.Error("HTTPGet aceptó un 500 como respuesta buena")
+	}
+
+	state := &State{ID: "argos"}
+	svc := Service{ID: "argos", Health: srv.URL}
+	if err := verifyHealth(state, svc, 100*time.Millisecond); err == nil {
+		t.Fatal("un 500 tiene que fallar el health check")
+	}
+	if state.Health == "healthy" {
+		t.Errorf("Health = %q, un 500 no es healthy", state.Health)
+	}
+	if state.Provider != "" {
+		t.Errorf("el provider salió del cuerpo de un error: %q", state.Provider)
+	}
+}
+
+// TestUpdateGuardaElDigestAnteriorParaElRollback: el update tiene que
+// dejar guardado el digest anterior.
+//
+// Los tags son mutables: sin el digest previo, el rollback vuelve a
+// la imagen que se acaba de instalar y no vuelve atrás.
+func TestUpdateGuardaElDigestAnteriorParaElRollback(t *testing.T) {
+	stub := newDockerStub(t)
+	t.Setenv("STUB_INSPECT_OUT", "host/repo@sha256:nuevo")
+	remoto := "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	reg, host := fakeRegistry(t, []string{"cpu-latest"}, remoto)
+
+	stateDir := t.TempDir()
+	in := &Installer{
+		Docker:   NewDocker(),
+		Registry: reg,
+		StateDir: stateDir,
+		RepoDir:  func(Service) string { return t.TempDir() },
+	}
+	svc := Service{ID: "argos", Image: host + "/repo", Variants: []string{"cpu"}}
+	state := &State{
+		ID: "argos", Variant: "cpu",
+		Image:  host + "/repo:cpu-latest",
+		Tag:    "cpu-latest",
+		Digest: host + "/repo@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+	}
+
+	out, err := in.Update(svc, state, true, true)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if out.PreviousDigest == "" {
+		t.Fatal("el update no guardó el digest anterior")
+	}
+	if out.PreviousDigest == NormalizeDigest(out.Digest) {
+		t.Errorf("PreviousDigest = %q es el nuevo: no sirve para volver atrás", out.PreviousDigest)
+	}
+
+	// Y el rollback vuelve a esa imagen, no a la que se acaba de instalar.
+	// El digest anterior se captura ANTES: Rollback muta el estado que
+	// recibe (PreviousDigest pasa a ser el que se deja atrás).
+	anterior := out.PreviousDigest
+	rb, err := in.Rollback(svc, out)
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if NormalizeDigest(rb.Digest) != anterior {
+		t.Errorf("Digest = %q, quería el anterior %q", rb.Digest, anterior)
+	}
+	var porDigest bool
+	for _, c := range stub.calls(t) {
+		if strings.Contains(c, "pull") && strings.Contains(c, "@"+anterior) {
+			porDigest = true
+		}
+	}
+	if !porDigest {
+		t.Errorf("el rollback no bajó la imagen por digest: %v", stub.calls(t))
+	}
+}
+
+// TestInstallFallidoGuardaElEstadoEnDisco: si el health no responde,
+// el stack queda arriba y el estado tiene que estar en disco.
+//
+// Sin estado, el servicio corre y el CLI no lo sabe: no aparece en el
+// listado y el install siguiente choca con los puertos ocupados.
+func TestInstallFallidoGuardaElEstadoEnDisco(t *testing.T) {
+	stub := newDockerStub(t)
+	reg, host := fakeRegistry(t, []string{"cpu-latest"}, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	stateDir := t.TempDir()
+	in := &Installer{
+		Docker:        NewDocker(),
+		Registry:      reg,
+		StateDir:      stateDir,
+		RepoDir:       func(Service) string { return t.TempDir() },
+		HealthTimeout: 200 * time.Millisecond,
+	}
+	svc := Service{ID: "argos", Image: host + "/repo", Variants: []string{"cpu"}, Health: srv.URL}
+
+	if _, err := in.Install(svc, "cpu", false); err == nil {
+		t.Fatal("un install sin health sano tiene que fallar")
+	}
+	if len(stub.callsContaining(t, "up -d")) == 0 {
+		t.Error("no levantó el stack")
+	}
+	saved, err := LoadState(stateDir, "argos")
+	if err != nil {
+		t.Fatalf("no guardó el estado del servicio que quedó arriba: %v", err)
+	}
+	if saved.Health == "healthy" {
+		t.Errorf("Health = %q, el health no respondió", saved.Health)
+	}
+}
+
+// TestUpdatePasaElTagResueltoAlCompose: el env del compose lleva el tag
+// resuelto, no el del estado.
+//
+// Con el estado sin tag, el compose recibía un env sin IMAGE y levantaba
+// su default: la imagen correcta estaba descargada y corría otra.
+func TestUpdatePasaElTagResueltoAlCompose(t *testing.T) {
+	stub := newDockerStub(t)
+	t.Setenv("STUB_INSPECT_OUT", "host/repo@sha256:nuevo")
+	remoto := "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	reg, host := fakeRegistry(t, []string{"cpu-latest"}, remoto)
+
+	stateDir := t.TempDir()
+	in := &Installer{
+		Docker:   NewDocker(),
+		Registry: reg,
+		StateDir: stateDir,
+		RepoDir:  func(Service) string { return t.TempDir() },
+	}
+	svc := Service{ID: "argos", Image: host + "/repo", Variants: []string{"cpu"}}
+	// Un estado viejo: sin tag.
+	state := &State{
+		ID: "argos", Variant: "cpu",
+		Image:  host + "/repo:cpu-latest",
+		Digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+	}
+
+	_, err := in.Update(svc, state, true, true)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	ups := stub.callsContaining(t, "up -d")
+	if len(ups) != 1 {
+		t.Fatalf("ups = %v, quería 1", ups)
+	}
+	if !strings.Contains(ups[0], "image=cpu-latest") {
+		t.Errorf("el compose no recibió el tag resuelto: %s", ups[0])
+	}
+	saved, err := LoadState(stateDir, "argos")
+	if err != nil {
+		t.Fatalf("no guardó el estado: %v", err)
+	}
+	if saved.Tag != "cpu-latest" {
+		t.Errorf("el estado no guardó el tag resuelto: %q", saved.Tag)
+	}
+	if saved.Image != host+"/repo:cpu-latest" {
+		t.Errorf("el estado no guardó la imagen resuelta: %q", saved.Image)
+	}
 }
 
 // TestUpdateNoActualizaSiElDigestEsElMismo compara el digest local con

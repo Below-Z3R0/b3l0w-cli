@@ -85,6 +85,12 @@ type Status struct {
 // embedded es el contenido compilado en el binario; se usa solo si no
 // hay caché ni red.
 func Load(kind Kind, embedded []byte) ([]byte, Source, error) {
+	// Un Kind que no existe es un error del llamador, no "no hay red":
+	// antes caía hasta el embebido y devolvía una DB de otra categoría
+	// con err nil.
+	if _, ok := paths[kind]; !ok {
+		return nil, 0, fmt.Errorf("categoría desconocida: %s", kind)
+	}
 	cache := cachePath(kind)
 
 	if data, fresh := readCache(cache); fresh {
