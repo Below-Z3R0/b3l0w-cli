@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // conRunnerFalso reemplaza el runner del CLI por uno falso y devuelve una
@@ -405,6 +407,172 @@ func TestLogsFollowRespetaElTail(t *testing.T) {
 	}
 	if !strings.Contains(string(datos), "--tail 50") {
 		t.Errorf("args = %q, quería --tail 50", datos)
+	}
+}
+
+// TestLogsStreamMataElProcesoSiNoPuedeGuardarElPid cubre el caso en que el
+// pidfile no se puede escribir: el `docker logs -f` ya arrancó con setsid y,
+// sin pid guardado, nadie lo puede parar. El comando tiene que matarlo y
+// salir con 1 en vez de devolver la ruta y dejar el proceso escribiendo para
+// siempre.
+//
+// El pidfile se vuelve inmprimible con un directorio en su lugar: el
+// WriteFile falla con EISDIR sin depender de permisos ni de ser root.
+func TestLogsStreamMataElProcesoSiNoPuedeGuardarElPid(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := dirLogs()
+	if err := os.Mkdir(filepath.Join(dir, "web.pid"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Un `docker` falso que se queda vivo: anota su pid y duerme.
+	marca := filepath.Join(t.TempDir(), "pid.txt")
+	dirDocker := dockerFalso(t, "#!/bin/sh\necho $$ > \""+marca+"\"\nsleep 300\n")
+	defer limpiarProcesoDocker(dirDocker, marca)
+
+	archivo, _ := rutaLog("web")
+	codigo := 0
+	salida := capturaStderr(t, func() {
+		codigo = Run([]string{"logs-stream", "web"})
+	})
+	if codigo != 1 {
+		t.Errorf("código = %d, quería 1", codigo)
+	}
+	if !strings.Contains(salida, "pidfile") {
+		t.Errorf("stderr = %q, quería que nombrara el pidfile", salida)
+	}
+
+	// El `docker logs -f` no puede quedar vivo. Se busca en /proc durante
+	// un rato: recién arrancado, su línea de comandos todavía es la del
+	// `sh -c` y sólo después pasa a ser la del script.
+	for i := 0; i < 50; i++ {
+		if vivos := procesosVivos(dirDocker, archivo); len(vivos) > 0 {
+			t.Fatalf("quedó vivo el docker logs -f (pid %v)", vivos)
+		}
+		if pid := pidAnotado(marca); pid > 0 {
+			if procesoVivo(pid) {
+				t.Fatalf("el pid %d del docker logs -f sigue vivo", pid)
+			}
+			if grupo := procesosDelGrupo(pid); len(grupo) > 0 {
+				t.Fatalf("quedaron vivos los procesos %v del grupo %d", grupo, pid)
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// procesosVivos devuelve los pids vivos cuya línea de comandos menciona
+// alguno de los caminos dados.
+func procesosVivos(caminos ...string) []int {
+	entradas, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, entrada := range entradas {
+		pid, err := strconv.Atoi(entrada.Name())
+		if err != nil {
+			continue
+		}
+		datos, err := os.ReadFile(filepath.Join("/proc", entrada.Name(), "cmdline"))
+		if err != nil {
+			continue
+		}
+		linea := strings.ReplaceAll(string(datos), "\x00", " ")
+		for _, camino := range caminos {
+			if strings.Contains(linea, camino) {
+				pids = append(pids, pid)
+				break
+			}
+		}
+	}
+	return pids
+}
+
+// procesosDelGrupo devuelve los pids vivos que pertenecen al grupo de procesos
+// indicado. El `docker logs -f` deja hijos (el `sleep` del script falso), y
+// un hijo vivo también es un huérfano. Los zombis se ignoran: ya están
+// muertos, sólo esperando que su padre los recoja.
+func procesosDelGrupo(pgid int) []int {
+	entradas, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, entrada := range entradas {
+		pid, err := strconv.Atoi(entrada.Name())
+		if err != nil {
+			continue
+		}
+		grupo, estado := leerStat(pid)
+		if grupo == pgid && estado != "Z" {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// leerStat devuelve el grupo de procesos y el estado del proceso, o (-1, "")
+// si no se puede leer.
+func leerStat(pid int) (int, string) {
+	datos, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return -1, ""
+	}
+	// El estado y el pgrp vienen después del nombre del proceso, que puede
+	// tener espacios entre paréntesis: se busca el cierre del paréntesis.
+	fin := strings.LastIndex(string(datos), ")")
+	if fin < 0 {
+		return -1, ""
+	}
+	campos := strings.Fields(string(datos)[fin+1:])
+	// campos[0] es el estado, campos[1] el ppid y campos[2] el pgrp.
+	if len(campos) < 3 {
+		return -1, ""
+	}
+	grupo, err := strconv.Atoi(campos[2])
+	if err != nil {
+		return -1, ""
+	}
+	return grupo, campos[0]
+}
+
+// pidAnotado devuelve el pid que el proceso falso dejó anotado, o 0 si todavía
+// no lo anotó.
+func pidAnotado(marca string) int {
+	datos, err := os.ReadFile(marca)
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(datos)))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+// limpiarProcesoDocker se lleva por delante al `docker` falso y a su grupo,
+// para que una prueba que falle no deje procesos colgando. El grupo se saca
+// del /proc de cada proceso encontrado y no del pid anotado: si el script
+// todavía no escribió el pid, el grupo es la única forma de llegar a los
+// hijos (el `sleep` del script falso). Los miembros se matan uno por uno y no
+// sólo con la señal al grupo: si el script estaba justo forked un hijo, la
+// señal al grupo puede no alcanzarlo.
+func limpiarProcesoDocker(dirDocker, marca string) {
+	for i := 0; i < 10; i++ {
+		pids := procesosVivos(dirDocker)
+		if pid := pidAnotado(marca); pid > 0 {
+			pids = append(pids, pid)
+		}
+		if len(pids) == 0 {
+			return
+		}
+		for _, pid := range pids {
+			if grupo, _ := leerStat(pid); grupo > 0 {
+				_ = syscall.Kill(-grupo, syscall.SIGKILL)
+			}
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 

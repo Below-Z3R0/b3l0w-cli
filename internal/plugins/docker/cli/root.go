@@ -243,7 +243,26 @@ func logsStreamCmd(args []string) int {
 		return 1
 	}
 	pid := cmd.Process.Pid
-	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0o644)
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		// Sin pid guardado nadie puede parar el `docker logs -f`: el
+		// proceso quedaría huérfano escribiendo para siempre. Se mata el
+		// grupo entero (setsid lo dejó como líder) y se espera a que
+		// muera, así que no queda ni vivo ni zombi. El SIGKILL va también
+		// al grupo: si `docker` ignorara el SIGTERM, el Wait de abajo se
+		// quedaría esperando para siempre.
+		_ = syscall.Kill(-pid, syscall.SIGTERM)
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		// Un pid a medias (una escritura a medias) apuntaría a otro
+		// proceso y `logs-stop` mataría al equivocado. Sólo se borra si
+		// es un archivo común: un directorio no se toca.
+		if info, err := os.Stat(pidFile); err == nil && info.Mode().IsRegular() {
+			_ = os.Remove(pidFile)
+		}
+		fmt.Fprintf(os.Stderr, "no pude guardar el pidfile %s: %v\n", pidFile, err)
+		return 1
+	}
 	// El padre no espera al hijo: queda huérfano a propósito. El pid se
 	// guarda ANTES del Release — después ya no es legible.
 	_ = cmd.Process.Release()
