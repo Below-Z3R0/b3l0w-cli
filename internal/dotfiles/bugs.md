@@ -715,3 +715,17 @@ y borrados al terminar. Cubrieron: `--force --dry-run` (A2), `Adopt` dos veces
 (M3). El estado final del worktree es limpio (`git status --porcelain` vacío
 salvo este archivo). Los puntos marcados **verificar** son M6 (concurrencia) y
 el layout real del repo de dotfiles para C2.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `srcDir` vacío ya no poda el estado: se rechaza antes de tocar nada | `hallazgos_test.go` |
+| C2 | El `.git/` del repo no se despliega en `~/.config/.git/` | `hallazgos_test.go` |
+| A1 | Un estado `null` ya no paniquea | `hallazgos_test.go` |
+| A2-A6 | Merge 3-way, path traversal, save no atómico, backup y lock | `hallazgos_test.go` |
+| M7 | Si el estado no se puede guardar, el archivo escrito se revierte y la base en memoria vuelve a la anterior: un archivo nuevo con base vieja se lee como "cambió el usuario" en el pull siguiente (conflicto falso) | `TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoSeRevierte`, `TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoNuevoDesaparece` |
+| M8 | La plantilla de Hermes se compara por segmento desde la raíz (`esTemplatesHermes`), no por substring: `templates/hermes-viejo/` ya no se salta | `TestHallazgo_M8_LaPlantillaDeHermesSeComparaPorSegmento` |
+
+M4 queda **descartado**: el costo de `--force` es una decisión de diseño
+documentada, no un bug.
