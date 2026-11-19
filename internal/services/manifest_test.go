@@ -328,6 +328,48 @@ func TestStateSaveEscribeElArchivoDelID(t *testing.T) {
 	}
 }
 
+// TestStateSaveNoSaleDelDirectorioDeEstado: el id del estado es el
+// nombre del archivo, y un id con "../" no puede escribir fuera del
+// directorio de estado.
+//
+// El id viene del JSON guardado, que cualquiera puede editar a mano:
+// sin validarlo, el Save siguiente escribe donde le digan.
+func TestStateSaveNoSaleDelDirectorioDeEstado(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "estado")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Un estado con un id hostil dentro: el archivo se llama argos.json
+	// pero su contenido dice que es otro servicio.
+	hostil := []byte(`{"id":"../pwned","image":"ghcr.io/org/img:tag"}`)
+	if err := os.WriteFile(filepath.Join(dir, "argos.json"), hostil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadState(dir, "argos")
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if s.ID != "argos" {
+		t.Errorf("el id del JSON decide el nombre: %q", s.ID)
+	}
+	if err := s.Save(dir); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pwned.json")); !os.IsNotExist(err) {
+		t.Error("escribió fuera del directorio de estado")
+	}
+
+	// Y un id con traversal no se puede guardar en primer lugar.
+	if err := (&State{ID: "../pwned"}).Save(dir); err == nil {
+		t.Error("Save aceptó un id con traversal")
+	}
+	if _, err := os.Stat(filepath.Join(root, "pwned.json")); !os.IsNotExist(err) {
+		t.Error("el Save con traversal escribió fuera")
+	}
+}
+
 // TestStateSaveCreaElDirectorio: el directorio de estado se crea si no
 // existe.
 func TestStateSaveCreaElDirectorio(t *testing.T) {

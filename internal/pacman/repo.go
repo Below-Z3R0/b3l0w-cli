@@ -20,6 +20,11 @@ Server = https://raw.githubusercontent.com/Below-Z3R0/b3l0w-packages/main/x86_64
 
 // Configurado dice si la sección [b3l0w] ya está en el archivo.
 //
+// Busca la línea exacta: "[b3l0w-extra]" es otra sección y
+// "# [b3l0w]" está comentada (el usuario desactivó el repo a mano).
+// Con un substring, las dos contaban como configuradas y el diagnóstico
+// mentía.
+//
 // Un archivo que no se puede leer cuenta como no configurado: el
 // llamador decide si eso es un error o una razón para intentar.
 func Configurado(path string) bool {
@@ -27,7 +32,12 @@ func Configurado(path string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(data), "[b3l0w]")
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "[b3l0w]" {
+			return true
+		}
+	}
+	return false
 }
 
 // AgregarRepo añade la sección al final del archivo.

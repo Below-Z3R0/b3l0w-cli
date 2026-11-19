@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // registryFalso devuelve un registry que emite token y lista los tags
@@ -178,5 +179,65 @@ func TestSwitchVariantSinInstalarFalla(t *testing.T) {
 	}
 	if calls := stub.calls(t); len(calls) != 0 {
 		t.Errorf("sin instalar no debe llamar a docker: %v", calls)
+	}
+}
+
+// TestSwitchVariantVerificaElHealthYElProvider: al cambiar de variante
+// se verifica el health y el provider de la variante nueva.
+//
+// Antes quedaban los de la variante anterior: el estado decía "healthy"
+// y "CUDA" con el stack de rocm corriendo.
+func TestSwitchVariantVerificaElHealthYElProvider(t *testing.T) {
+	newDockerStub(t)
+	reg := registryFalso(t, []string{"cpu", "rocm"})
+	host := strings.TrimPrefix(reg.BaseURL, "https://")
+
+	// El health del servicio nuevo responde 500: no arrancó.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"status":"error","provider":"CUDA"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "services.json")
+	stateDir := filepath.Join(dir, "state")
+	manifest := manifestJSON(1, fmt.Sprintf(
+		`{"id":"app","name":"App","repo":"Below-Z3R0/app","image":"%s/app","variants":["cpu","rocm"],"health":"%s"}`,
+		host, srv.URL))
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := &State{ID: "app", Variant: "cuda", Image: host + "/app:cuda", Tag: "cuda",
+		Health: "healthy", Provider: "CUDA"}
+	if err := prev.Save(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+
+	_, err := SwitchVariant(VariantOptions{
+		ManifestPath:  manifestPath,
+		StateDir:      stateDir,
+		ID:            "app",
+		Variant:       "rocm",
+		Registry:      reg,
+		HealthTimeout: 200 * time.Millisecond,
+	})
+	if err == nil {
+		t.Fatal("cambiar a una variante que no arranca no puede ser un éxito")
+	}
+
+	saved, err := LoadState(stateDir, "app")
+	if err != nil {
+		t.Fatalf("no guardó el estado: %v", err)
+	}
+	if saved.Variant != "rocm" {
+		t.Errorf("Variant = %q, quería rocm", saved.Variant)
+	}
+	if saved.Health == "healthy" {
+		t.Errorf("Health = %q, quedó el de la variante anterior", saved.Health)
+	}
+	if saved.Provider == "CUDA" {
+		t.Errorf("Provider = %q, quedó el de la variante anterior", saved.Provider)
 	}
 }

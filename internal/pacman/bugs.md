@@ -46,3 +46,9 @@ siempre termina en salto, así que no se reprodujo.
 - El manejo del error: se devuelve con el path, no se traga.
 - `Configurado` devuelve `false` si el archivo no se puede leer: es lo que el
   llamador necesita para intentar el append.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `Configurado` compara la línea exacta `[b3l0w]`, no un substring: `[b3l0w-extra]` y `# [b3l0w]` (comentada) ya no cuentan como configuradas | `TestConfiguradoSoloCuentaLaSeccionExacta` |

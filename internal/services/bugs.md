@@ -721,3 +721,14 @@ cuando `DiskFree` falla (M5) y el tag `buildcache` de `TagFor` (M6).
 Cada fila de la tabla se verificó con `sed -n '<linea>p' <archivo>`
 contra el working tree de HEAD `fb76242`. El estado final del worktree
 está limpio salvo estos dos archivos.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `State.Save` valida el `id` con `system.SafeName` antes de armar el path: un id con `../` ya no escribe fuera del directorio de estado. `LoadState` fuerza el id del archivo | `TestStateSaveNoSaleDelDirectorioDeEstado` |
+| A1 | `HTTPGet` rechaza cualquier status fuera de 2xx: un 500 ya no se cuenta como servicio sano (ni se parsea el `provider` del cuerpo del error) | `TestVerifyHealthRechazaUn500` |
+| A2 | `Update` y `SwitchVariant` guardan `PreviousDigest` antes de pisar el estado: con tags mutables, el rollback vuelve al digest y no a un no-op | `TestUpdateGuardaElDigestAnteriorParaElRollback` |
+| A3 | `Install` guarda el estado **antes** del healthcheck y lo vuelve a guardar si el health falla: el stack queda arriba y el CLI lo sabe | `TestInstallFallidoGuardaElEstadoEnDisco` |
+| A4 | `SwitchVariant` resetea `Health`/`Provider` y los verifica de nuevo: los de la variante anterior no dicen nada del stack nuevo | `TestSwitchVariantVerificaElHealthYElProvider` |
+| A5 | El env del compose lleva el tag **resuelto**, no `state.Tag` (que puede estar vacío y dejar el default de compose) | `TestUpdatePasaElTagResueltoAlCompose` |

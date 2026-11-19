@@ -781,10 +781,13 @@ func TestRunConManifiestoVacioSoloAvisa(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHasDependency(t *testing.T) {
-	if !hasDependency("sh") {
+	// La consulta ahora es un campo del Env (inyectable), no una función
+	// libre: el test pregunta por el Env real.
+	e := defaultEnv()
+	if !e.HasDependency("sh") {
 		t.Error("sh debería estar en PATH")
 	}
-	if hasDependency("binario-que-no-existe-xyz-123") {
+	if e.HasDependency("binario-que-no-existe-xyz-123") {
 		t.Error("un binario inexistente no debería existir")
 	}
 }

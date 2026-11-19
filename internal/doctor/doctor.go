@@ -75,25 +75,34 @@ type Env struct {
 	ReleaseStatus func(m *config.Manifest) []releases.Status
 	// PluginsDir devuelve el directorio de extensiones.
 	PluginsDir func() string
+	// PackageInstalled dice si un paquete está instalado.
+	//
+	// Es la consulta a pacman (-Q): entra por acá para que un test
+	// pueda simularla sin correr el pacman real.
+	PackageInstalled func(name string) bool
 	// HasDependency dice si una dependencia está disponible.
 	HasDependency func(name string) bool
 }
 
 // defaultEnv son las dependencias reales: la máquina de verdad.
 func defaultEnv() *Env {
-	return &Env{
-		SystemBinary:  system.Binary,
-		CommandPath:   kitsystem.CommandPath,
-		IsTTY:         kitsystem.IsTTY,
-		ProgramStatus: programs.Statuses,
-		PluginScripts: plugins.Scripts,
-		HasSource:     plugins.HasSource,
-		AutoUpdate:    plugins.AutoUpdate,
-		Dependencies:  plugins.Dependencies,
-		ReleaseStatus: releases.Check,
-		PluginsDir:    paths.PluginsDir,
-		HasDependency: hasDependency,
+	e := &Env{
+		SystemBinary:     system.Binary,
+		CommandPath:      kitsystem.CommandPath,
+		IsTTY:            kitsystem.IsTTY,
+		ProgramStatus:    programs.Statuses,
+		PluginScripts:    plugins.Scripts,
+		HasSource:        plugins.HasSource,
+		AutoUpdate:       plugins.AutoUpdate,
+		Dependencies:     plugins.Dependencies,
+		ReleaseStatus:    releases.Check,
+		PluginsDir:       paths.PluginsDir,
+		PackageInstalled: packageInstalled,
 	}
+	// La disponibilidad de una dependencia se decide con lo que el Env
+	// sabe: el comando en el PATH o el paquete instalado.
+	e.HasDependency = func(name string) bool { return e.disponible(name) }
+	return e
 }
 
 // Run devuelve 0 si no hay errores (los avisos no cuentan).
@@ -292,10 +301,25 @@ func (e *Env) checks(m *config.Manifest) []Check {
 	}
 }
 
-// hasDependency busca un comando en PATH o un paquete instalado.
-func hasDependency(name string) bool {
-	if kitsystem.CommandPath(name) != "" {
+// disponible dice si una dependencia está disponible: como comando en
+// el PATH o como paquete instalado.
+//
+// Las dos consultas salen del Env, así un test decide sin tocar la
+// máquina.
+func (e *Env) disponible(name string) bool {
+	if e.CommandPath(name) != "" {
 		return true
 	}
+	if e.PackageInstalled == nil {
+		return false
+	}
+	return e.PackageInstalled(name)
+}
+
+// packageInstalled pregunta a pacman si el paquete está instalado.
+//
+// Es la única parte del doctor que habla con pacman, y entra por el
+// Env: los tests la sustituyen y no corren el pacman real.
+func packageInstalled(name string) bool {
 	return exec.Command("pacman", "-Q", name).Run() == nil
 }

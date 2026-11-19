@@ -19,6 +19,16 @@ type VariantOptions struct {
 	// Registry y Docker son para los tests: nil usa los reales.
 	Registry *Registry
 	Docker   *DockerAdapter
+	// HealthTimeout es cuanto se espera al healthcheck. Cero = 2 minutos.
+	HealthTimeout time.Duration
+}
+
+// healthTimeout es cuanto se espera al healthcheck.
+func (o VariantOptions) healthTimeout() time.Duration {
+	if o.HealthTimeout > 0 {
+		return o.HealthTimeout
+	}
+	return defaultHealthTimeout
 }
 
 // VariantResult es lo que el cambio produjo, para que el llamador lo
@@ -89,11 +99,23 @@ func SwitchVariant(opts VariantOptions) (*VariantResult, error) {
 
 	state.Previous = state.Image
 	state.PreviousTag = state.Tag
+	state.PreviousDigest = NormalizeDigest(state.Digest)
 	state.Variant = opts.Variant
 	state.Image = image
 	state.Tag = tag
 	state.Digest = digest
 	state.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	// La salud y el provider son los de la variante nueva: los de la
+	// anterior no dicen nada del stack que se acaba de levantar.
+	state.Health = "starting"
+	state.Provider = ""
+	if err := verifyHealth(state, *svc, opts.healthTimeout()); err != nil {
+		state.Warnings = append(state.Warnings,
+			fmt.Sprintf("la variante %s no arrancó: %s", opts.Variant, err))
+		_ = state.Save(opts.StateDir)
+		return nil, fmt.Errorf("%s: la variante %q no arrancó: %w", svc.ID, opts.Variant, err)
+	}
 	if err := state.Save(opts.StateDir); err != nil {
 		return nil, err
 	}

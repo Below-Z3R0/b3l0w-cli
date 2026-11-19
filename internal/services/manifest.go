@@ -153,25 +153,34 @@ func DefaultStateDir() string {
 
 // State es el estado auditable de un servicio instalado.
 type State struct {
-	ID          string    `json:"id"`
-	Variant     string    `json:"variant,omitempty"`
-	Image       string    `json:"image,omitempty"`
-	Digest      string    `json:"digest,omitempty"`
-	Tag         string    `json:"tag,omitempty"`
-	InstalledAt string    `json:"installed_at,omitempty"`
-	UpdatedAt   string    `json:"updated_at,omitempty"`
-	Health      string    `json:"health,omitempty"`
-	Provider    string    `json:"provider,omitempty"`
-	Ports       []int     `json:"ports,omitempty"`
-	Previous    string    `json:"previous_image,omitempty"`
-	PreviousTag string    `json:"previous_tag,omitempty"`
-	Services    []string  `json:"compose_services,omitempty"`
-	Warnings    []string  `json:"warnings,omitempty"`
-	Updated     time.Time `json:"-"`
+	ID          string `json:"id"`
+	Variant     string `json:"variant,omitempty"`
+	Image       string `json:"image,omitempty"`
+	Digest      string `json:"digest,omitempty"`
+	Tag         string `json:"tag,omitempty"`
+	InstalledAt string `json:"installed_at,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+	Health      string `json:"health,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	Ports       []int  `json:"ports,omitempty"`
+	Previous    string `json:"previous_image,omitempty"`
+	PreviousTag string `json:"previous_tag,omitempty"`
+	// PreviousDigest es el digest de la imagen anterior. Con tags
+	// mutables, el tag anterior ya apunta a la imagen nueva: volver
+	// atras es volver al digest.
+	PreviousDigest string    `json:"previous_digest,omitempty"`
+	Services       []string  `json:"compose_services,omitempty"`
+	Warnings       []string  `json:"warnings,omitempty"`
+	Updated        time.Time `json:"-"`
 }
 
 // Save escribe el estado de un servicio.
 func (s *State) Save(dir string) error {
+	// El id es el nombre del archivo: si trae "../" el CLI escribe
+	// fuera del directorio de estado.
+	if err := system.SafeName(s.ID); err != nil {
+		return fmt.Errorf("id de estado invalido: %w", err)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -192,6 +201,9 @@ func LoadState(dir, id string) (*State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
 	}
+	// El id del archivo manda: el del JSON no puede divergir (ni
+	// hacer que el Save escriba fuera del directorio de estado).
+	s.ID = id
 	return &s, nil
 }
 

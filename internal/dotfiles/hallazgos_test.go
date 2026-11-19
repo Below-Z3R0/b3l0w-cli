@@ -454,3 +454,128 @@ func TestHallazgo_A6_ForceSobreUnaConfigNoGestionadaDejaBackup(t *testing.T) {
 		t.Fatalf("el backup no tiene el contenido local: %q", backup)
 	}
 }
+
+// -------------------------------------------------------------------
+// M7 — si el estado no se puede guardar, el archivo se revierte
+// -------------------------------------------------------------------
+
+// TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoSeRevierte: el estado
+// se guarda DESPUÉS de escribir el archivo. Si el guardado falla, el
+// archivo queda en disco con el contenido nuevo y la base sigue en la
+// versión anterior: en el pull siguiente eso se lee como "el usuario
+// lo editó" y sale un conflicto falso (con un .new idéntico al local).
+//
+// El arreglo revierte el archivo cuando el estado no se puede guardar,
+// así que el disco y el estado siguen de acuerdo: el pull siguiente
+// aplica la versión del repo, sin conflicto.
+func TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoSeRevierte(t *testing.T) {
+	src, home, statePath := bugSetup(t)
+	repo := filepath.Join(src, "noctalia", "config.toml")
+	local := filepath.Join(home, ".config", "noctalia", "config.toml")
+	bugEscribir(t, repo, "repo-v2")
+	bugEscribir(t, local, "base")
+	bugEstadoBase(t, statePath, map[string]string{
+		"noctalia/config.toml": hash([]byte("base")),
+	})
+
+	// El estado no se puede guardar: la carpeta queda sin permiso de
+	// escritura (loadState funciona, saveState falla).
+	dir := filepath.Dir(statePath)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	if _, err := Pull(src, home, statePath, false, false); err == nil {
+		t.Fatal("Pull debería fallar al guardar el estado")
+	}
+
+	// El archivo local quedó como estaba.
+	got, err := os.ReadFile(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "base" {
+		t.Fatalf("el local quedó con %q: sin base al día se lee como edición del usuario", got)
+	}
+
+	// Con el estado escribible de nuevo, el pull aplica la versión del
+	// repo: no hay conflicto falso.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Pull(src, home, statePath, false, false)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+	if len(res.Conflicts) != 0 {
+		t.Fatalf("conflicto falso: %v", res.Conflicts)
+	}
+	if !contiene(res.Updated, "noctalia/config.toml") {
+		t.Fatalf("Updated = %v, quería la actualización", res.Updated)
+	}
+	got, err = os.ReadFile(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "repo-v2" {
+		t.Fatalf("el local quedó con %q", got)
+	}
+}
+
+// TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoNuevoDesaparece: el
+// mismo arreglo, con un archivo que no existía: sin base al día el
+// archivo instalado se leería como "nunca gestionado" y el siguiente
+// pull lo trataría como conflicto. Se revierte (se borra).
+func TestHallazgo_M7_SiElEstadoNoSeGuardaElArchivoNuevoDesaparece(t *testing.T) {
+	src, home, statePath := bugSetup(t)
+	repo := filepath.Join(src, "noctalia", "config.toml")
+	local := filepath.Join(home, ".config", "noctalia", "config.toml")
+	bugEscribir(t, repo, "repo-v2")
+	os.Remove(local)
+
+	dir := filepath.Dir(statePath)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	if _, err := Pull(src, home, statePath, false, false); err == nil {
+		t.Fatal("Pull debería fallar al guardar el estado")
+	}
+	if _, err := os.Stat(local); !os.IsNotExist(err) {
+		t.Fatal("el archivo instalado quedó sin base en el estado")
+	}
+}
+
+// -------------------------------------------------------------------
+// M8 — la plantilla de Hermes se compara por segmento
+// -------------------------------------------------------------------
+
+// TestHallazgo_M8_LaPlantillaDeHermesSeComparaPorSegmento: la
+// plantilla de Hermes del repo de dotfiles de b3l0w no es configuración
+// del usuario. Se saltea por segmento y desde la raíz del repo:
+// "templates/hermes-viejo" NO es la plantilla y sí se despliega (con el
+// Contains viejo se saltaba de más y esa config nunca llegaba a
+// ~/.config).
+func TestHallazgo_M8_LaPlantillaDeHermesSeComparaPorSegmento(t *testing.T) {
+	src, home, statePath := bugSetup(t)
+	bugEscribir(t, filepath.Join(src, "noctalia", "config.toml"), "repo")
+	bugEscribir(t, filepath.Join(src, "templates", "hermes", "config.toml"), "plantilla")
+	bugEscribir(t, filepath.Join(src, "templates", "hermes-viejo", "config.toml"), "viejo")
+
+	res, err := Pull(src, home, statePath, false, false)
+	if err != nil {
+		t.Fatalf("Pull: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(home, ".config", "templates", "hermes", "config.toml")); !os.IsNotExist(err) {
+		t.Fatal("la plantilla de Hermes se desplegó")
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "templates", "hermes-viejo", "config.toml")); err != nil {
+		t.Fatalf("templates/hermes-viejo no se desplegó: %v", err)
+	}
+	if !contiene(res.Missing, "templates/hermes-viejo/config.toml") {
+		t.Fatalf("Missing = %v", res.Missing)
+	}
+}

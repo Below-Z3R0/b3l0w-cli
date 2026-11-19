@@ -50,3 +50,9 @@ el pacman real. No rompe nada, pero es la excepción a la regla del paquete.
 El chequeo de firmas imprime su propia sección y devuelve cuántos releases
 están sin firma en el segundo valor, sin `Result`. Es el contrato que usa
 `runChecks` para el `extra`.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `hasDependency` deja de ser una función libre y pasa a `Env.disponible` con `PackageInstalled` inyectable: la consulta a pacman (-Q) se puede simular sin correr el pacman real | `TestHasDependency` |

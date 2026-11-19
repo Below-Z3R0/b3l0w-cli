@@ -19,6 +19,8 @@ type Installer struct {
 	StateDir string
 	// RepoDir es donde vive el compose del servicio.
 	RepoDir func(svc Service) string
+	// HealthTimeout es cuanto se espera al healthcheck. Cero = 2 minutos.
+	HealthTimeout time.Duration
 }
 
 // ResolveVariant decide la variante: la que pide el usuario, o la
@@ -151,7 +153,15 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 		Health:      "starting",
 		Ports:       svc.Ports,
 	}
+	// El estado se guarda antes de verificar: si el health falla, el
+	// stack quedo arriba y el CLI tiene que saber que esta instalado.
+	if err := state.Save(in.StateDir); err != nil {
+		return state, err
+	}
 	if err := in.verify(state, svc, dir, files); err != nil {
+		// El servicio quedo arriba sin responder: el estado en disco lo
+		// dice, no se pierde.
+		_ = state.Save(in.StateDir)
 		return state, err
 	}
 	if err := state.Save(in.StateDir); err != nil {
@@ -160,13 +170,34 @@ func (in *Installer) Install(svc Service, variant string, dryRun bool) (*State, 
 	return state, nil
 }
 
+// defaultHealthTimeout es cuanto se espera al healthcheck.
+const defaultHealthTimeout = 120 * time.Second
+
 // verify espera el healthcheck y lee el provider real.
 func (in *Installer) verify(state *State, svc Service, dir string, files []string) error {
+	return verifyHealth(state, svc, in.healthTimeout())
+}
+
+// healthTimeout es cuanto se espera al healthcheck.
+func (in *Installer) healthTimeout() time.Duration {
+	if in.HealthTimeout > 0 {
+		return in.HealthTimeout
+	}
+	return defaultHealthTimeout
+}
+
+// verifyHealth espera el healthcheck y deja el estado con la salud y el
+// provider reales.
+//
+// El status HTTP importa: un 500 no es un servicio sano, asi que el
+// health se repite hasta agotar el tiempo. El cuerpo de un error no se
+// parsea: puede traer un "provider" que no es el del servicio.
+func verifyHealth(state *State, svc Service, timeout time.Duration) error {
 	if svc.Health == "" {
 		state.Health = "ok"
 		return nil
 	}
-	deadline := time.Now().Add(120 * time.Second)
+	deadline := time.Now().Add(timeout)
 	for {
 		body, err := HTTPGet(svc.Health, 5*time.Second)
 		if err == nil {
@@ -185,7 +216,13 @@ func (in *Installer) verify(state *State, svc Service, dir string, files []strin
 			state.Health = "unhealthy"
 			return fmt.Errorf("%s no respondió en %s", svc.Health, svc.Health)
 		}
-		time.Sleep(3 * time.Second)
+		wait := 3 * time.Second
+		if left := time.Until(deadline); left < wait {
+			wait = left
+		}
+		if wait > 0 {
+			time.Sleep(wait)
+		}
 	}
 }
 
@@ -240,6 +277,9 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	if tag == "" {
 		tag = LatestTag(tags, state.Variant)
 	}
+	if tag == "" {
+		return nil, fmt.Errorf("%s: no hay tag publicado para la variante %q", svc.ID, state.Variant)
+	}
 	remoteDigest, err := in.Registry.Digest(svc.Image, tag)
 	if err != nil {
 		return nil, fmt.Errorf("%s: no pude pedir el digest remoto: %w", svc.ID, err)
@@ -263,8 +303,11 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	}
 
 	previous := *state
+	// Lo que queda atras se guarda antes de pisar el estado. El digest
+	// tambien: con tags mutables, volver atras es volver al digest.
 	state.Previous = state.Image
 	state.PreviousTag = state.Tag
+	state.PreviousDigest = NormalizeDigest(state.Digest)
 
 	if rebuild {
 		if err := in.Docker.Pull(svc.Image, tag); err != nil {
@@ -273,14 +316,17 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	}
 	digest, _ := in.Docker.ImageDigest(svc.Image + ":" + tag)
 	state.Digest = digest
+	// El estado guarda lo que really corre: el tag resuelto y la imagen
+	// con ese tag.
+	state.Tag = tag
+	state.Image = svc.Image + ":" + tag
 	state.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	dir := in.repoDir(svc)
 	files := ComposeFiles(svc, state.Variant)
-	env := map[string]string{}
-	if state.Tag != "" {
-		env["IMAGE"] = state.Tag
-	}
+	// El env lleva el tag resuelto, no el del estado: si el estado no
+	// tiene tag, compose levanta su default y corre otra imagen.
+	env := map[string]string{"IMAGE": tag}
 	if err := in.Docker.Up(dir, files, env); err != nil {
 		return &previous, fmt.Errorf("up: %w", err)
 	}
@@ -290,11 +336,14 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 		rollbackEnv := map[string]string{}
 		if previous.Tag != "" {
 			rollbackEnv["IMAGE"] = previous.Tag
-			_ = in.Docker.Pull(svc.Image, previous.Tag)
 		}
+		_ = in.restorePrevious(svc, previous.Digest, previous.Tag, state.Digest)
 		if err := in.Docker.Up(dir, files, rollbackEnv); err != nil {
 			return &previous, fmt.Errorf("rollback falló: %w", err)
 		}
+		// El estado vuelve al anterior, guardando el digest del que se
+		// volvio: asi otro rollback devuelve al nuevo.
+		previous.PreviousDigest = NormalizeDigest(state.Digest)
 		*state = previous
 		return &previous, fmt.Errorf("rollback a %s: %w", previous.Tag, err)
 	}
@@ -303,9 +352,16 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 	}
 	// La imagen que quedó atrás se borra: la PC no acumula una imagen
 	// por cada update.
-	if previous.Image != "" && previous.Image != state.Image {
-		if in.Docker.RemoveImage(previous.Image) {
-			fmt.Printf("  ✓ borrada la imagen anterior: %s\n", previous.Image)
+	oldImage := previous.Image
+	prevDigest := NormalizeDigest(previous.Digest)
+	if prevDigest != "" && prevDigest != NormalizeDigest(state.Digest) {
+		// Con tags mutables el tag ya apunta a la imagen nueva: la que
+		// quedó atrás se borra por su digest.
+		oldImage = svc.Image + "@" + prevDigest
+	}
+	if oldImage != "" && oldImage != state.Image {
+		if in.Docker.RemoveImage(oldImage) {
+			fmt.Printf("  ✓ borrada la imagen anterior: %s\n", oldImage)
 		}
 	}
 	return state, nil

@@ -210,12 +210,26 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 					return nil
 				}
 			}
-			if err := writeFile(resolveDest(dest), remote, srcMode); err != nil {
+			destino := resolveDest(dest)
+			if err := writeFile(destino, remote, srcMode); err != nil {
 				notar(rel, err)
 				return nil
 			}
+			// La base anterior se guarda para poder volver atrás si el
+			// estado no se puede guardar: un archivo nuevo con la base
+			// vieja se lee como "cambió el usuario" en el pull
+			// siguiente (conflicto falso, M7).
+			baseVieja, habiaBase := st[rel]
 			st[rel] = remoteHash
 			if err := persistir(); err != nil {
+				if habiaBase {
+					st[rel] = baseVieja
+				} else {
+					delete(st, rel)
+				}
+				if rerr := revertir(destino, local, localExists); rerr != nil {
+					return fmt.Errorf("%w; y no se pudo revertir %s: %v", err, rel, rerr)
+				}
 				return err
 			}
 			res.Changed = true
@@ -420,13 +434,30 @@ func skip(rel string) bool {
 	if base == "README.md" || strings.HasSuffix(base, ".md") {
 		return true
 	}
-	if strings.Contains(rel, "templates/hermes") {
+	// La plantilla de Hermes del repo de dotfiles de b3l0w no es
+	// configuración del usuario. La comparación es por segmento y
+	// desde la raíz: "templates/hermes-viejo/" NO es la plantilla y sí
+	// se despliega (con un Contains se saltaba de más).
+	if esTemplatesHermes(rel) {
 		return true
 	}
 	if base == "outputs.toml" {
 		return true
 	}
 	return false
+}
+
+// esTemplatesHermes dice si la ruta es la plantilla de Hermes:
+// "templates/hermes" en la raíz del repo, con lo que haya debajo.
+//
+// Se compara por segmento, no por substring: "templates/hermes-viejo"
+// es otra carpeta.
+func esTemplatesHermes(rel string) bool {
+	seg := strings.Split(filepath.ToSlash(rel), "/")
+	if len(seg) < 2 {
+		return false
+	}
+	return seg[0] == "templates" && seg[1] == "hermes"
 }
 
 // vcsDir dice si un nombre es el de un directorio de control de
@@ -490,6 +521,22 @@ func backupLocal(dest string, content []byte) error {
 	backup := dest + ".bak"
 	// Un .bak previo se sobreescribe: el último es el que importa.
 	return writeFile(backup, content, 0o644)
+}
+
+// revertir deja el destino como estaba: el contenido local anterior,
+// o lo borra si el archivo no existía.
+//
+// Se usa cuando el estado no se puede guardar después de escribir el
+// archivo: sin base al día, el pull siguiente leería el archivo nuevo
+// como un cambio del usuario (conflicto falso, M7).
+func revertir(destino string, local []byte, localExists bool) error {
+	if !localExists {
+		if err := os.Remove(destino); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return writeFile(destino, local, 0o644)
 }
 
 // resolveDest sigue los symlinks del destino: escribir encima del link
