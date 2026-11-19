@@ -308,3 +308,9 @@ estado final del worktree no tiene archivos de probe.
 | ID | Arreglo | Test |
 |---|---|---|
 | A1 | El freno de partial upgrade recorre **todos** los argumentos, no solo `pacmanArgs[0]`. `--noconfirm -Sy firefox` ahora sale con 1. | `TestRunRechazaPartialUpgradeNoPrimero` |
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A2 | `exec()` devuelve el `ExitCode()` real de pacman con `errors.As` sobre `*osexec.ExitError` (el import va con alias porque la función local se llama `exec`). Un 127 ya no se confunde con un 1 | `TestExecPropagaElExitCode`, `TestExecDevuelveCeroCuandoTodoVaBien` |

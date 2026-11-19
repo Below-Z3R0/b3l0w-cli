@@ -11,8 +11,10 @@
 package apps
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -87,6 +89,13 @@ func exec(root bool, args ...string) int {
 		full = append([]string{"pacman"}, args...)
 	}
 	if err := system.Interactive(nombre, full...); err != nil {
+		// El exit code de pacman, no un 1 genérico: un 127 (el binario
+		// no existe) no le dice lo mismo a un script que un 1 (la
+		// transacción falló).
+		var exitErr *osexec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
 		return 1
 	}
 	return 0
