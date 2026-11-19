@@ -70,6 +70,10 @@ func validCover(dir string, entry Entry) bool {
 
 // adopt reutiliza el caché del plugin viejo con hardlinks: 68 MB de carátulas
 // ya descargadas no se vuelven a bajar y no ocupan el doble.
+//
+// El `.jpg` sí se hardlinkea (es el mismo contenido), pero el `.meta.json` NO:
+// compartir el inode hacía que reescribir el meta del destino corrompiera el
+// caché de origen para siempre (A2). El meta se copia, con inode propio.
 func adopt(dir, reuse string) int {
 	if reuse == "" || reuse == dir {
 		return 0
@@ -81,11 +85,19 @@ func adopt(dir, reuse string) int {
 	adopted := 0
 	for _, item := range entries {
 		name := item.Name()
-		if !strings.HasSuffix(name, ".jpg") && !strings.HasSuffix(name, ".meta.json") {
+		isMeta := strings.HasSuffix(name, ".meta.json")
+		if !strings.HasSuffix(name, ".jpg") && !isMeta {
 			continue
 		}
 		target := filepath.Join(dir, name)
 		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		if isMeta {
+			// Copia, nunca hardlink: el inode del origen no se comparte.
+			if err := copyFile(filepath.Join(reuse, name), target); err == nil {
+				adopted++
+			}
 			continue
 		}
 		if err := os.Link(filepath.Join(reuse, name), target); err == nil {
@@ -145,12 +157,24 @@ func downloadCover(ctx context.Context, client *http.Client, entry Entry, dir st
 		os.Remove(tmp)
 		return err
 	}
-	meta, _ := json.Marshal(coverMeta{URL: entry.CoverURL, Version: CoverVersion})
-	if err := os.WriteFile(metaPath(dir, entry.MediaID), meta, 0o600); err != nil {
+	if err := os.Rename(tmp, final); err != nil {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, final)
+	// El meta se escribe atómico y DESPUÉS del JPG: un lector concurrente nunca
+	// ve meta nuevo con imagen vieja, y el rename le da un inode propio, así
+	// que no puede escribir sobre un caché de origen hardlinkeado (A2, B1).
+	meta, _ := json.Marshal(coverMeta{URL: entry.CoverURL, Version: CoverVersion})
+	metaFinal := metaPath(dir, entry.MediaID)
+	metaTmp := metaFinal + ".part"
+	if err := os.WriteFile(metaTmp, meta, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(metaTmp, metaFinal); err != nil {
+		os.Remove(metaTmp)
+		return err
+	}
+	return nil
 }
 
 // SyncCovers garantiza que cada entrada con carátula tenga un archivo local y
@@ -181,6 +205,9 @@ func SyncCovers(ctx context.Context, entries []Entry, dir string, opts CoverOpti
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, workers)
+	// Los ids cuya descarga falló no son huérfanos: el GC no los puede borrar
+	// porque la carátula que ya estaba en disco sigue siendo la buena (A1).
+	failed := map[string]bool{}
 	for _, entry := range pending {
 		wg.Add(1)
 		go func(e Entry) {
@@ -192,6 +219,7 @@ func SyncCovers(ctx context.Context, entries []Entry, dir string, opts CoverOpti
 			defer mu.Unlock()
 			if err != nil {
 				stats.Failed++
+				failed[strconv.Itoa(e.MediaID)] = true
 				return
 			}
 			stats.Downloaded++
@@ -201,7 +229,7 @@ func SyncCovers(ctx context.Context, entries []Entry, dir string, opts CoverOpti
 	wg.Wait()
 
 	if opts.GC {
-		stats.Removed = gcOrphans(dir, stats.Covers)
+		stats.Removed = gcOrphans(dir, stats.Covers, failed)
 	}
 	for _, path := range stats.Covers {
 		if info, err := os.Stat(path); err == nil {
@@ -212,7 +240,9 @@ func SyncCovers(ctx context.Context, entries []Entry, dir string, opts CoverOpti
 }
 
 // gcOrphans borra JPG y meta que ya no corresponden a ninguna entrada.
-func gcOrphans(dir string, covers map[string]string) int {
+// `keep` son los ids cuya descarga falló en esta pasada: no están en `covers`,
+// pero su JPG sigue siendo válido y no se puede borrar (A1).
+func gcOrphans(dir string, covers map[string]string, keep map[string]bool) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
@@ -225,6 +255,9 @@ func gcOrphans(dir string, covers map[string]string) int {
 		}
 		id := strings.TrimSuffix(name, ".jpg")
 		if _, ok := covers[id]; ok {
+			continue
+		}
+		if keep[id] {
 			continue
 		}
 		if os.Remove(filepath.Join(dir, name)) == nil {

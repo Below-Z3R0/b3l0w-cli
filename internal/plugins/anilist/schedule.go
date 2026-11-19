@@ -23,8 +23,8 @@ type AiringItem struct {
 	MediaType string `json:"mediaType"`
 }
 
-// Schedule es la agenda de emisión: los capítulos que仍未 se emitieron de
-// las series que el usuario está siguiendo.
+// Schedule es la agenda de emisión: los capítulos que todavía no se emitieron
+// de las series que el usuario está siguiendo.
 type Schedule struct {
 	Items     []AiringItem `json:"items"`
 	FetchedAt int64        `json:"fetchedAt"`
@@ -32,9 +32,11 @@ type Schedule struct {
 
 // currentListQuery trae las series que el usuario está viendo con su próximo
 // capítulo. `Page.mediaList` es la lista (a diferencia del `MediaList` de
-// raíz, que devuelve un solo objeto).
-const currentListQuery = `query ($userId: Int) {
-  Page(page: 1, perPage: 50) {
+// raíz, que devuelve un solo objeto). El `pageInfo` es lo que permite traer
+// TODAS: sin paginar, un usuario con más de 50 series en curso veía sólo 50.
+const currentListQuery = `query ($userId: Int, $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
     mediaList(userId: $userId, status: CURRENT) {
       mediaId
       status
@@ -49,9 +51,11 @@ const currentListQuery = `query ($userId: Int) {
 }`
 
 // scheduleQuery trae los capítulos futuros de un conjunto de medias.
-// `airingSchedules` acepta mediaId_in y ordena por fecha.
-const scheduleQuery = `query ($ids: [Int]) {
-  Page(page: 1, perPage: 50) {
+// `airingSchedules` acepta mediaId_in y ordena por fecha; se pagina igual que
+// la lista, porque la primera página también se cortaba en 50.
+const scheduleQuery = `query ($ids: [Int], $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
     airingSchedules(mediaId_in: $ids, notYetAired: true, sort: [TIME]) {
       mediaId
       episode
@@ -67,6 +71,9 @@ const scheduleQuery = `query ($ids: [Int]) {
 
 type currentListResponse struct {
 	Page struct {
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
 		MediaList []struct {
 			MediaID int    `json:"mediaId"`
 			Status  string `json:"status"`
@@ -90,6 +97,9 @@ type currentListResponse struct {
 
 type scheduleResponse struct {
 	Page struct {
+		PageInfo struct {
+			HasNextPage bool `json:"hasNextPage"`
+		} `json:"pageInfo"`
 		Schedules []struct {
 			MediaID  int   `json:"mediaId"`
 			Episode  int   `json:"episode"`
@@ -122,43 +132,61 @@ func FetchSchedule(ctx context.Context, c *Client, userID int) (Schedule, error)
 		userID = viewer.ID
 	}
 	var list currentListResponse
-	if err := c.Query(ctx, currentListQuery, map[string]any{"userId": userID}, &list); err != nil {
-		return out, err
-	}
 	titulos := map[int]AiringItem{}
-	ids := make([]int, 0, len(list.Page.MediaList))
-	for _, entry := range list.Page.MediaList {
-		item := AiringItem{
-			MediaID:   entry.MediaID,
-			Title:     entry.Media.Title.Preferred,
-			CoverURL:  entry.Media.Cover.ExtraLarge,
-			CoverClr:  entry.Media.Cover.Color,
-			MediaType: "ANIME",
+	ids := make([]int, 0, 50)
+	// Se pagina hasta agotar: con más de 50 series en curso, las que sobraban
+	// no aparecían en la agenda (A3). El corte por lista vacía es la red de
+	// seguridad contra un `hasNextPage` que mienta.
+	for page := 1; ; page++ {
+		if err := c.Query(ctx, currentListQuery, map[string]any{"userId": userID, "page": page}, &list); err != nil {
+			return out, err
 		}
-		titulos[entry.MediaID] = item
-		ids = append(ids, entry.MediaID)
+		for _, entry := range list.Page.MediaList {
+			if _, seen := titulos[entry.MediaID]; seen {
+				continue
+			}
+			item := AiringItem{
+				MediaID:   entry.MediaID,
+				Title:     entry.Media.Title.Preferred,
+				CoverURL:  entry.Media.Cover.ExtraLarge,
+				CoverClr:  entry.Media.Cover.Color,
+				MediaType: "ANIME",
+			}
+			titulos[entry.MediaID] = item
+			ids = append(ids, entry.MediaID)
+		}
+		if !list.Page.PageInfo.HasNextPage || len(list.Page.MediaList) == 0 {
+			break
+		}
 	}
 	if len(ids) == 0 {
 		return out, nil
 	}
-	var sched scheduleResponse
-	if err := c.Query(ctx, scheduleQuery, map[string]any{"ids": ids}, &sched); err != nil {
-		return out, fmt.Errorf("agenda de emisión: %w", err)
-	}
-	for _, node := range sched.Page.Schedules {
-		item, ok := titulos[node.MediaID]
-		if !ok {
-			item = AiringItem{
-				MediaID:   node.MediaID,
-				Title:     node.Media.Title.Preferred,
-				CoverURL:  node.Media.Cover.ExtraLarge,
-				CoverClr:  node.Media.Cover.Color,
-				MediaType: "ANIME",
-			}
+	// La query de capítulos también se pagina: la primera página traía 50 y el
+	// resto se perdía con `hasNextPage: true` (A4).
+	for page := 1; ; page++ {
+		var sched scheduleResponse
+		if err := c.Query(ctx, scheduleQuery, map[string]any{"ids": ids, "page": page}, &sched); err != nil {
+			return out, fmt.Errorf("agenda de emisión: %w", err)
 		}
-		item.Episode = node.Episode
-		item.AiringAt = node.AiringAt
-		out.Items = append(out.Items, item)
+		for _, node := range sched.Page.Schedules {
+			item, ok := titulos[node.MediaID]
+			if !ok {
+				item = AiringItem{
+					MediaID:   node.MediaID,
+					Title:     node.Media.Title.Preferred,
+					CoverURL:  node.Media.Cover.ExtraLarge,
+					CoverClr:  node.Media.Cover.Color,
+					MediaType: "ANIME",
+				}
+			}
+			item.Episode = node.Episode
+			item.AiringAt = node.AiringAt
+			out.Items = append(out.Items, item)
+		}
+		if !sched.Page.PageInfo.HasNextPage || len(sched.Page.Schedules) == 0 {
+			break
+		}
 	}
 	return out, nil
 }

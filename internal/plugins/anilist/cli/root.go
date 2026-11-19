@@ -142,16 +142,26 @@ func runSync(args []string) int {
 		return fail(err, *asJSON)
 	}
 	all := append(append([]anilist.Entry{}, lib.Anime...), lib.Manga...)
+	// "No pude leer la biblioteca" no es "esa entrada ya no está": con una
+	// lista parcial, el GC borraría las carátulas del tipo que falló (C1).
+	gcEffective := *gc && !lib.Partial
 	stats, err := anilist.SyncCovers(ctx, all, target, anilist.CoverOptions{
 		Workers:  *workers,
 		ReuseDir: *reuse,
-		GC:       *gc,
+		GC:       gcEffective,
 	})
 	if err != nil {
 		return fail(err, *asJSON)
 	}
 	out := payload{Library: lib, Covers: stats.Covers, Stats: &stats, Dir: stats.Dir}
-	return emit(out, *asJSON, func() { printLibrary(lib, stats) })
+	code := emit(out, *asJSON, func() { printLibrary(lib, stats) })
+	if lib.Partial && *gc {
+		// El pedido de GC no se pudo cumplir: el usuario tiene que enterarse
+		// por el exit code y no sólo por el texto.
+		fmt.Fprintln(os.Stderr, "aviso: biblioteca incompleta; no se borró ninguna carátula")
+		return 1
+	}
+	return code
 }
 
 func runLibrary(args []string) int {
