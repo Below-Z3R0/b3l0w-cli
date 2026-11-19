@@ -1,7 +1,8 @@
 # dotfiles
 
-Aplica los TOML del repo de distribución sobre `~/.config` **sin pisar los
-cambios locales**. Merge 3-way por hash: el estado guarda el sha256 de la
+Aplica el árbol del repo de distribución sobre `~/.config` —TOML, scripts,
+binarios: todo lo que no caiga en `skip()`— **sin pisar los cambios
+locales**. Merge 3-way por hash: el estado guarda el sha256 de la
 última versión aplicada por archivo, y de ahí sale la decisión (`local ==
 base` → el repo manda; `remote == base` → solo cambió el local, se
 conserva; ambos cambian → conflicto y se escribe `<archivo>.new`).
@@ -108,12 +109,6 @@ archivo como "no editado por el usuario" y **el repo gana** sobre él
 desde la primera corrida. No pisa nada y no borra entradas del estado:
 solo agrega. Un `dryRun` opcional evita escribir el estado.
 
-> El docstring de `Adopt` en `pull.go` dice "registra la versión del repo
-> como base", pero el código registra el hash local (`hash(local)`). El
-> comportamiento no cambió en el commit `2bb6eaf` — el docstring anterior
-> ("el hash actual de cada archivo local") era el correcto y este lo
-> dejó desactualizado.
-
 ## Result
 
 | Campo | Qué significa |
@@ -149,7 +144,9 @@ en el estado y ya no aparece en el repo se reporta.
 - **El estado se persiste por archivo.** Se guarda después de cada
   archivo aplicado, no al final. Si una escritura falla a la mitad, los
   archivos ya escritos no quedan con la base vieja (que dispararía
-  conflictos falsos en el pull siguiente).
+  conflictos falsos en el pull siguiente). Si falla el **guardado** del
+  estado después del write, el archivo escrito se revierte y la base en
+  memoria vuelve a la anterior: el disco y el estado no divergen.
 - **Los huérfanos se podan del estado, no del disco.** El estado tiene
   que reflejar lo que el repo maneja hoy. Los archivos del home son del
   usuario: avisar, no borrar.
@@ -177,7 +174,9 @@ en el estado y ya no aparece en el repo se reporta.
   (`internal/update/update.go` solo recorre `Updated`, `Kept`, `Missing`
   y `Conflicts`). Los campos están listos para usar; falta el `output`.
 - La CLI hace un `Pull` en dry-run antes del real para detectar
-  conflictos y preguntar antes de pisar.
+  conflictos y preguntar antes de pisar. Solo cuando no es `--dry-run` ni
+  `--force`, y si el preview no falla: un preview con error aborta antes
+  del pull real. El preview lista `Conflicts`, no `ForceOverwrites`.
 - Cuando `--force` pisa una config que **nunca estuvo gestionada**
   (rama 4), deja un `.bak` del contenido local al lado. Sin ese backup
   ese trabajo se perdía en silencio: el `.new` no alcanza porque el
@@ -199,3 +198,16 @@ en el estado y ya no aparece en el repo se reporta.
 | `orphan_test.go` | los huérfanos: se reportan, no se borran |
 | `force_test.go` | `--force`: qué pisa, qué conserva, qué lista |
 | `dryrun_test.go` | el dry-run no escribe archivo, ni `.new`, ni estado |
+
+## Casos límite documentados
+
+- **Un archivo que desaparece del home no se reinstala solo.** Si había base
+  y el local no está, se asume que el usuario lo borró a propósito. Es el
+  mismo caso que un `$HOME` nuevo o un archivo movido de lugar, y no se
+  distingue. Para reinstalarlo: `--force`, o borrar la entrada del estado.
+- **El `.new` de un conflicto no se limpia solo.** Queda hasta que el usuario
+  lo borra o lo mergea; nombrarlo con la versión del repo sería más claro,
+  pero el pull no sabe cuándo el usuario terminó de mergear.
+- **`Pull` devuelve 0 aunque queden conflictos sin resolver.** Diferenciar
+  "merge pendiente" de "todo bien" necesita un código de salida distinto o un
+  `--strict`, y eso es contrato de `cmd/`, no de este paquete.
