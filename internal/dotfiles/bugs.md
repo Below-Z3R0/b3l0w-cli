@@ -729,3 +729,19 @@ el layout real del repo de dotfiles para C2.
 
 M4 queda **descartado**: el costo de `--force` es una decisión de diseño
 documentada, no un bug.
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado: `copyFile` ya no figura en el README (el refactor lo eliminó) | — |
+| B2 | Descartado: el callout del docstring ya no aplica, el docstring dice "el contenido LOCAL actual como base" | — |
+| B3 | README: "aplica el árbol del repo", no solo los TOML | verificado con `verificar-readmes.py` |
+| B4 | README: la persistencia se matiza con el guardado fallido (M7) | verificado con `verificar-readmes.py` |
+| B5 | README: el preview tiene condiciones (no dry-run, no force, sin error) y solo lista `Conflicts` | verificado con `verificar-readmes.py` |
+| B6 | `skip()` sin la condición redundante `base == "README.md"` (subsumida por `.md`) | sin test: código muerto, el comportamiento no cambia |
+| B7 | README: "Casos límite documentados" — un archivo que desaparece no se reinstala solo | — |
+| B8 | Ya estaba: `Adopt` devuelve `count, err` en el guardado fallido | código |
+| B9 | README: el `.new` de un conflicto no se limpia solo | — |
+| B10 | README: `Pull` devuelve 0 con conflictos; el exit distinto es contrato de `cmd/` | fuera de alcance |
+| B11 | El `.new` se escribe junto al target del symlink (`resolveDest`) | `TestHallazgo_B11_ElNewVaJuntoAlTargetDelSymlink` |

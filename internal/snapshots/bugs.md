@@ -70,3 +70,9 @@ momento de leerlo. El código ya advierte cuando `removed == 0 && total > keep`
 | ID | Arreglo | Test |
 |---|---|---|
 | A1 | `Prune` devuelve `len(old)` aunque el `limine-snapper-sync` falle: las entradas ya se borraron y devolver 0 le mentía al llamador | `TestPrune_ErrorEnSync` (ahora espera 2, no 0) |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado: `total-removed` es correcto cuando el conteo y la lista coinciden, y el warning ya cubre la discrepancia | `TestReport_ElMensajeDeQuedanMiente`, `TestReport_ConDiscrepanciaEntreConteoYLista` |

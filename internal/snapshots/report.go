@@ -50,6 +50,8 @@ func Report(keep int, yes bool) int {
 	}
 	// Las que quedan son las que había menos las borradas, no `keep`:
 	// con un keep chico y una lista corta, `keep` mentía.
+	// Las que quedan son las que había menos las borradas, no `keep`:
+	// con un keep chico y una lista corta, `keep` mentía.
 	output.Ok(fmt.Sprintf("%d entradas borradas; quedan %d", removed, total-removed))
 	return 0
 }

@@ -334,3 +334,9 @@ nuevos.
 | ID | Arreglo | Test |
 |---|---|---|
 | A1 | `Check` elige el tag de versión más alta con `compareVersions`, no el primero de la lista. Draft y prerelease se siguen ignorando. | `TestCheckDevuelveElMayor` y `TestCheckIgnoraDraftYPrerelease` |
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `per_page=100`: el repo publica los `desktop-*`, y con 30 posiciones el tag `v*` del CLI podía quedar fuera | `TestAPIUsaPerPage100` |

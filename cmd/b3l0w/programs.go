@@ -51,7 +51,10 @@ func installCommand(args []string) int {
 				output.Fail(fmt.Sprintf("%s no está registrado (b3l0w install %s --source=github:owner/repo --asset=archivo)", name, name))
 				return 1
 			}
-			m.AddProgram(config.Program{Name: name, Source: source, Asset: asset})
+			if _, err := m.AddProgram(config.Program{Name: name, Source: source, Asset: asset}); err != nil {
+				output.Fail(err.Error())
+				return 1
+			}
 			if err := m.Save(paths.ManifestPath()); err != nil {
 				output.Fail(fmt.Sprintf("no se pudo guardar el manifiesto: %v", err))
 				return 1
@@ -147,7 +150,12 @@ func programCommand(args []string) int {
 	return withManifest(func(m *config.Manifest) int {
 		switch action {
 		case "add":
-			if !m.AddProgram(config.Program{Name: name, Source: source, Asset: asset}) {
+			nuevo, err := m.AddProgram(config.Program{Name: name, Source: source, Asset: asset})
+			if err != nil {
+				output.Fail(err.Error())
+				return 1
+			}
+			if !nuevo {
 				output.Warn(fmt.Sprintf("%s ya estaba registrado", name))
 				return 0
 			}

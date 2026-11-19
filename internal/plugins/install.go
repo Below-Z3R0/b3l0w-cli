@@ -169,7 +169,7 @@ func updateFromSource(targets []Entry, dryRun bool) error {
 			fmt.Printf("  ✓ %s: al día (%s)\n", entry.ID, meta.Version)
 			continue
 		}
-		fmt.Printf("  ▸ %s: %s -> %s (source)\n", entry.ID, entry.Version, meta.Version)
+		fmt.Printf("  ▸ %s: %s -> %s (source)\n", entry.ID, meta.Version, entry.Version)
 	}
 	return nil
 }
@@ -223,8 +223,9 @@ func installOne(entry Entry, pluginsDir string, dryRun bool) error {
 	}
 	defer os.Remove(tmp)
 
-	prefix := "b3l0w-plugins-main/" + slug(entry) + "/"
-	if err := extractPrefix(tmp, prefix, dest); err != nil {
+	// La carpeta raíz del tarball es <repo>-<rama>: cambia si el repo se
+	// renombra o la rama por defecto cambia. El nombre del plugin no.
+	if err := extractPlugin(tmp, slug(entry), dest); err != nil {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dest, "plugin.toml")); err != nil {
@@ -258,7 +259,7 @@ func downloadTarball() (string, error) {
 
 // extractPrefix extrae solo las entradas que empiezan con prefix,
 // quitándolo. Rechaza rutas que se escapan del destino.
-func extractPrefix(tarball, prefix, dest string) error {
+func extractPlugin(tarball, plugin, dest string) error {
 	f, err := os.Open(tarball)
 	if err != nil {
 		return err
@@ -279,10 +280,11 @@ func extractPrefix(tarball, prefix, dest string) error {
 		if err != nil {
 			return err
 		}
-		if !strings.HasPrefix(hdr.Name, prefix) {
+		partes := strings.Split(strings.TrimPrefix(hdr.Name, "./"), "/")
+		if len(partes) < 2 || partes[1] != plugin {
 			continue
 		}
-		rel := strings.TrimPrefix(hdr.Name, prefix)
+		rel := strings.Join(partes[2:], "/")
 		if rel == "" {
 			continue
 		}

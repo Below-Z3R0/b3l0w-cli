@@ -52,3 +52,10 @@ siempre termina en salto, así que no se reprodujo.
 | ID | Arreglo | Test |
 |---|---|---|
 | M1 | `Configurado` compara la línea exacta `[b3l0w]`, no un substring: `[b3l0w-extra]` y `# [b3l0w]` (comentada) ya no cuentan como configuradas | `TestConfiguradoSoloCuentaLaSeccionExacta` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado: `Section` empieza con `\n` y termina con `\n`, así que el archivo sin salto final queda bien separado. | —
+| B2 | `AgregarRepo` rechaza una sección que no empiece con `[`: la firma es exportada y no puede escribir basura en `/etc/pacman.conf` | `TestAgregarRepoRechazaUnaSeccionQueNoEsUnBloque` |

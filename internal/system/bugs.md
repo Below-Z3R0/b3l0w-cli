@@ -51,3 +51,10 @@ usuario corre a mano.
 | ID | Arreglo | Test |
 |---|---|---|
 | M1 | `Pending` parsea la salida real de `arch-update -l`: quita los códigos ANSI de las cabeceras (sin eso el conteo queda en cero), ignora `Flatpak Packages:` y solo cuenta líneas con forma de paquete | `TestPendingParseaLaSalidaRealDeArchUpdate`, `TestPendingNoCuentaLosPaquetesDeFlatpak`, `TestPendingNoCuentaLasLineasQueNoSonPaquetes` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado: `CommandPath` usa `exec.LookPath`, que ya exige el bit de ejecución | —
+| B2 | `RunTimeout` envuelve `context.DeadlineExceeded` y `List` lo distingue de un fallo del actualizador | `TestRunTimeoutEnvuelveElCuelgue` |

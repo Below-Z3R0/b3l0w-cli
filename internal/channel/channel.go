@@ -56,7 +56,13 @@ func Set(name string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(name+"\n"), 0o644)
+	// Escribir a un temporal y renombrar: un corte deja el archivo viejo,
+	// no uno a medias ("st", "e") que Current() devolveria tal cual.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(name+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func installed(pkg string) bool {

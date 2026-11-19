@@ -47,6 +47,12 @@ func Configurado(path string) bool {
 // devuelve el error para que el llamador avise; no deja el archivo a
 // medio escribir porque tee escribe de una sola vez.
 func AgregarRepo(path, section string) error {
+	// La sección tiene que ser un bloque de pacman.conf, no cualquier
+	// texto: la firma es exportada y un llamador equivocado escribiría
+	// basura en /etc/pacman.conf.
+	if !strings.HasPrefix(strings.TrimSpace(section), "[") {
+		return fmt.Errorf("la sección no es un bloque de pacman.conf: %q", section)
+	}
 	cmd := exec.Command("sudo", "tee", "-a", path)
 	cmd.Stdin = strings.NewReader(section)
 	cmd.Stdout = nil

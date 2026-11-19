@@ -36,7 +36,7 @@ func LoadRemote() (*Definition, error) {
 	client := &http.Client{Timeout: remoteTimeout}
 	if data, err := remoteGet(client); err == nil {
 		if d, perr := parse(data); perr == nil {
-			writeCache(cache, data)
+			_ = writeCache(cache, data) // el caché es una comodidad, no la fuente
 			return d, nil
 		}
 	}
@@ -97,9 +97,11 @@ func readCache(path string) ([]byte, bool) {
 	return data, err == nil
 }
 
-func writeCache(path string, data []byte) {
+// writeCache deja una copia local. Devuelve el error: un disco lleno no
+// se arregla solo, y el llamador decide si el caché es crítico o no.
+func writeCache(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
+		return err
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o644)
 }

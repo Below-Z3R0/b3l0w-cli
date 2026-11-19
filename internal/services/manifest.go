@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 
@@ -168,10 +167,9 @@ type State struct {
 	// PreviousDigest es el digest de la imagen anterior. Con tags
 	// mutables, el tag anterior ya apunta a la imagen nueva: volver
 	// atras es volver al digest.
-	PreviousDigest string    `json:"previous_digest,omitempty"`
-	Services       []string  `json:"compose_services,omitempty"`
-	Warnings       []string  `json:"warnings,omitempty"`
-	Updated        time.Time `json:"-"`
+	PreviousDigest string   `json:"previous_digest,omitempty"`
+	Services       []string `json:"compose_services,omitempty"`
+	Warnings       []string `json:"warnings,omitempty"`
 }
 
 // Save escribe el estado de un servicio.

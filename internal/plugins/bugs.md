@@ -455,3 +455,12 @@ Los tres caminos de borrado/ejecución fuera del directorio privado, con
 | C1 | `installOne` valida `entry.Path` y el nombre del slug antes de los dos `os.RemoveAll`. | `TestInstallOneNoBorraFueraDelDirectorio` |
 | C2 | `slug()` valida con `SafeName` y devuelve `""` si el nombre no es un componente simple: nunca más `..`. | `TestSlugNuncaDevuelveUnPath` |
 | A1 | `Find()` valida el nombre antes de componer el path: `"../../bin/sh"` devuelve `""`. | `TestFindRechazaTraversal` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `parse` solo exige versión; una lista vacía es válida (todos los plugins dados de baja) | `TestParseAceptaUnaListaVacia`, `TestParseRechazaSinVersion` |
+| B2 | `extractPlugin` busca por el nombre del plugin, no por el prefijo `<repo>-<rama>`: renombrar el repo ya no rompe el install | `TestExtractPluginNoDependeDelNombreDelRepo`, `TestExtractPluginIgnoraOtrosPlugins` |
+| B3 | `updateFromSource` imprime origen -> destino (`meta.Version -> entry.Version`), como el camino sin source | código |
+| B4 | `DependenciesFrom(m, dir)` separa la lectura del manifiesto y el home real: el test ya no depende de la red | `TestDependencies`, `TestDependenciesSinPluginToml` |

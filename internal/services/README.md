@@ -200,3 +200,11 @@ manifiesto y del estado, `ListStates`) · más los previos
 **Nunca se toca Docker real.** El adapter llama a `docker` por el PATH,
 así que los tests ponen un stub delante: registra cada llamada y puede
 fallar a propósito, para probar los caminos de error.
+
+## Tags de caché (`buildcache`)
+
+Los builds de las variantes publican también un tag `-buildcache`: es la
+capa de compilación de la imagen, no una variante instalable. `Variants`
+no lo lista y `SwitchVariant` no lo acepta; existe solo para que un
+rebuild no recompile todo desde cero. El test que lo menciona
+(`install_test.go`) verifica que no se cuele en la lista de variantes.

@@ -56,3 +56,9 @@ están sin firma en el segundo valor, sin `Result`. Es el contrato que usa
 | ID | Arreglo | Test |
 |---|---|---|
 | M1 | `hasDependency` deja de ser una función libre y pasa a `Env.disponible` con `PackageInstalled` inyectable: la consulta a pacman (-Q) se puede simular sin correr el pacman real | `TestHasDependency` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado por diseño: el chequeo de firmas devuelve `nil` y cuenta en el segundo valor porque no produce `Result` | `TestRunChecksCuentaCadaFalloUnaVez` |

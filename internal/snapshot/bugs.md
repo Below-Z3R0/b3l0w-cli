@@ -53,3 +53,9 @@ vacío; el tope sería la otra mitad de la misma validación.
 | ID | Arreglo | Test |
 |---|---|---|
 | A1 | `Create` corre `snapper -c home list` antes del `create`: distingue "no existe la config `home`" (aviso esperable) de "snapper falló" | `TestCreateConSnapperQueFalla` (el fake ahora falla solo el `create` con `FAKE_FAIL_ON`), `TestCreateConSnapperInstalado` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `Create` rechaza un label con saltos de línea o de más de 200 caracteres, además del vacío | `TestCreateRechazaUnLabelConSaltoDeLinea`, `TestCreateRechazaUnLabelMuyLargo` |

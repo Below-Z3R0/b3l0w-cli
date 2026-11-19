@@ -116,7 +116,9 @@ func Run(m *config.Manifest, opts Options) int {
 	if !opts.Yes {
 		if !confirm.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted, dotfilesWanted), false, true) {
 			output.Warn("cancelled")
-			return 0
+			// Cancelar no es "se actualizó todo": un script tiene que
+			// poder distinguirlo.
+			return 1
 		}
 	}
 
@@ -337,10 +339,15 @@ func syncRegistry(systemWanted, servicesWanted, pluginsWanted bool) {
 	if pluginsWanted {
 		kinds = append(kinds, registry.Plugins)
 	}
+	failed := 0
 	for _, kind := range kinds {
 		if _, err := registrySync(kind, nil); err != nil {
-			output.Warn(err.Error())
+			output.Warn(fmt.Sprintf("%s: %v", kind, err))
+			failed++
 		}
+	}
+	if failed > 0 {
+		output.Warn(fmt.Sprintf("%d de %d catálogos sin refrescar; se usa la copia local", failed, len(kinds)))
 	}
 }
 
@@ -746,7 +753,11 @@ func checkDesktop() bool {
 		return false
 	}
 	for _, pkg := range remote {
-		local := localVersion(pkg.Name)
+		local, err := localVersion(pkg.Name)
+		if err != nil {
+			output.Warn(fmt.Sprintf("%s: no se pudo leer la versión: %v", pkg.Name, err))
+			continue
+		}
 		switch {
 		case local == "":
 			output.Warn(fmt.Sprintf("%s: no instalado (%s)", pkg.Name, ch))
@@ -772,16 +783,25 @@ func desktopUpdate() int {
 	return 0
 }
 
-func localVersion(pkg string) string {
+// localVersion devuelve la versión instalada de un paquete.
+//
+// "" con nil es "no instalado"; el error es un fallo de pacman (DB
+// corrupta, sin permisos, binario ausente). Antes los dos casos eran ""
+// y el consumidor los leía igual.
+func localVersion(pkg string) (string, error) {
 	out, err := kitsystem.Run("pacman", "-Q", pkg)
 	if err != nil {
-		return ""
+		// pacman -Q sale con 1 cuando el paquete no está instalado.
+		if strings.Contains(err.Error(), "exit status 1") {
+			return "", nil
+		}
+		return "", fmt.Errorf("pacman -Q %s: %w", pkg, err)
 	}
 	fields := strings.Fields(out)
 	if len(fields) < 2 {
-		return ""
+		return "", nil
 	}
-	return fields[1]
+	return fields[1], nil
 }
 
 // versionMasNueva dice si la versión remota es más nueva que la local.

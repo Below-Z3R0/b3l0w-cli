@@ -834,3 +834,12 @@ Los tests los sustituyen por fakes y los restauran con `t.Cleanup`.
 Ninguno toca la red, el home del usuario ni binarios del sistema: el
 `PATH` y el `HOME` van a temporales y el manifiesto de servicios sale del
 caché local del registry (`XDG_STATE_HOME` temporal).
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Cancelar devuelve 1, no 0: un script distingue "cancelado" de "actualizado" | `TestRunSinYesCancelaSinTerminal` |
+| B2 | El warning del sync dice la categoría y al final hay un resumen de cuántos catálogos quedaron sin refrescar | código |
+| B3 | Descartado: lo resolvió M1. Con `--self` solo, `confirmPrompt` ya dice únicamente `b3l0w` | `TestM1_CapasPedidasSelfNoArrastraLasDemas` |
+| B4 | `localVersion` devuelve `(string, error)`: `pacman -Q` exit 1 es "no instalado"; cualquier otro código es un fallo real | `TestLocalVersionNoInstalado`, `TestLocalVersionConError` |

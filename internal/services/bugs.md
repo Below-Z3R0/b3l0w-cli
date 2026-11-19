@@ -732,3 +732,12 @@ está limpio salvo estos dos archivos.
 | A3 | `Install` guarda el estado **antes** del healthcheck y lo vuelve a guardar si el health falla: el stack queda arriba y el CLI lo sabe | `TestInstallFallidoGuardaElEstadoEnDisco` |
 | A4 | `SwitchVariant` resetea `Health`/`Provider` y los verifica de nuevo: los de la variante anterior no dicen nada del stack nuevo | `TestSwitchVariantVerificaElHealthYElProvider` |
 | A5 | El env del compose lleva el tag **resuelto**, no `state.Tag` (que puede estar vacío y dejar el default de compose) | `TestUpdatePasaElTagResueltoAlCompose` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Borrado `State.Updated`: no se leía ni se escribía | código |
+| B2 | Borrado `RegistryCacheTTL`: constante muerta cuyo comentario describía un caché que no existe | código |
+| B3 | El README de `services` documenta el caso `buildcache` que el test promete | README |
+| B4 | Descartado: recomendar la variante soportada aunque no esté publicada es una decisión documentada y testeada; instalarla lo impide el registry | `TestRecommendAvisaSiElBuildNoEstaPublicado` |

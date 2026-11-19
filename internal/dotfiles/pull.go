@@ -167,7 +167,10 @@ func Pull(srcDir, homeDir, statePath string, force, dryRun bool) (Result, error)
 			if dryRun {
 				return nil
 			}
-			if err := writeFile(dest+".new", remote, srcMode); err != nil {
+			// El .new va al lado del archivo real: si dest es un symlink,
+			// escribirlo junto al link lo deja en ~/.config y el usuario
+			// que mira el target no lo ve.
+			if err := writeFile(resolveDest(dest)+".new", remote, srcMode); err != nil {
 				notar(rel, err)
 				return nil
 			}
@@ -431,7 +434,7 @@ func skip(rel string) bool {
 			return true
 		}
 	}
-	if base == "README.md" || strings.HasSuffix(base, ".md") {
+	if strings.HasSuffix(base, ".md") {
 		return true
 	}
 	// La plantilla de Hermes del repo de dotfiles de b3l0w no es

@@ -178,3 +178,10 @@ archivos de prueba nuevos.
 |---|---|---|
 | M1 | `githubRepo` rechaza una `/` extra en el repo: `github:owner/repo/extra` ya no arma una URL que no existe | `TestGitHubRepoRechazaRutaExtra` |
 | M2 | Borrado `client`: declaración muerta que el comentario vendía como "inyectable para los tests". Las peticiones van por `kit/releases` | verificado con `grep -rn client internal/releases/*.go` (cero en producción) |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `Check` prefija el error con el paso (`tag:` o `firma:`) para que un repo sin releases no se confunda con un 403 | código |
+| B2 | La línea del comando de firma usa `output.Dim` y la indentación del CLI | código |
