@@ -23,6 +23,20 @@ comprobar que falla** (ver "Cómo se verificaron", abajo).
 Estado de la suite hoy: `go test ./internal/update/ -count=1` → **ok**,
 **41 tests verdes**, cobertura **64.2 %**. `go vet` y `gofmt` limpios.
 
+## Cierre de los MEDIO (M1-M6)
+
+Después del cierre de los ALTO se cerraron los seis hallazgos MEDIO. Cada
+arreglo tiene su test, y **cada test se revirtió a mano para comprobar
+que falla** (ver "Cómo se verificaron", abajo).
+
+M4 **no se reproduce**: en Linux `os.UserHomeDir()` ya devuelve `$HOME`, así
+que el cambio propuesto no altera ningún comportamiento observable (el
+test especificado pasa idéntico antes y después). De ese hallazgo solo se
+arregló la otra mitad, que sí era un defecto: el mensaje crudo de Go
+cuando no hay home.
+
+Estado de la suite hoy: `go test ./internal/update/ -count=1` → **ok**,
+**48 tests verdes**, cobertura **72.0 %**. `go vet` y `gofmt` limpios.
 
 ## Resumen
 
@@ -33,12 +47,12 @@ Estado de la suite hoy: `go test ./internal/update/ -count=1` → **ok**,
 | A2 | ALTO | `updateServices` ignora el error de cada servicio: un servicio que no se actualiza se reporta como si todo bien | `update.go:234-237` | **arreglado** |
 | A3 | ALTO | `checkDesktop` compara siempre contra los `-git`, aunque el canal sea `stable` | `update.go:578` | **arreglado** |
 | A4 | ALTO | `dryRun` anuncia una actualización comparando strings: `"v0.5.0"` vs `"0.5.0"` se ven distintos | `update.go:156` | **arreglado** |
-| M1 | MEDIO | `Run` con `--self` pide confirmación de **todas** las capas, no solo del CLI | `update.go:94` | pendiente |
-| M2 | MEDIO | `updateDotfiles` hace el pull aunque el preview haya fallado: el error del preview se descarta | `update.go:372` | pendiente |
-| M3 | MEDIO | `updateDotfiles` solo valida el TOML de Noctalia, no el de Umbriel | `update.go:335` | pendiente |
-| M4 | MEDIO | El estado de dotfiles se deriva de `os.UserHomeDir()` en vez de `$HOME`: un `HOME` distinto rompe la ruta | `update.go:342-347` | pendiente |
-| M5 | MEDIO | `updatePlugins` solo usa la ruta de plugins de Noctalia si el comando existe: sin Noctalia, `LoadDefault` decide | `update.go:188-206` | pendiente |
-| M6 | MEDIO | `check` y `checkDesktop` mezclan red con salida: un timeout de AUR no distingue "todo bien" de "no se consultó" | `update.go:578-582` | pendiente |
+| M1 | MEDIO | `Run` con `--self` pide confirmación de **todas** las capas, no solo del CLI | `update.go:94` | **arreglado** |
+| M2 | MEDIO | `updateDotfiles` hace el pull aunque el preview haya fallado: el error del preview se descarta | `update.go:372` | **arreglado** |
+| M3 | MEDIO | `updateDotfiles` solo valida el TOML de Noctalia, no el de Umbriel | `update.go:335` | **arreglado** |
+| M4 | MEDIO | El estado de dotfiles se deriva de `os.UserHomeDir()` en vez de `$HOME`: un `HOME` distinto rompe la ruta | `update.go:342-347` | **no se reproduce** (la otra mitad, arreglada) |
+| M5 | MEDIO | `updatePlugins` solo usa la ruta de plugins de Noctalia si el comando existe: sin Noctalia, `LoadDefault` decide | `update.go:188-206` | **arreglado** |
+| M6 | MEDIO | `check` y `checkDesktop` mezclan red con salida: un timeout de AUR no distingue "todo bien" de "no se consultó" | `update.go:578-582` | **arreglado** |
 | B1 | BAJO | `Run` sale con 0 cuando el usuario cancela: un script no puede distinguir "cancelado" de "hecho" | `update.go:95-97` | pendiente |
 | B2 | BAJO | `syncRegistry` no distingue los kinds: un fallo de sync no dice qué categoría falló | `update.go:261-265` | pendiente |
 | B3 | BAJO | `confirmPrompt` con `--self` solo lista "b3l0w", pero `Run` ejecuta el CLI primero y corta: el prompt no lo dice | `update.go:445-469` | pendiente |
@@ -763,6 +777,12 @@ para la revisión original se borraron, y los de A1-A4 son permanentes
 | A2 | `updateServices` cuenta los fallos y devuelve 1 si hubo alguno; `Run` respeta ese código. El update sigue con el resto de los servicios (no cambia el contrato del README), lo que cambia es el resultado. | `TestBug_A2_ElErrorDeUnServicioLlegaAlCodigoDeSalida` + `TestBug_A2_RunPropagaElFalloDeServicios` |
 | A3 | La selección de paquetes del escritorio se extrajo a `desktopPackages(ch)`, compartido por `checkDesktop` y `desktopUpdate`: las dos mitades ya no pueden divergir. | `TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal` |
 | A4 | La comparación de versiones del CLI es numérica (`versionMasNueva`), no de strings: `"v0.5.0"` y `"0.5.0"` son la misma versión. El dry-run y el `check` usan la misma regla. | `TestBug_A4_ElDryRunComparaLasVersionesComoNumeros` + `TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes` |
+| M1 | `--self` cuenta como selector: la decisión de qué capas se tocan se extrajo a `capasPedidas(opts)`, y la usan `Run` y el dry-run. El prompt ya no promete el sistema, los programas, los plugins, los servicios ni los dotfiles cuando en realidad solo se actualiza el CLI. `soloSelf(opts)` conserva el corte de `--self` a secas. | `TestM1_CapasPedidasSelfNoArrastraLasDemas` |
+| M2 | Si el preview de conflictos falla, el update aborta con 1 y avisa que no se pudo previsualizar. Antes el error se descartaba y el pull real corría sin la confirmación que el preview iba a pedir. (El fix de la revisión era avisar y seguir; se abortó, que es lo más seguro: sin preview no se pisa un cambio local a ciegas.) | `TestM2_ElPreviewQueFallaAbortaAntesDelPull` |
+| M3 | La validación del TOML recorre los dos programas del escritorio (`noctalia` y `umbriel`): un TOML de Umbriel roto aborta con 1 antes de aplicar. Si el validador no está instalado se avisa y se sigue, como ya hacía A1. | `TestM3_ElTOMLDeUmbrielSeValida` |
+| M4 | **No se reproduce:** en Linux `os.UserHomeDir()` ya devuelve `$HOME`, y `kit/paths.Home()` es un wrapper que solo cambia el error por `""`. El test especificado (`t.Setenv("HOME", tmp)`) pasa idéntico antes y después, así que no hay arreglo que verificar. De la otra mitad del hallazgo sí se arregló: sin home el error dice qué variable falta, y la ruta del estado nunca es relativa. | `TestM4_SinHomeElErrorDiceQueFalta` (detecta el revert) + `TestM4_ElEstadoSeLeeDelHome` (caracterización: fija que el estado se lee de `$HOME`) |
+| M5 | `updatePlugins` distingue "no hay sources" de "no se pudieron leer": si Noctalia está y la lectura de los sources falla, el update aborta con 1 en vez de caer en silencio al camino que actualiza OTRA lista de plugins. | `TestM5_UnSourceQueNoSeLeeEsUnError` |
+| M6 | `checkDesktop` devuelve si pudo consultar y `check` cuenta ese fallo: sin red, `b3l0w update --check` sale con 1. El mensaje del warning no cambia: lo que mentía era el código de salida. | `TestM6_SinAurElCheckFalla` |
 
 ### Cómo se verificaron
 
@@ -779,10 +799,26 @@ A4  TestBug_A4_ElDryRunComparaLasVersionesComoNumeros: FALLA (bien)
 A4  TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes: FALLA (bien)
 ```
 
+Los seis MEDIO se verificaron igual (el bloque exacto del arreglo se
+volvió a poner como estaba y el test tiene que fallar):
+
+```
+M1  TestM1_CapasPedidasSelfNoArrastraLasDemas: FALLA (bien)
+M2  TestM2_ElPreviewQueFallaAbortaAntesDelPull: FALLA (bien)
+M3  TestM3_ElTOMLDeUmbrielSeValida: FALLA (bien)
+M4  TestM4_SinHomeElErrorDiceQueFalta: FALLA (bien)
+M5  TestM5_UnSourceQueNoSeLeeEsUnError: FALLA (bien)
+M6  TestM6_SinAurElCheckFalla: FALLA (bien)
+```
+
+El test de caracterización de M4 (`TestM4_ElEstadoSeLeeDelHome`) **pasa**
+con el arreglo revertido: es a propósito, porque lo que fija ya era el
+comportamiento correcto antes del cambio (ver la fila de M4).
+
 ### Puntos de inyección
 
-Para probar A2, A3 y A4 sin tocar la red ni Docker, el módulo ahora tiene
-cuatro variables inyectables (el mismo patrón que ya usa
+Para probar sin tocar la red ni Docker, el módulo ahora tiene seis
+variables inyectables (el mismo patrón que ya usa
 `internal/selfupdate` con `apiURL`/`replaceFile`):
 
 | Variable | Sustituye a |
@@ -791,6 +827,8 @@ cuatro variables inyectables (el mismo patrón que ya usa
 | `aurLookup` | `versioncheck.AUR` (consulta al AUR) |
 | `registrySync` | `registry.Sync` (sync de las DB del registry) |
 | `updateService` | `(*services.Installer).Update` (update de un servicio) |
+| `releaseCheck` | `releases.Check` (firmas de los releases) |
+| `pluginSources` | `plugins.Sources` (sources de plugins de Noctalia) |
 
 Los tests los sustituyen por fakes y los restauran con `t.Cleanup`.
 Ninguno toca la red, el home del usuario ni binarios del sistema: el

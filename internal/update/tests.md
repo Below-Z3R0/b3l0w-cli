@@ -6,11 +6,11 @@ Qué prueba cada test del módulo y qué quedó sin cubrir.
 
 | Métrica | Valor |
 |---|---|
-| Tests | 41 |
-| Verdes | 41 |
+| Tests | 48 |
+| Verdes | 48 |
 | **Rojos** | **0** |
 | Saltados | 0 |
-| Cobertura | **64.2 %** |
+| Cobertura | **72.3 %** |
 | Comando | `go test ./internal/update/ -count=1 -cover` |
 
 Cobertura por función (medida con `go tool cover -func`):
@@ -25,24 +25,27 @@ Cobertura por función (medida con `go tool cover -func`):
 | `desktopUpdate` | 100.0 % | |
 | `desktopPackages` | 100.0 % | nueva: la selección por canal |
 | `versionMasNueva` | 100.0 % | nueva: la comparación numérica |
-| `dryRun` | 100.0 % | |
-| `updateDotfiles` | 81.7 % | |
+| `dryRun` | 77.8 % | antes 100 % (el plan de `--self` solo es otro camino) |
+| `updateDotfiles` | 86.8 % | antes 81.7 % |
 | `updatePrograms` | 86.7 % | |
 | `updateServices` | 75.0 % | antes 15 % |
 | `syncRegistry` | 70.0 % | antes 50 % |
-| `avisoVersionCLI` | 71.4 % | nueva: el aviso de versión del check |
+| `avisoVersionCLI` | 85.7 % | nueva: el aviso de versión del check |
 | `Run` | 60.9 % | antes 51.1 % |
 | `updateSystem` | 55.6 % | |
-| `checkDesktop` | 58.3 % | antes 0 % |
+| `checkDesktop` | 76.9 % | antes 58.3 % |
 | `numerosVersion` | 88.9 % | nueva |
-| **`updatePlugins`** | **0.0 %** | |
+| `capasPedidas` | 100.0 % | nueva: qué capas cubre cada flag |
+| `soloSelf` | 100.0 % | nueva: `--self` a secas corta después del CLI |
+| `updatePlugins` | 31.6 % | antes 0 % |
+| `check` | 50.0 % | antes 0 % |
+| `checkPlugins` | 69.2 % | antes 0 % |
 | **`selfUpdate`** | **0.0 %** | |
-| **`check`** | **0.0 %** | |
-| **`checkPlugins`** | **0.0 %** | |
 
 Antes de cerrar A1-A4 eran 31 tests y 50.0 % de cobertura, con cinco
-funciones en 0 %. Hoy quedan cuatro, y las que eran 0 % que se podían
-alcanzar (`checkDesktop`) ya no lo están.
+funciones en 0 %. Después del cierre de M1-M6 son 48 tests y 72.3 %: de
+las que estaban en 0 % solo queda `selfUpdate`, que baja un release de
+GitHub y no se puede testear sin red.
 
 ## Mapa de los archivos
 
@@ -53,6 +56,7 @@ alcanzar (`checkDesktop`) ya no lo están.
 | `confirm_test.go` | 1 test: la tabla completa de `confirmPrompt`, una fila por combinación de capas |
 | `dryrun_test.go` | 3 tests de regresión del bug C1: el dry-run no crea snapshot, sin dry-run sí la crea, y `--adopt --dry-run` no escribe el estado |
 | `alto_test.go` | 6 tests de regresión de los hallazgos ALTO (A1-A4), uno por hallazgo y sus contrastes |
+| `medio_test.go` | 7 tests de regresión de los hallazgos MEDIO (M1-M6), uno por hallazgo más la caracterización de M4 |
 
 
 ## Detalle de cada test
@@ -131,6 +135,22 @@ test correspondiente pasa a rojo.
 | `TestBug_A3_CheckDesktopPreguntaPorLosPaquetesDelCanal` | **A3.** El check del escritorio pregunta al AUR por `umbriel`/`noctalia` en canal `stable` y por `umbriel-git`/`noctalia-git` en `edge`. La consulta se intercepta por `aurLookup` y se mira qué paquetes se pidieron |
 | `TestBug_A4_ElDryRunComparaLasVersionesComoNumeros` | **A4.** El dry-run solo anuncia una actualización cuando el release es más nuevo: `"v0.5.0"` contra `"0.5.0"` no es una actualización, `"v0.6.0"` contra `"0.5.0"` sí, `"v0.4.0"` contra `"0.5.0"` no (sería un downgrade) y `"v0.10.0"` contra `"0.9.0"` sí. 7 casos |
 | `TestBug_A4_ElCheckNoAvisaDeLaVersionQueYaTenes` | **A4, la otra mitad.** El `check` no avisa de una versión que ya se tiene, y sí avisa de una más nueva |
+
+### `medio_test.go` (7 tests)
+
+Los tests de los hallazgos MEDIO. Cada uno **falla si se revierte su
+arreglo**: se comprobó revirtiendo cada arreglo a mano y viendo que el
+test correspondiente pasa a rojo.
+
+| Test | Qué fija |
+|---|---|
+| `TestM1_CapasPedidasSelfNoArrastraLasDemas` | **M1.** `--self` cuenta como selector: solo se quiere la capa del CLI y el prompt es "Update b3l0w? [Y/n] ", no la lista de las seis capas. `--self --system` quiere las dos, y sin flags se quieren todas. También fija que `--self` a secas corta después del CLI (`soloSelf`) |
+| `TestM2_ElPreviewQueFallaAbortaAntesDelPull` | **M2.** Con el estado de dotfiles corrupto, el preview no se puede hacer: el update aborta con 1 y avisa que no se pudo previsualizar. Antes seguía al pull real, que fallaba con el mismo error y sin mostrar los conflictos |
+| `TestM3_ElTOMLDeUmbrielSeValida` | **M3.** Con `umbriel/config.toml` inválido y el validador fake en el PATH, el update aborta con 1 antes de aplicar nada. Antes solo se validaba el TOML de Noctalia |
+| `TestM4_ElEstadoSeLeeDelHome` | **M4, caracterización.** El estado de dotfiles se escribe y se lee de `$HOME`. Este test **pasa también con el arreglo revertido**: en Linux `os.UserHomeDir()` ya es `$HOME`, así que fija el comportamiento, no el cambio |
+| `TestM4_SinHomeElErrorDiceQueFalta` | **M4, la otra mitad.** Sin `$HOME` el update aborta con 1 y el error dice qué variable falta, en vez del crudo de Go ("$HOME is not defined") |
+| `TestM5_UnSourceQueNoSeLeeEsUnError` | **M5.** Con Noctalia en el PATH y los sources ilegibles, `updatePlugins` aborta con 1 y nombra el error. Antes caía en silencio al camino que actualiza otra lista de plugins (el test lo ve: sin el arreglo salía con 0 y listaba los plugins del manifiesto) |
+| `TestM6_SinAurElCheckFalla` | **M6.** Si el AUR no contesta, `check` sale con 1: sin red no puede decir que todo está al día. El AUR, las releases y el manifiesto de plugins entran por fakes: ni red ni máquina |
 
 ### `dryrun_test.go` (3 tests)
 

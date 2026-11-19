@@ -26,6 +26,7 @@ import (
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/confirm"
 	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
 	kitsystem "github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
@@ -39,6 +40,8 @@ var (
 	selfCheck     = selfupdate.Check
 	aurLookup     = versioncheck.AUR
 	registrySync  = registry.Sync
+	releaseCheck  = releases.Check
+	pluginSources = plugins.Sources
 	updateService = func(in *services.Installer, svc services.Service, state *services.State, rebuild, yes bool) (*services.State, error) {
 		return in.Update(svc, state, rebuild, yes)
 	}
@@ -95,15 +98,20 @@ func Run(m *config.Manifest, opts Options) int {
 	}
 
 	// Sin banderas se hacen las tres capas y el CLI; con una sola, esa.
-	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
-	selfWanted := opts.Self || !anySelector
-	systemWanted := opts.System || !anySelector
-	programsWanted := opts.Programs || !anySelector
-	pluginsWanted := opts.Plugins || !anySelector
-	servicesWanted := opts.Services || !anySelector
+	//
+	// `--self` cuenta como selector (M1): antes no contaba, así que el
+	// prompt prometía el sistema, los programas, los plugins, los
+	// servicios y los dotfiles cuando en realidad solo se actualizaba
+	// el CLI.
+	c := capasPedidas(opts)
+	selfWanted := c.self
+	systemWanted := c.system
+	programsWanted := c.programs
+	pluginsWanted := c.plugins
+	servicesWanted := c.services
 	// Los dotfiles usan merge 3-way: no pisan cambios locales, así
 	// que van en el update general sin pedir nada extra.
-	dotfilesWanted := !anySelector
+	dotfilesWanted := c.dotfiles
 
 	if !opts.Yes {
 		if !confirm.Confirm(confirmPrompt(selfWanted, systemWanted, programsWanted, pluginsWanted, servicesWanted, dotfilesWanted), false, true) {
@@ -122,7 +130,7 @@ func Run(m *config.Manifest, opts Options) int {
 			return code
 		}
 		// `update --self` a secas es solo eso.
-		if opts.Self && !anySelector {
+		if soloSelf(opts) {
 			return 0
 		}
 	}
@@ -160,35 +168,69 @@ func Run(m *config.Manifest, opts Options) int {
 	return code
 }
 
+// capas son las capas que un update va a tocar.
+type capas struct {
+	self, system, programs, plugins, services, dotfiles bool
+}
+
+// capasPedidas decide qué capas cubre un update.
+//
+// Un flag de selección (`--system`, `--programs`, `--plugins`,
+// `--services`, `--self`) cuenta como selector: si el usuario pide una
+// sola capa, solo esa se actualiza.
+//
+// `--self` también cuenta (M1): antes no contaba, así que el prompt
+// prometía las seis capas cuando en realidad solo se actualizaba el
+// CLI. Sin ningún flag se hacen todas.
+func capasPedidas(opts Options) capas {
+	anySelector := opts.System || opts.Programs || opts.Plugins ||
+		opts.Services || opts.Self
+	return capas{
+		self:     opts.Self || !anySelector,
+		system:   opts.System || !anySelector,
+		programs: opts.Programs || !anySelector,
+		plugins:  opts.Plugins || !anySelector,
+		services: opts.Services || !anySelector,
+		dotfiles: !anySelector,
+	}
+}
+
+// soloSelf dice que el único flag de selección es `--self`: en ese
+// caso el update corta después del CLI y no toca el resto.
+func soloSelf(opts Options) bool {
+	return opts.Self && !opts.System && !opts.Programs && !opts.Plugins &&
+		!opts.Services
+}
+
 // dryRun muestra que haria el update y no toca nada.
 //
 // El plan tiene que ser util: si solo dice "dry-run" el usuario no
 // sabe que habria cambiado. Cada capa dice que haria.
 func dryRun(m *config.Manifest, opts Options) int {
-	anySelector := opts.System || opts.Programs || opts.Plugins || opts.Services
+	c := capasPedidas(opts)
 
 	output.Step("Dry-run: no se toca nada")
 
-	if opts.Self || !anySelector {
+	if c.self {
 		if tag, err := selfCheck(); err == nil && tag != "" && versionMasNueva(tag, version.Version) {
 			output.Step(fmt.Sprintf("  b3l0w: %s -> %s", version.Version, tag))
 		} else {
 			output.Step(fmt.Sprintf("  b3l0w: %s (sin cambios)", version.Version))
 		}
 	}
-	if opts.System || !anySelector {
+	if c.system {
 		output.Step("  sistema: se actualizaria con cachy-update")
 	}
-	if opts.Programs || !anySelector {
+	if c.programs {
 		output.Step(fmt.Sprintf("  programas: %d se revisarian", len(m.Programs)))
 	}
-	if opts.Plugins || !anySelector {
+	if c.plugins {
 		output.Step("  plugins: los sources se refrescarian")
 	}
-	if opts.Services || !anySelector {
+	if c.services {
 		output.Step("  servicios: las imagenes se revisarian")
 	}
-	if !anySelector {
+	if c.dotfiles {
 		output.Step("  dotfiles: se aplicaria el merge 3-way")
 	}
 
@@ -202,8 +244,20 @@ func dryRun(m *config.Manifest, opts Options) int {
 func updatePlugins() int {
 	output.Step("Actualizando plugins")
 
+	// Si Noctalia está, sus sources son la fuente de verdad: un source
+	// que no se puede leer es un ERROR, no una invitación al camino de
+	// abajo (M5).
+	//
+	// Un binario ausente y un source roto son casos distintos: antes
+	// los dos caían al mismo camino, y un error transitorio de
+	// `Sources()` cambiaba en silencio QUÉ se actualizaba.
 	if kitsystem.HaveCommand("noctalia") {
-		if sources, err := plugins.Sources(); err == nil && len(sources) > 0 {
+		sources, err := pluginSources()
+		if err != nil {
+			output.Fail("no se pudieron leer los sources: " + err.Error())
+			return 1
+		}
+		if len(sources) > 0 {
 			if err := plugins.UpdateSources(); err != nil {
 				output.Warn("plugins: " + err.Error())
 				return 1
@@ -356,26 +410,40 @@ func updateDotfiles(opts Options) int {
 		return 1
 	}
 
-	// Validar el TOML de Noctalia antes de tocar nada.
+	// Validar el TOML de Noctalia Y de Umbriel antes de tocar nada.
+	//
+	// Los dos: el final del update le dice al usuario que valide
+	// `noctalia config validate | umbriel config validate`, así que un
+	// TOML de Umbriel roto tiene que abortar igual que uno de
+	// Noctalia (M3).
 	//
 	// Solo si el validador está instalado: si Noctalia no está, el
 	// TOML puede estar perfectamente y lo que falta es el programa que
 	// lo valida. Antes esto abortaba con 1 y decía "repo TOML does not
 	// validate", que era falso.
-	if path := filepath.Join(dir, "noctalia", "config.toml"); fileExists(path) {
-		if kitsystem.HaveCommand("noctalia") {
-			if out, err := kitsystem.RunCombined("noctalia", "config", "validate", path); err != nil {
-				output.Fail("repo TOML does not validate: " + out)
-				return 1
-			}
-		} else {
-			output.Warn("noctalia no está instalado: no se valida el TOML del repo")
+	for _, cfg := range []struct{ dir, cmd string }{
+		{"noctalia", "noctalia"},
+		{"umbriel", "umbriel"},
+	} {
+		path := filepath.Join(dir, cfg.dir, "config.toml")
+		if !fileExists(path) {
+			continue
+		}
+		if !kitsystem.HaveCommand(cfg.cmd) {
+			output.Warn(cfg.cmd + " no está instalado: no se valida el TOML del repo")
+			continue
+		}
+		if out, err := kitsystem.RunCombined(cfg.cmd, "config", "validate", path); err != nil {
+			output.Fail("repo TOML does not validate (" + cfg.dir + "): " + out)
+			return 1
 		}
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		output.Fail(err.Error())
+	// El home del usuario: el mismo de todo el módulo, y explícito
+	// cuando no se puede resolver (M4).
+	home := paths.Home()
+	if home == "" {
+		output.Fail("no se pudo resolver el home del usuario: revisá $HOME")
 		return 1
 	}
 	state := filepath.Join(home, ".local", "state", "b3l0w", "dotfiles.json")
@@ -415,7 +483,20 @@ func updateDotfiles(opts Options) int {
 	// (que excluia el dry-run) el dry-run no mostraba ninguno, y un
 	// dry-run que no dice lo que pasaria no sirve de nada.
 	if !opts.Force {
-		if preview, err := dotfiles.Pull(dir, home, state, false, true); err == nil && len(preview.Conflicts) > 0 {
+		// Si el preview falla, no se aplica nada (M2).
+		//
+		// Antes el error se descartaba (`err == nil &&`): el módulo
+		// seguía al pull real, que fallaba con el mismo error, y el
+		// usuario veía el fallo dos veces sin haber visto nunca los
+		// conflictos. Peor: si el preview fallaba por un motivo que el
+		// pull real no reproduce, el pull real se ejecutaba SIN la
+		// confirmación que el preview iba a pedir.
+		preview, err := dotfiles.Pull(dir, home, state, false, true)
+		if err != nil {
+			output.Fail("no se pudo previsualizar dotfiles: " + err.Error())
+			return 1
+		}
+		if len(preview.Conflicts) > 0 {
 			fmt.Printf("  ! %d conflict(s):\n", len(preview.Conflicts))
 			for _, f := range preview.Conflicts {
 				fmt.Printf("    %s\n", f)
@@ -465,8 +546,8 @@ func updateDotfiles(opts Options) int {
 }
 
 func defaultDotfilesDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	home := paths.Home()
+	if home == "" {
 		return ""
 	}
 	candidates := []string{
@@ -577,13 +658,21 @@ func check(m *config.Manifest) int {
 		}
 	}
 
-	checkDesktop()
+	// El escritorio cuenta: si no se pudo consultar el AUR, "check" no
+	// puede salir con 0 diciendo que todo está al día (M6).
+	fallos := 0
+	if !checkDesktop() {
+		fallos++
+	}
 	checkPlugins()
 
 	// Un release sin firma rompe install y update --self. Este es el
 	// chequeo previo, así que se avisa acá y no al fallar la descarga.
-	if sinFirma := releases.Render(releases.Check(m)); sinFirma > 0 {
+	if sinFirma := releases.Render(releaseCheck(m)); sinFirma > 0 {
 		output.Warn(fmt.Sprintf("%d release(s) sin firma", sinFirma))
+	}
+	if fallos > 0 {
+		return 1
 	}
 	return 0
 }
@@ -645,13 +734,16 @@ func desktopPackages(ch string) []string {
 	return []string{"umbriel-git", "noctalia-git"}
 }
 
-// checkDesktop compara lo instalado con AUR. Sin red es un warning.
-func checkDesktop() {
+// checkDesktop compara lo instalado con AUR. Sin red es un warning,
+// pero es un fallo: el que llama lo suma a su contador.
+//
+// El mensaje no cambia: lo que mentía era el código de salida (M6).
+func checkDesktop() bool {
 	ch := channel.Current()
 	remote, err := aurLookup(desktopPackages(ch))
 	if err != nil {
 		output.Warn("escritorio: no se pudo consultar AUR")
-		return
+		return false
 	}
 	for _, pkg := range remote {
 		local := localVersion(pkg.Name)
@@ -666,6 +758,7 @@ func checkDesktop() {
 			output.Warn(fmt.Sprintf("%s: %s -> %s (%s)", pkg.Name, local, pkg.Version, ch))
 		}
 	}
+	return true
 }
 
 // desktopUpdate no ejecuta pacman: muestra el comando y el canal.

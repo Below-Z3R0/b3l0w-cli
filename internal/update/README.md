@@ -60,14 +60,14 @@ el check diría que lo que tenés instalado no está instalado.
 | Flag | Efecto |
 |---|---|
 | *(ninguno)* | CLI + sistema + programas + plugins + servicios + dotfiles |
-| `--self` | Solo el binario (si va solo, corta ahí) |
+| `--self` | Solo el binario (si va solo, corta ahí y el prompt solo lista el CLI) |
 | `--system` | Solo el sistema base |
 | `--programs` | Solo los programas del manifiesto |
 | `--plugins` | Solo los sources de plugins de Noctalia |
 | `--services` | Solo los servicios Docker instalados |
 | `--dotfiles` | Solo los TOML del repo (merge 3-way) |
 | `--adopt` | Registra los archivos actuales como base, sin escribir |
-| `--check` | Reporta estado; no actualiza |
+| `--check` | Reporta estado; no actualiza (sale con 1 si algo no se pudo consultar) |
 | `--yes`, `-y` | No pregunta (también se pasa a servicios y snapshots) |
 | `--dry-run` | Muestra el plan y no toca nada |
 | `--force` | En dotfiles, el repo pisa los cambios locales |
@@ -76,8 +76,10 @@ el check diría que lo que tenés instalado no está instalado.
 | `--desktop` | Muestra el comando de pacman según el canal; no lo ejecuta |
 
 Regla de selección: con **al menos un** flag de capa se ejecutan solo
-esas capas; sin flags se ejecutan todas. `--system` y `--programs`
-juntos los rechaza `cmd/b3l0w/update.go` antes de llegar acá.
+esas capas; sin flags se ejecutan todas. `--self` cuenta como flag de
+capa: con `--self` a secas solo se actualiza el binario. `--system` y
+`--programs` juntos los rechaza `cmd/b3l0w/update.go` antes de llegar
+acá.
 
 ## Confirmación
 
@@ -87,6 +89,12 @@ el orden en que se pasaron los flags:
 ```
 Update b3l0w, system, programs, plugins, services, dotfiles? [Y/n]
 ```
+
+La lista es **lo que se va a tocar de verdad**: lo decide `capasPedidas`,
+y cualquier flag de selección (`--system`, `--programs`, `--plugins`,
+`--services`, `--self`) cuenta como selector. Con `--self` a secas el
+prompt es "Update b3l0w? [Y/n] " y el update corta después del CLI: antes
+prometía las seis capas y solo actualizaba el binario.
 
 `confirm.Confirm(prompt, false, true)` usa `[Y/n]` con `Y` por defecto
 y la respuesta vacía toma el default. Con `--yes` no pregunta. Sin
@@ -107,10 +115,11 @@ Antes de escribir, `snapshot.Create("b3l0w pre-dotfiles")` intenta una
 snapshot de `home` con snapper. Si snapper no está o no hay config para
 `home`, solo avisa: la protección real es el merge.
 
-El TOML de Noctalia del repo se valida antes de tocar nada, **pero solo
-si el validador está instalado**: sin `noctalia` en el PATH se avisa
-("noctalia no está instalado: no se valida el TOML del repo") y el update
-sigue. Un TOML que no valida sigue abortando el update con código 1.
+El TOML de Noctalia **y el de Umbriel** del repo se validan antes de
+tocar nada, **pero solo si el validador está instalado**: sin `noctalia`
+(o sin `umbriel`) en el PATH se avisa ("noctalia no está instalado: no se
+valida el TOML del repo") y el update sigue. Un TOML que no valida sigue
+abortando el update con código 1.
 
 El estado (`~/.local/state/b3l0w/dotfiles.json`) guarda el sha256 de la
 última versión aplicada por archivo:
@@ -133,6 +142,10 @@ dry-run tiene que decir qué archivos entrarían en conflicto y cuántos son,
 si no no sirve para decidir. (El número del aviso es el de los conflictos:
 `--force` resuelve solo esos, los archivos que el usuario editó y el repo
 no tocó se conservan.)
+
+**Si el preview falla, el update aborta con código 1** y avisa que no se
+pudo previsualizar. No se aplica nada a ciegas: el preview es la única
+forma de ver los conflictos antes de pisarlos.
 
 Al final se avisa también de los **huérfanos**: rutas que estaban en el
 estado pero ya no están en el repo. Se informa, pero el archivo local no
@@ -161,14 +174,23 @@ paquetes del canal, y las versiones del CLI se comparan numéricamente.
 Cada uno de esos tests **falla si se revierte su arreglo**: se comprobó
 revirtiendo cada arreglo a mano.
 
+`medio_test.go` cubre las regresiones de los seis hallazgos MEDIO (M1-M6):
+`--self` no arrastra las demás capas al prompt, un preview que falla
+aborta antes de aplicar, el TOML de Umbriel también se valida, sin
+`$HOME` el error dice qué variable falta, un source de plugins ilegible es
+un error y no un cambio de camino, y sin AUR el `check` sale con 1. Cada
+uno **falla si se revierte su arreglo**: se comprobó revirtiendo cada
+arreglo a mano.
+
 Los tests acotan `PATH` y `HOME` a temporales y usan fakes de `vercmp`,
 `pacman`, `snapper`, `noctalia` y `cachy-update` que dejan un marker si
 se ejecutan: si el código toca el sistema, el test falla.
 
 Para lo que depende de la red o de Docker hay **puntos de inyección**:
 `selfCheck` (releases del CLI), `aurLookup` (AUR), `registrySync` (DB del
-registry) y `updateService` (update de un servicio) son variables de
-paquete que los tests sustituyen por fakes.
+registry), `updateService` (update de un servicio), `releaseCheck`
+(firmas de los releases) y `pluginSources` (sources de plugins) son
+variables de paquete que los tests sustituyen por fakes.
 
 ## Qué no está testeado y por qué
 
