@@ -143,6 +143,24 @@ func TestCreateConSnapperQueFalla(t *testing.T) {
 	}
 }
 
+// TestCreateSinConfigHome fija que la falta de la config `home` se detecta
+// ANTES del create: sin este chequeo, snapper falla con "Unknown config" y el
+// usuario no sabe si falta la config o si snapper se rompió.
+func TestCreateSinConfigHome(t *testing.T) {
+	fakeSnapper(t)
+	// Falla solo el `list`: el create ni se intenta.
+	t.Setenv("FAKE_FAIL_ON", "list")
+	t.Setenv("FAKE_STDERR", "Unknown config")
+
+	err := Create("b3l0w pre-dotfiles")
+	if err == nil {
+		t.Fatal("Create tenía que fallar sin config home")
+	}
+	if !strings.Contains(err.Error(), "no hay config `home`") {
+		t.Errorf("error = %q, tenía que decir que falta la config home", err)
+	}
+}
+
 // TestCreateConLabelVacio define el comportamiento del label vacío: se
 // rechaza antes de tocar el disco, porque una snapshot sin descripción no
 // se puede identificar después.
