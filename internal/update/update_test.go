@@ -350,7 +350,11 @@ func TestLocalVersionLeeLaVersion(t *testing.T) {
 	fakeBin(t, dir, "pacman", "#!/bin/sh\nprintf 'noctalia 1.2.3-1\\n'\n")
 	t.Setenv("PATH", dir)
 
-	if got := localVersion("noctalia"); got != "1.2.3-1" {
+	got, err := localVersion("noctalia")
+	if err != nil {
+		t.Fatalf("localVersion: %v", err)
+	}
+	if got != "1.2.3-1" {
 		t.Errorf("localVersion = %q, quería %q", got, "1.2.3-1")
 	}
 }
@@ -362,20 +366,40 @@ func TestLocalVersionConSalidaIncompleta(t *testing.T) {
 	fakeBin(t, dir, "pacman", "#!/bin/sh\nprintf 'noctalia\\n'\n")
 	t.Setenv("PATH", dir)
 
-	if got := localVersion("noctalia"); got != "" {
+	got, err := localVersion("noctalia")
+	if err != nil {
+		t.Fatalf("localVersion: %v", err)
+	}
+	if got != "" {
 		t.Errorf("localVersion = %q, quería vacío", got)
 	}
 }
 
-// TestLocalVersionConErrorEl error de pacman se traduce en versión
-// desconocida, no en un panic.
-func TestLocalVersionConError(t *testing.T) {
+// TestLocalVersionNoInstalado fija que pacman -Q con exit 1 es "no
+// instalado", no un error.
+func TestLocalVersionNoInstalado(t *testing.T) {
 	dir := t.TempDir()
 	fakeBin(t, dir, "pacman", "#!/bin/sh\nexit 1\n")
 	t.Setenv("PATH", dir)
 
-	if got := localVersion("noctalia"); got != "" {
+	got, err := localVersion("noctalia")
+	if err != nil {
+		t.Fatalf("exit 1 tenía que ser 'no instalado', no error: %v", err)
+	}
+	if got != "" {
 		t.Errorf("localVersion = %q, quería vacío", got)
+	}
+}
+
+// TestLocalVersionConError fija que un fallo real de pacman sí es un
+// error: antes se confundía con "no instalado".
+func TestLocalVersionConError(t *testing.T) {
+	dir := t.TempDir()
+	fakeBin(t, dir, "pacman", "#!/bin/sh\nexit 2\n")
+	t.Setenv("PATH", dir)
+
+	if _, err := localVersion("noctalia"); err == nil {
+		t.Fatal("un fallo de pacman (exit 2) tenía que devolver error")
 	}
 }
 
@@ -620,15 +644,16 @@ func TestDesktopUpdateMuestraElComandoPorCanal(t *testing.T) {
 }
 
 // TestRunSinYesCancelaSinTerminal sin --yes y sin terminal el update se
-// cancela: no se actualiza a ciegas.
+// cancela: no se actualiza a ciegas. Devuelve 1, no 0: cancelar no es
+// "se actualizó todo".
 func TestRunSinYesCancelaSinTerminal(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	sinTTY(t)
 
 	salida, _ := capturarSalida(t, func() {
-		if code := Run(&config.Manifest{}, Options{}); code != 0 {
-			t.Errorf("Run() sin --yes = %d, quería 0", code)
+		if code := Run(&config.Manifest{}, Options{}); code != 1 {
+			t.Errorf("Run() sin --yes = %d, quería 1 (cancelado, no éxito)", code)
 		}
 	})
 	if !strings.Contains(salida, "cancelled") {

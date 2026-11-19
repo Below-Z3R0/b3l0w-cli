@@ -73,8 +73,10 @@ func parse(data []byte) (*Manifest, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}
-	if m.Version == 0 || len(m.Plugins) == 0 {
-		return nil, fmt.Errorf("manifiesto de plugins vacío o sin versión")
+	// Una lista vacía es válida: es el manifiesto con todos los plugins
+	// dados de baja. Lo que no puede faltar es la versión del formato.
+	if m.Version == 0 {
+		return nil, fmt.Errorf("manifiesto de plugins sin versión")
 	}
 	return &m, nil
 }
@@ -258,9 +260,15 @@ func Dependencies() (map[string][]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return DependenciesFrom(m, DefaultPluginsDir()), nil
+}
+
+// DependenciesFrom es Dependencies con el manifiesto y el directorio
+// explícitos: un test no necesita ni la red ni el home real.
+func DependenciesFrom(m *Manifest, pluginsDir string) map[string][]string {
 	out := make(map[string][]string)
 	for _, entry := range m.Plugins {
-		for _, dir := range candidateDirs(DefaultPluginsDir(), entry) {
+		for _, dir := range candidateDirs(pluginsDir, entry) {
 			meta, err := readPluginMeta(filepath.Join(dir, "plugin.toml"))
 			if err == nil {
 				out[entry.ID] = meta.Dependencies
@@ -268,7 +276,7 @@ func Dependencies() (map[string][]string, error) {
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 type pluginMeta struct {
