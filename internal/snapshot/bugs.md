@@ -47,3 +47,9 @@ vacío; el tope sería la otra mitad de la misma validación.
 - `fakeSnapper` pone el binario falso primero en el PATH: el snapper real no se
   ejecuta nunca en los tests.
 - No copia archivos ni hace `RemoveAll`: el módulo solo pide la snapshot.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Create` corre `snapper -c home list` antes del `create`: distingue "no existe la config `home`" (aviso esperable) de "snapper falló" | `TestCreateConSnapperQueFalla` (el fake ahora falla solo el `create` con `FAKE_FAIL_ON`), `TestCreateConSnapperInstalado` |

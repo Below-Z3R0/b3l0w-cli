@@ -64,3 +64,9 @@ momento de leerlo. El código ya advierte cuando `removed == 0 && total > keep`
 - `Prune` rechaza `keep` negativo antes de tocar nada: evita el `ids[:len-keep]`
   con índice inventado.
 - Un solo `remove` con todos los IDs: `limine.conf` se reescribe una vez.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Prune` devuelve `len(old)` aunque el `limine-snapper-sync` falle: las entradas ya se borraron y devolver 0 le mentía al llamador | `TestPrune_ErrorEnSync` (ahora espera 2, no 0) |
