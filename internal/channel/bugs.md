@@ -305,3 +305,10 @@ archivos de probe.
 | ID | Arreglo | Test |
 |---|---|---|
 | B1 | `Set` escribe a un temporal y renombra: un corte deja el canal viejo, no uno a medias | `TestSetNoDejaTemporales` |
+
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A3 | `Detect` hace una sola consulta a pacman para los dos paquetes y no hereda la salida al stdout | código |
+| A4 | `Path` usa `paths.ConfigDir()`, que respeta `XDG_CONFIG_HOME` | `TestPathRespetaXDG` |
+| A5 | `algunoInstalado` distingue "no instalado" (exit 1) de un fallo real | código |

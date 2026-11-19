@@ -315,3 +315,12 @@ estado final del worktree no tiene archivos de probe.
 |---|---|---|
 | B1 | `humanizar` redondea al alza: 30 minutos son "1 h", no "0 h" | `TestHumanizarNoDaCeroHoras` |
 | A2 | `exec()` devuelve el `ExitCode()` real de pacman con `errors.As` sobre `*osexec.ExitError` (el import va con alias porque la función local se llama `exec`). Un 127 ya no se confunde con un 1 | `TestExecPropagaElExitCode`, `TestExecDevuelveCeroCuandoTodoVaBien` |
+
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A3 | `banderas` descompone una bandera corta letra por letra; `partialUpgrade` y `actualiza` la usan | `TestBanderasDescompone`, `TestBanderasIgnoraLasLargas` |
+| A4 | `actualiza` usa el mismo parseo: el freno de DB vieja ya no depende del orden de las letras | `TestBanderasDescompone` |
+| A5 | `OldestSyncDB` llama a `oldestSyncDBIn(dir)`, que un test puede apuntar a un directorio propio | código |
+| A6 | `OldestSyncDB` devuelve error si no puede leer una DB, en vez de saltarla en silencio | código |
+| B2 | Descartado: el README **sí** dice la verdad desde A2 — `Run` devuelve el exit code de pacman | `TestExecPropagaElExitCode` |

@@ -22,7 +22,8 @@ const Prefix = "b3l0w-"
 
 // Discover devuelve los nombres de las extensiones instaladas.
 func Discover() []string {
-	entries, err := os.ReadDir(paths.PluginsDir())
+	dir := paths.PluginsDir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
@@ -35,8 +36,11 @@ func Discover() []string {
 		if !strings.HasPrefix(name, Prefix) {
 			continue
 		}
-		info, err := entry.Info()
-		if err != nil || info.Mode().Perm()&0o111 == 0 {
+		// os.Stat sigue el symlink, igual que Find: entry.Info describe
+		// el link (0777) y lo reportaba ejecutable aunque el target no lo
+		// fuera, así que Discover y Find daban respuestas distintas.
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
 			continue
 		}
 		names = append(names, strings.TrimPrefix(name, Prefix))

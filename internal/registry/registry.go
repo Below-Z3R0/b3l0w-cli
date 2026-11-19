@@ -8,11 +8,13 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -188,7 +190,11 @@ func defaultStateDir() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "b3l0w", "registry")
+		// /tmp es compartido: se crea con 0700 para que otro usuario no
+		// pueda plantar la caché antes.
+		dir := filepath.Join(os.TempDir(), "b3l0w-"+strconv.Itoa(os.Getuid()), "registry")
+		_ = os.MkdirAll(dir, 0o700)
+		return dir
 	}
 	return filepath.Join(home, ".local", "state", "b3l0w", "registry")
 }
@@ -210,14 +216,37 @@ func readCache(path string) ([]byte, bool) {
 	if err != nil || len(data) == 0 {
 		return nil, false
 	}
+	// Una copia truncada se lee entera pero no es JSON: servirla como
+	// fresca rompe al consumidor.
+	if !json.Valid(data) {
+		return nil, false
+	}
 	return data, true
 }
 
+// writeCache guarda la copia local de forma atómica.
+//
+// os.WriteFile trunca y después escribe: un corte deja un JSON partido
+// que el próximo arranque leería como caché fresco.
 func writeCache(path string, data []byte) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	tmp, err := os.CreateTemp(dir, ".cache-*.tmp")
+	if err != nil {
+		return
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(name, path)
 }
 
 func modTime(fi os.FileInfo) time.Time {

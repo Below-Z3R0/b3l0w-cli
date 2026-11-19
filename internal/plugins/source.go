@@ -4,10 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
+
+// reAutoUpdate matchea la clave exacta, no un prefijo: `auto_update_mode`
+// y `auto_update_interval` también empiezan igual.
+var reAutoUpdate = regexp.MustCompile(`(?m)^\s*auto_update\s*=\s*(true|false)\s*(?:#.*)?$`)
 
 // SourceName es el nombre del source de Noctalia que publica el registry.
 const SourceName = "b3l0w"
@@ -64,16 +69,10 @@ func AutoUpdate() string {
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "auto_update") {
-				continue
-			}
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			return strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		// Match exacto de la clave: con HasPrefix, `auto_update_interval`
+		// y `auto_update_mode` también matcheaban.
+		if mm := reAutoUpdate.FindStringSubmatch(string(data)); mm != nil {
+			return mm[1]
 		}
 	}
 	return ""
@@ -150,6 +149,9 @@ func UpdateSources() error {
 // UpdateSource repara el clon si quedó con archivos borrados y pide a
 // Noctalia que refresque el source.
 func UpdateSource(name string) error {
+	// El docstring prometía reparar el clon y no lo hacía: un working
+	// tree con todo el índice como "D" se quedaba así para siempre.
+	repairSourceRepo(name)
 	out, err := system.RunCombined("noctalia", "msg", "plugins", "update", name)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)

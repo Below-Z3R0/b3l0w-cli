@@ -102,15 +102,26 @@ func exec(root bool, args ...string) int {
 	return 0
 }
 
+// banderas descompone una bandera corta de pacman en sus letras.
+//
+// pacman combina las banderas: -Syu es -S + -y + -u. Mirar substrings
+// confunde "Sy" dentro de otra palabra y no distingue -Syyu (que sí
+// actualiza) de -Syy (que no).
+func banderas(flag string) map[rune]bool {
+	out := map[rune]bool{}
+	if !strings.HasPrefix(flag, "-") || strings.HasPrefix(flag, "--") {
+		return out
+	}
+	for _, c := range strings.TrimPrefix(flag, "-") {
+		out[c] = true
+	}
+	return out
+}
+
 // partialUpgrade detecta -Sy y -Syy sin -u.
 func partialUpgrade(flag string) bool {
-	if !strings.HasPrefix(flag, "-") {
-		return false
-	}
-	contieneS := strings.Contains(flag, "S")
-	return contieneS &&
-		strings.Contains(flag, "y") &&
-		!strings.Contains(flag, "u")
+	b := banderas(flag)
+	return b['S'] && b['y'] && !b['u']
 }
 
 // instala dice si el comando baja paquetes (no busca ni consulta).
@@ -126,7 +137,8 @@ func instala(flag string) bool {
 // -Syu refresca las DB antes de actualizar: la freshness no es un
 // problema ahi, es justamente lo que arregla.
 func actualiza(flag string) bool {
-	return strings.HasPrefix(flag, "-S") && strings.Contains(flag, "y") && strings.Contains(flag, "u")
+	b := banderas(flag)
+	return b['S'] && b['y'] && b['u']
 }
 
 // needsRoot: consultar (-Ss, -Si, -Q) no pide sudo; instalar y quitar
@@ -143,24 +155,29 @@ func needsRoot(flag string) bool {
 // La más vieja manda: si una sección quedó atrás, instalar desde ella
 // es igual de riesgoso.
 func OldestSyncDB() (time.Duration, string, error) {
-	paths, err := filepath.Glob("/var/lib/pacman/sync/*.db")
+	return oldestSyncDBIn("/var/lib/pacman/sync")
+}
+
+// oldestSyncDBIn es OldestSyncDB con el directorio explícito: un test no
+// necesita /var/lib/pacman.
+func oldestSyncDBIn(dir string) (time.Duration, string, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.db"))
 	if err != nil || len(paths) == 0 {
-		return 0, "", fmt.Errorf("no hay bases de datos de pacman")
+		return 0, "", fmt.Errorf("no hay bases de datos de pacman en %s", dir)
 	}
 	var vieja time.Time
 	var nombre string
 	for _, path := range paths {
 		fi, err := os.Stat(path)
 		if err != nil {
-			continue
+			// Una DB que no se puede leer no se salta en silencio: si
+			// era la más vieja, el resultado miente.
+			return 0, "", fmt.Errorf("no pude leer %s: %w", filepath.Base(path), err)
 		}
 		if vieja.IsZero() || fi.ModTime().Before(vieja) {
 			vieja = fi.ModTime()
 			nombre = filepath.Base(path)
 		}
-	}
-	if vieja.IsZero() {
-		return 0, "", fmt.Errorf("no pude leer las bases de datos")
 	}
 	return time.Since(vieja), nombre, nil
 }

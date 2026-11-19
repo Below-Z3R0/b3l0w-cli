@@ -259,3 +259,12 @@ estado final del worktree no tiene archivos de probe.
 |---|---|---|
 | B1 | `fetch` lee `maxSize+1` bytes y falla si llegó el byte de más: ya no trunca en silencio un JSON que después se cachea | `TestFetchRechazaUnaRespuestaGigante`, `TestFetchAceptaJustoElLimite` |
 | A1 | `Load` valida el `Kind` contra `paths` antes de la cascada. Un Kind inexistente devuelve `categoría desconocida` en vez de caer al embebido y devolver otra categoría con `err nil` | `TestLoadRechazaUnaCategoriaDesconocida`, `TestLoadConCategoriaValidaSigueFuncionando` |
+
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A2 | `readCache` valida que el contenido sea JSON: una copia truncada ya no se sirve como fresca | `TestReadCacheRechazaUnJSONRoto`, `TestReadCacheAceptaUnJSONValido` |
+| A3 | `writeCache` escribe a temporal y renombra | `TestWriteCacheNoDejaTemporales` |
+| A4 | `Stat` sigue describiendo el disco sin TTL por diseño: `Load` es el que decide usabilidad | documentado |
+| A5 | `Sync` devuelve `FromStaleCache` con error a propósito: el consumidor cuenta el fallo y sigue | documentado |
+| A6 | El fallback a `/tmp` usa `b3l0w-<uid>` con `0700`: otro usuario no puede plantar la caché | código |

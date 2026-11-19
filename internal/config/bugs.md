@@ -258,3 +258,12 @@ archivos de probe.
 | ID | Arreglo | Test |
 |---|---|---|
 | B1 | `AddProgram` valida el nombre (componente de ruta) y la fuente (`github:owner/repo`) al registrar, no al instalar. Firma `(bool, error)` | `TestAddValidaAlRegistrar` |
+
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Load` rechaza un manifiesto de versión más nueva: guardarlo perdería campos que no entiende | `TestLoadRechazaUnaVersionFutura` |
+| A2 | `Load` normaliza `Programs` a slice vacío con `null`/`{}`, en vez de dejarlo nil | `TestLoadNormalizaUnJSONVacio` |
+| A3 | `Get` devuelve una copia, no un puntero dentro del slice: `Remove` ya no lo deja apuntando a otro | `TestGetDevuelveUnaCopia` |
+| A4 | `Save` escribe a temporal y renombra: un corte no deja el manifiesto a medias | `TestSaveEsAtomico` |
+| A5 | `Remove` limpia la cola del array subyacente antes de truncar | `TestRemoveNoDejaBasura` |
