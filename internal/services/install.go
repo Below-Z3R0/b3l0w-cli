@@ -55,7 +55,8 @@ func ResolveVariant(svc Service, hw Hardware, published []string, want string) (
 func TagFor(svc Service, variant string, tags []string) string {
 	if variant == "default" {
 		for _, tag := range tags {
-			if !strings.HasPrefix(tag, "arm64-") && !strings.HasPrefix(tag, "sha-") && tag != "latest" {
+			if !strings.HasPrefix(tag, "arm64-") && !strings.HasPrefix(tag, "sha-") &&
+				!strings.HasPrefix(tag, "buildcache-") && tag != "latest" {
 				return tag
 			}
 		}
@@ -315,7 +316,7 @@ func (in *Installer) Update(svc Service, state *State, rebuild bool, yes bool) (
 		}
 	}
 	digest, _ := in.Docker.ImageDigest(svc.Image + ":" + tag)
-	state.Digest = digest
+	state.Digest = NormalizeDigest(digest)
 	// El estado guarda lo que really corre: el tag resuelto y la imagen
 	// con ese tag.
 	state.Tag = tag

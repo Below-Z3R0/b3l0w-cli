@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 )
 
 //go:embed system.json
@@ -77,6 +78,9 @@ func (d *Definition) Names() []string {
 	for name := range d.Profiles {
 		names = append(names, name)
 	}
+	// El recorrido de un mapa no es determinista: sin ordenar, dos
+	// ejecuciones del mismo comando listan los perfiles distinto.
+	sort.Strings(names)
 	return names
 }
 

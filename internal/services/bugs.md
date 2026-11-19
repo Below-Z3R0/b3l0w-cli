@@ -741,3 +741,13 @@ está limpio salvo estos dos archivos.
 | B2 | Borrado `RegistryCacheTTL`: constante muerta cuyo comentario describía un caché que no existe | código |
 | B3 | El README de `services` documenta el caso `buildcache` que el test promete | README |
 | B4 | Descartado: recomendar la variante soportada aunque no esté publicada es una decisión documentada y testeada; instalarla lo impide el registry | `TestRecommendAvisaSiElBuildNoEstaPublicado` |
+## Arreglados (MEDIO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `Update` guarda el digest normalizado (`sha256:...`), no el RepoDigest crudo | `TestUpdateActualizaSiElDigestCambia` |
+| M2 | `Sync` no aborta con el primer servicio inalcanzable: acumula los fallos, guarda lo que sí cambió y los reporta juntos | `TestSynNoAbortaConElPrimero` |
+| M3 | `Registry` usa `http.DefaultClient` con `Client` nil y `hostDeBaseURL` con una base corta, en vez de panicar | código |
+| M5 | El doctor avisa si `DiskFree` falla: antes el chequeo desaparecía del reporte | código |
+| M6 | `TagFor` en `default` salta los tags `buildcache-`, igual que `AvailableVariants` | `TestTagForDefaultSaltaBuildcache` |
+| M7 | `LoadState` fuerza el `id` del archivo: el del JSON no puede hacer que `Save` escriba en otro lado | `TestLoadStateFuerzaElIDDelArchivo` |

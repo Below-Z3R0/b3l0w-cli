@@ -71,3 +71,9 @@ perfil vacío.
 |---|---|---|
 | B1 | `writeCache` devuelve el error en vez de ignorarlo; el llamador decide si el caché es crítico | código |
 | B2 | Descartado: `Merge` ya devuelve `perfil desconocido` antes de buscar | `TestMergePerfilDesconocido` |
+## Arreglados (MEDIO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | `Names` ordena con `sort.Strings`: el recorrido de un mapa no es determinista | `TestNamesOrdenado` |
+| M2 | Descartado: el fallback cache → red → cache viejo → embebido es la cascada documentada en el README | documentado |

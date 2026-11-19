@@ -75,6 +75,7 @@ func contains(list []string, want string) bool {
 // caché, no instala nada.
 func Sync(m *Manifest, manifestPath string, reg *Registry) (int, error) {
 	changed := 0
+	var fallos []string
 	for i := range m.Services {
 		svc := &m.Services[i]
 		if svc.Image == "" {
@@ -82,7 +83,9 @@ func Sync(m *Manifest, manifestPath string, reg *Registry) (int, error) {
 		}
 		tags, err := reg.Tags(svc.Image)
 		if err != nil {
-			return 0, fmt.Errorf("%s: %w", svc.ID, err)
+			// Un servicio inalcanzable no cancela el sync de los demás.
+			fallos = append(fallos, fmt.Sprintf("%s: %v", svc.ID, err))
+			continue
 		}
 		var published []string
 		if len(svc.Variants) == 0 {
@@ -98,11 +101,13 @@ func Sync(m *Manifest, manifestPath string, reg *Registry) (int, error) {
 			changed++
 		}
 	}
-	if changed == 0 {
-		return 0, nil
+	if changed > 0 {
+		if err := SaveManifest(manifestPath, m); err != nil {
+			return changed, err
+		}
 	}
-	if err := SaveManifest(manifestPath, m); err != nil {
-		return changed, err
+	if len(fallos) > 0 {
+		return changed, fmt.Errorf("%d servicios inalcanzables: %s", len(fallos), strings.Join(fallos, "; "))
 	}
 	return changed, nil
 }

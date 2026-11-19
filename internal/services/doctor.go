@@ -35,7 +35,8 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 		output.Ok("docker compose: " + d.ComposeVersion())
 	}
 
-	// Disco: las imágenes son grandes.
+	// Disco: las imágenes son grandes. Si no se puede leer, se avisa:
+	// antes el chequeo desaparecía del reporte sin dejar rastro.
 	if free, err := d.DiskFree(); err == nil {
 		gb := float64(free) / (1 << 30)
 		if gb < 20 {
@@ -44,6 +45,9 @@ func (d *DockerAdapter) Doctor(m *Manifest, hw Hardware, states []*State) Doctor
 		} else {
 			output.Ok(fmt.Sprintf("disco: %.1f GiB libres", gb))
 		}
+	} else {
+		output.Warn("disco: no se pudo leer el espacio libre: " + err.Error())
+		res.Warnings++
 	}
 
 	// Aceleración.

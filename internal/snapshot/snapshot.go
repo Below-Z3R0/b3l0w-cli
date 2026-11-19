@@ -5,7 +5,9 @@
 package snapshot
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
@@ -42,6 +44,13 @@ func Create(label string) error {
 	}
 	out, err := system.RunCombined("snapper", "-c", "home", "create", "-d", label)
 	if err != nil {
+		// El exit code importa para diagnosticar: 1 es error genérico,
+		// 2 es uso incorrecto. RunCombined lo pierde, así que se saca
+		// del error.
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return fmt.Errorf("snapper -c home (exit %d): %s", exit.ExitCode(), out)
+		}
 		return fmt.Errorf("snapper -c home: %s", out)
 	}
 	return nil

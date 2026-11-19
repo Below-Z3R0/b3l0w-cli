@@ -43,7 +43,13 @@ func imageRef(image string) (host, repo string) {
 func (r *Registry) token(host, repo string) (string, error) {
 	scope := "repository:" + repo + ":pull"
 	url := fmt.Sprintf("https://%s/token?scope=%s&service=%s", host, scope, host)
-	resp, err := r.Client.Get(url)
+	// Un Registry de valor cero tiene Client nil: http.DefaultClient en
+	// vez de panic.
+	client := r.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
@@ -175,4 +181,14 @@ func LatestTag(tags []string, variant string) string {
 		}
 	}
 	return ""
+}
+
+// hostDeBaseURL saca el host de una base con o sin esquema.
+//
+// `BaseURL[len("https://"):]` cortaba fuera de rango con una BaseURL más
+// corta que el prefijo.
+func hostDeBaseURL(base string) string {
+	base = strings.TrimPrefix(base, "https://")
+	base = strings.TrimPrefix(base, "http://")
+	return base
 }

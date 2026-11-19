@@ -116,7 +116,7 @@ type Result struct {
 // debe degradar un binario de desarrollo.
 func compareVersions(a, b string) int {
 	na, nb := numeros(a), numeros(b)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		if na[i] != nb[i] {
 			if na[i] < nb[i] {
 				return -1
@@ -127,14 +127,14 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
-func numeros(v string) [3]int {
-	var out [3]int
+func numeros(v string) [4]int {
+	var out [4]int
 	v = strings.TrimPrefix(v, "v")
 	if i := strings.IndexAny(v, "-+"); i >= 0 {
 		v = v[:i]
 	}
 	for i, parte := range strings.Split(v, ".") {
-		if i >= 3 {
+		if i >= 4 {
 			break
 		}
 		out[i], _ = strconv.Atoi(parte)
@@ -145,6 +145,10 @@ func numeros(v string) [3]int {
 // withV deja la versión con una sola "v": el ldflags puede venir con
 // ella (v0.2.0) o sin ella (0.2.0).
 func withV(v string) string {
+	if v == "" || v[0] < '0' || v[0] > '9' {
+		// "dev" no es una versión: "vdev" se lee como 0.0.0.
+		return v
+	}
 	if strings.HasPrefix(v, "v") {
 		return v
 	}

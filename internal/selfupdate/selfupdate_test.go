@@ -62,7 +62,8 @@ func TestWithV(t *testing.T) {
 	casos := map[string]string{
 		"0.5.0":  "v0.5.0",
 		"v0.5.0": "v0.5.0",
-		"":       "v",
+		"":       "",
+		"dev":    "dev",
 	}
 	for entrada, quiere := range casos {
 		if got := withV(entrada); got != quiere {

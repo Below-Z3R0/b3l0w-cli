@@ -59,3 +59,8 @@ vacío; el tope sería la otra mitad de la misma validación.
 | ID | Arreglo | Test |
 |---|---|---|
 | B1 | `Create` rechaza un label con saltos de línea o de más de 200 caracteres, además del vacío | `TestCreateRechazaUnLabelConSaltoDeLinea`, `TestCreateRechazaUnLabelMuyLargo` |
+## Arreglados (MEDIO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | El error de `snapper create` incluye el exit code (`exit 2` es uso incorrecto, `1` genérico) | código |
