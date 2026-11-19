@@ -679,11 +679,8 @@ func TestRunConUnErrorSaleConUno(t *testing.T) {
 	if !contiene(stderr, "no hay cachy-update ni arch-update") {
 		t.Errorf("esperaba el error en stderr, obtuve %q", stderr)
 	}
-	// TODO(doctor): RunWith cuenta los errores dos veces (una por el
-	// resultado LevelError y otra por el contador `extra` del chequeo),
-	// así que el resumen dice "2 chequeos fallaron" para un solo fallo.
-	// El código de salida sí es correcto. Cuando se arregle el doble
-	// conteo en doctor.go, este test debe leer "1 chequeos fallaron".
+	// El doble conteo se arregló en `ac95ce8`: `runChecks` cuenta cada
+	// chequeo una sola vez, y un fallo dice "1 chequeo falló".
 	if !contiene(stderr, "chequeos fallaron") {
 		t.Errorf("esperaba el resumen de fallos, obtuve %q", stderr)
 	}

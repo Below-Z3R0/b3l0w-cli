@@ -246,6 +246,8 @@ func writeCache(path string, data []byte) {
 	if err := tmp.Close(); err != nil {
 		return
 	}
+	// Si el rename falla, la caché no se guarda: es una comodidad, no la
+	// fuente de la DB, así que no se propaga el error.
 	_ = os.Rename(name, path)
 }
 
