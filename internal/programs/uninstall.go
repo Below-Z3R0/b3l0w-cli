@@ -12,16 +12,24 @@ import (
 
 // Uninstall borra el binario de ~/.local/bin y lo saca del manifiesto.
 // Si el binario pertenece a un paquete pacman, no lo toca.
+//
+// El manifiesto se guarda ANTES de borrar el binario. Al revés, un save
+// fallido dejaba el binario ya borrado y el programa todavía listado:
+// el próximo update lo buscaba, no lo encontraba y fallaba sin decir por
+// qué. Si el borrado falla después, el manifiesto ya no lo lista y queda
+// un binario huérfano, que es el estado menos malo de los dos: el
+// manifiesto es la fuente de verdad y un archivo suelto se borra a mano.
 func Uninstall(name string, m *config.Manifest) (string, error) {
-	if m.Get(name) == nil {
+	p := m.Get(name)
+	if p == nil {
 		return "", fmt.Errorf("%s no está registrado", name)
 	}
 	path, err := InstallPath(name)
 	if err != nil {
 		return "", err
 	}
-	// Si el programa ya es un paquete de b3l0w, pacman manda.
-	if Packaged(name) {
+	// Si el programa está instalado como paquete, pacman manda.
+	if Installed(name) {
 		if err := RemovePackage(name); err != nil {
 			return "", err
 		}
@@ -40,14 +48,17 @@ func Uninstall(name string, m *config.Manifest) (string, error) {
 		}
 		return "", fmt.Errorf("%s es del paquete %s: se quita con pacman", name, owner)
 	}
+	// El manifiesto primero: si el save falla, el binario sigue en su
+	// lugar y la entrada se restaura en memoria.
+	m.Remove(name)
+	if err := m.Save(paths.ManifestPath()); err != nil {
+		m.AddProgram(*p)
+		return "", fmt.Errorf("no se pudo guardar el manifiesto: %w", err)
+	}
 	if _, err := os.Stat(path); err == nil {
 		if err := os.Remove(path); err != nil {
 			return "", fmt.Errorf("no se pudo borrar %s: %w", path, err)
 		}
-	}
-	m.Remove(name)
-	if err := m.Save(paths.ManifestPath()); err != nil {
-		return "", fmt.Errorf("no se pudo guardar el manifiesto: %w", err)
 	}
 	return path, nil
 }

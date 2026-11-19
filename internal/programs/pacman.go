@@ -20,14 +20,30 @@ func PackageName(name string) string {
 	return name
 }
 
-// Packaged dice si el programa ya se distribuye como paquete de
-// [b3l0w]. Si es así, pacman manda: el asset suelto queda como
-// camino viejo para programas que todavía no están empaquetados.
+// Packaged dice si el programa existe como paquete en algún repo.
+//
+// Pregunta por los DISPONIBLES (`-Si`), no por los instalados: es la
+// pregunta de Install, "¿hay paquete o hay que bajar el asset suelto?".
+// Para la de Uninstall —"¿está instalado?"— va Installed.
 func Packaged(name string) bool {
 	if !system.HaveCommand("pacman") {
 		return false
 	}
 	_, err := system.RunTimeout(5*time.Second, "pacman", "-Si", PackageName(name))
+	return err == nil
+}
+
+// Installed dice si el paquete está instalado en el sistema.
+//
+// `-Qq` consulta la base LOCAL y sale distinto de cero si el paquete no
+// está. Con `-Si` (la base sincronizada) la respuesta era true para
+// cualquier paquete de cualquier repo, así que Uninstall podía disparar
+// `pacman -Rns` sobre un paquete de la distro.
+func Installed(name string) bool {
+	if !system.HaveCommand("pacman") {
+		return false
+	}
+	_, err := system.RunTimeout(5*time.Second, "pacman", "-Qq", PackageName(name))
 	return err == nil
 }
 

@@ -469,3 +469,13 @@ hacer fallar `m.Save` en un `t.TempDir()` requiere montar un filesystem
 con permisos o cuota, y el modo de fallo se dedujo del orden de las
 sentencias (`uninstall.go:43-51`). El estado final del worktree no tiene
 archivos de prueba nuevos.
+
+---
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Installed` (`pacman -Qq`, base local) separada de `Packaged` (`-Si`, disponibles). `Uninstall` usa `Installed`: ya no puede disparar `pacman -Rns` sobre un paquete de la distro. | `TestInstalledNoConfundeDisponibleConInstalado` |
+| A2 | `Uninstall` guarda el manifiesto **antes** de borrar el binario, y restaura la entrada en memoria si el save falla. | `TestUninstallNoBorraSiElManifiestoNoSeGuarda` |
+| M2 | `system.ReplaceBinary` escribe el binario con `0755` por defecto (y conserva el modo si el destino ya existía). `programs` y `selfupdate` lo usan. | `TestReplaceBinaryDejaEjecutable` |

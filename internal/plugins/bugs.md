@@ -442,3 +442,16 @@ y borrados al terminar. Cubrieron: traversal por `slug()` y por `entry.Path`
 `plugin.toml` reales de la máquina (A5). El estado final del worktree no
 tiene archivos de probe (`git status --porcelain` no muestra nada en los cinco
 módulos de esta revisión).
+
+---
+
+## Arreglados
+
+Los tres caminos de borrado/ejecución fuera del directorio privado, con
+`system.SafeName` como validación (el mismo helper que ya usaba `remove.go`):
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `installOne` valida `entry.Path` y el nombre del slug antes de los dos `os.RemoveAll`. | `TestInstallOneNoBorraFueraDelDirectorio` |
+| C2 | `slug()` valida con `SafeName` y devuelve `""` si el nombre no es un componente simple: nunca más `..`. | `TestSlugNuncaDevuelveUnPath` |
+| A1 | `Find()` valida el nombre antes de componer el path: `"../../bin/sh"` devuelve `""`. | `TestFindRechazaTraversal` |

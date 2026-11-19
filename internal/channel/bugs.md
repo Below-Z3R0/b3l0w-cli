@@ -291,3 +291,11 @@ terminar. Cubrieron: un archivo con "nightly" y con "EDGE" devueltos tal cual
 máquina real que `pacman -Q umbriel-git` escribe "error: package ... was not
 found" y sale con 1 (A3, A5). El estado final del worktree no tiene
 archivos de probe.
+
+---
+
+## Arreglado
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Current()` acepta solo `stable` o `edge`. Un valor desconocido en el archivo se ignora y se cae a `Detect()`. | `TestCurrentIgnoraUnCanalDesconocido` |

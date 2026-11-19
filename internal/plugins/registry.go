@@ -92,10 +92,16 @@ func SaveManifest(path string, m *Manifest) error {
 // slug es el nombre de carpeta que espera Noctalia: la parte después
 // de la barra del id ("b3l0w/wallpaper" -> "wallpaper").
 func slug(e Entry) string {
+	name := e.Path
 	if i := strings.LastIndex(e.ID, "/"); i >= 0 && i+1 < len(e.ID) {
-		return e.ID[i+1:]
+		name = e.ID[i+1:]
 	}
-	return e.Path
+	// El nombre termina en un os.RemoveAll: un ".." acá se lleva el
+	// directorio padre del de plugins. Sin nombre válido no hay slug.
+	if err := system.SafeName(name); err != nil {
+		return ""
+	}
+	return name
 }
 
 // Collect lee todas las carpetas de plugin del repo único. La carpeta

@@ -32,7 +32,7 @@ const (
 var (
 	apiURL         = api
 	fetchAsset     = fetch.ToTemp
-	replaceFile    = system.ReplaceFile
+	replaceFile    = system.ReplaceBinary
 	packageOwner   = system.PackageOwner
 	currentVersion = programs.Current
 	verifyRelease  = programs.VerifyRelease
@@ -79,15 +79,24 @@ func Check() (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return "", err
 	}
+	// El mayor, no el primero: la API no garantiza el orden y devolver
+	// releases[0] con v* daba v0.4.0 aunque v0.9.0 estuviera en la lista.
+	mayor := ""
 	for _, release := range releases {
 		if release.Draft || release.Prerelease {
 			continue
 		}
-		if strings.HasPrefix(release.TagName, "v") {
-			return release.TagName, nil
+		if !strings.HasPrefix(release.TagName, "v") {
+			continue
+		}
+		if mayor == "" || compareVersions(release.TagName, mayor) > 0 {
+			mayor = release.TagName
 		}
 	}
-	return "", fmt.Errorf("no hay releases del CLI con tag v* en %s", repo)
+	if mayor == "" {
+		return "", fmt.Errorf("no hay releases del CLI con tag v* en %s", repo)
+	}
+	return mayor, nil
 }
 
 // Result cuenta qué pasó.
