@@ -6,6 +6,8 @@
 package system
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -38,7 +40,12 @@ func List() (string, error) {
 	}
 	out, err := system.RunTimeout(5*time.Minute, bin, "-l")
 	if err != nil {
-		return out, err
+		// Un cuelgue de 5 minutos se reintenta; un actualizador que
+		// falla hay que mirarlo. Antes los dos salían igual.
+		if errors.Is(err, context.DeadlineExceeded) {
+			return out, fmt.Errorf("%s -l se colgó: %w", bin, err)
+		}
+		return out, fmt.Errorf("%s -l: %w", bin, err)
 	}
 	return out, nil
 }

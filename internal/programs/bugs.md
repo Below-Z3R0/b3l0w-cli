@@ -483,3 +483,11 @@ archivos de prueba nuevos.
 | M3 | `githubRepo` rechaza una `/` extra en el repo; `validateProgram` rechaza un asset que sea una ruta. | `TestAssetURLRechazaRutaExtra` |
 | M4 | `Uninstall` delega en `UninstallTo(name, m, path)` con la ruta del manifiesto explícita. | `TestUninstallGuardaEnLaRutaDelManifiesto` |
 | M5 | Cubierto por M3: el asset no se validaba antes de bajar y el fix es el mismo. | `TestInstallNoDescargaConManifiestoInvalido` |
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | Descartado: el prefijo `b3l0w-` es el criterio de naming del repo; un paquete ajeno con ese prefijo es hipotético y consultar pacman en cada uninstall añade una llamada | —
+| B2 | Descartado: `exec.Command` no usa shell, un path con espacios funciona | —
+| B3 | Descartado: el mensaje ya trae la última línea de la salida o el error; distinguir el motivo pediría cambiar el contrato | — |

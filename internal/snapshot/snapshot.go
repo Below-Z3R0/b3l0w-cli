@@ -17,8 +17,18 @@ import (
 // saber cuál era ("b3l0w pre-dotfiles"). Vacío no dice nada, así que se
 // rechaza antes de tocar el disco.
 func Create(label string) error {
-	if strings.TrimSpace(label) == "" {
+	label = strings.TrimSpace(label)
+	if label == "" {
 		return fmt.Errorf("el label de la snapshot está vacío")
+	}
+	// snapper acepta el label como argumento (no hay shell), pero un
+	// salto de línea rompe el listado y uno muy largo no se lee en
+	// `snapper list`.
+	if strings.ContainsAny(label, "\n\r\x00") {
+		return fmt.Errorf("el label no puede tener saltos de línea")
+	}
+	if len(label) > 200 {
+		return fmt.Errorf("el label es demasiado largo (%d caracteres, máximo 200)", len(label))
 	}
 	if system.CommandPath("snapper") == "" {
 		return fmt.Errorf("snapper no está instalado")

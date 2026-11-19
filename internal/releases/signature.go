@@ -56,14 +56,16 @@ func Check(m *config.Manifest) []Status {
 		st := Status{Name: p.Name, Repo: repo}
 		tag, err := latestTag(repo)
 		if err != nil {
-			st.Err = err.Error()
+			// El paso importa: un repo sin releases y un 403 por rate
+			// limit no se arreglan igual.
+			st.Err = "tag: " + err.Error()
 			out = append(out, st)
 			continue
 		}
 		st.Tag = tag
 		signed, err := hasSignature(repo, tag)
 		if err != nil {
-			st.Err = err.Error()
+			st.Err = "firma: " + err.Error()
 		} else {
 			st.Signed = signed
 		}
@@ -106,7 +108,7 @@ func Render(statuses []Status) int {
 			output.Ok(fmt.Sprintf("%s: firmado (%s)", st.Name, st.Tag))
 		default:
 			output.Fail(fmt.Sprintf("%s: SIN FIRMA (%s)", st.Name, st.Tag))
-			fmt.Printf("      b3l0w-manteiner sign release %s %s\n", st.Repo, st.Tag)
+			fmt.Printf("  %s\n", output.Dim(fmt.Sprintf("b3l0w-manteiner sign release %s %s", st.Repo, st.Tag)))
 			errores++
 		}
 	}

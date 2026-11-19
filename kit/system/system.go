@@ -33,6 +33,12 @@ func RunTimeout(d time.Duration, name string, args ...string) (string, error) {
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	// exec.CommandContext mata el proceso, pero devuelve "signal: killed":
+	// el llamador no puede distinguir un cuelgue de un fallo propio.
+	if ctx.Err() == context.DeadlineExceeded {
+		return strings.TrimRight(string(out), "\n"),
+			fmt.Errorf("%s: se colgó más de %s: %w", name, d, context.DeadlineExceeded)
+	}
 	return strings.TrimRight(string(out), "\n"), err
 }
 

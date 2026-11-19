@@ -9,10 +9,6 @@ import (
 	"github.com/Below-Z3R0/b3l0w-cli/kit/output"
 )
 
-// RegistryCache remembers the last registry check so a stale manifest
-// is detected without hammering GHCR on every command.
-const RegistryCacheTTL = 6 * time.Hour
-
 // RegistryStatus is the result of consulting the registry.
 type RegistryStatus struct {
 	CheckedAt   time.Time

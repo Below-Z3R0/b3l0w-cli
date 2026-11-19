@@ -64,3 +64,10 @@ perfil vacío.
 - `parse` valida versión y que haya perfiles: las dos condiciones que importan.
 - `Builtin` va embebido con `go:embed`: el CLI sabe qué es "su" sistema sin un
   archivo al lado.
+
+## Arreglados (BAJO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| B1 | `writeCache` devuelve el error en vez de ignorarlo; el llamador decide si el caché es crítico | código |
+| B2 | Descartado: `Merge` ya devuelve `perfil desconocido` antes de buscar | `TestMergePerfilDesconocido` |
