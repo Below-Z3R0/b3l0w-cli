@@ -309,6 +309,7 @@ archivos de probe.
 
 | ID | Arreglo | Test |
 |---|---|---|
+| A2 | Descartado: `Detect()` nunca devuelve `""`, así que el caso que describía el bugs.md no existe | — |
 | A3 | `Detect` hace una sola consulta a pacman para los dos paquetes y no hereda la salida al stdout | código |
 | A4 | `Path` usa `paths.ConfigDir()`, que respeta `XDG_CONFIG_HOME` | `TestPathRespetaXDG` |
 | A5 | `algunoInstalado` distingue "no instalado" (exit 1) de un fallo real | código |

@@ -751,3 +751,4 @@ está limpio salvo estos dos archivos.
 | M5 | El doctor avisa si `DiskFree` falla: antes el chequeo desaparecía del reporte | código |
 | M6 | `TagFor` en `default` salta los tags `buildcache-`, igual que `AvailableVariants` | `TestTagForDefaultSaltaBuildcache` |
 | M7 | `LoadState` fuerza el `id` del archivo: el del JSON no puede hacer que `Save` escriba en otro lado | `TestLoadStateFuerzaElIDDelArchivo` |
+| M4 | Descartado: es el mismo caso que M5 (el chequeo de disco desaparece si `DiskFree` falla), cubierto por ese arreglo | código |
