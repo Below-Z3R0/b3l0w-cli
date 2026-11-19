@@ -76,3 +76,9 @@ momento de leerlo. El código ya advierte cuando `removed == 0 && total > keep`
 | ID | Arreglo | Test |
 |---|---|---|
 | B1 | Descartado: `total-removed` es correcto cuando el conteo y la lista coinciden, y el warning ya cubre la discrepancia | `TestReport_ElMensajeDeQuedanMiente`, `TestReport_ConDiscrepanciaEntreConteoYLista` |
+## Arreglados (MEDIO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| M1 | Descartado: devolver 0 al fallar el conteo es a propósito — la poda no frena el update (`TestReport_ConYes_FallaElConteoNoFrena`) | `TestReport_ConYes_FallaElConteoNoFrena` |
+| M2 | `Prune` normaliza `keep < 0` a `DefaultKeep`: un solo contrato para `Report` y para el llamador directo | `TestPruneKeepNegativoUsaElDefault` |

@@ -101,9 +101,14 @@ func parseIDs(out string) []int {
 // keep es parte de la API pública: un keep negativo haría
 // ids[:len(ids)-keep], que mete un ID 0 inventado en el lote o entra
 // en panic. Se rechaza antes de tocar nada.
+// DefaultKeep es cuántas snapshots se conservan si el llamador no dice.
+const DefaultKeep = 20
+
 func Prune(keep int) (int, error) {
+	// Un keep negativo es "usá el default": la normalización vive acá y
+	// no en Report, para que un llamador directo vea el mismo contrato.
 	if keep < 0 {
-		return 0, fmt.Errorf("keep inválido: %d", keep)
+		keep = DefaultKeep
 	}
 	ids, err := IDs()
 	if err != nil {

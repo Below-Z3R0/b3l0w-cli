@@ -11,7 +11,7 @@ import (
 func Report(keep int, yes bool) int {
 	// Límite por defecto cuando el llamador no pasa uno.
 	if keep <= 0 {
-		keep = 20
+		keep = DefaultKeep
 	}
 	total, err := Entries()
 	if err != nil {

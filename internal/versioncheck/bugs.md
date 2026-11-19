@@ -196,3 +196,12 @@ respuesta (A2), `User-Agent` ausente (A3), y la query con nombres
 duplicados. El cuerpo de error `type:error` (A1) se comprobó contra el AUR
 real con `curl` y se reprodujo con un `httptest` que devuelve ese mismo
 cuerpo. El estado final del worktree no tiene archivos de prueba nuevos.
+
+## Arreglados
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `AUR` mira `error`/`type` del JSON: un 200 con `type:"error"` es un fallo, no una lista vacía | `TestAURConErrorEnElJSON` |
+| A2 | `AUR` avisa qué paquetes pedidos no vinieron, en vez de dejarlos desaparecer | `TestAURReportaElPaqueteQueFalta` |
+| A3 | `AUR` manda `User-Agent: b3l0w-cli (...)`, no el genérico de Go | `TestAURMandaUserAgent` |
+| A4 | `aurEndpoint` documentada como de solo lectura después del arranque; los tests la cambian antes de correr | documentado |

@@ -340,3 +340,10 @@ nuevos.
 | ID | Arreglo | Test |
 |---|---|---|
 | B1 | `per_page=100`: el repo publica los `desktop-*`, y con 30 posiciones el tag `v*` del CLI podía quedar fuera | `TestAPIUsaPerPage100` |
+## Arreglados (MEDIO)
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A2 | `numeros` compara cuatro componentes en vez de tres | `TestNumerosCuatroComponentes` |
+| A3 | `withV` no antepone `v` a algo que no empieza con dígito: `dev` ya no se vuelve `vdev` | `TestWithVNoTocaLoQueNoEsVersion` |
+| A4 | Ya estaba en `ac95ce8`: `replaceFile = system.ReplaceBinary` escribe 0755 | `TestReplaceBinaryDejaEjecutable` (en `kit/system`) |

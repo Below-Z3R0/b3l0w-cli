@@ -303,8 +303,10 @@ func TestUpdateActualizaSiElDigestCambia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no guardó el estado: %v", err)
 	}
-	if saved.Digest != "host/repo@sha256:nuevo" {
-		t.Errorf("Digest = %q", saved.Digest)
+	// El estado guarda el digest normalizado: comparar contra el
+	// RepoDigest crudo (host/repo@sha256:...) era el bug M1.
+	if saved.Digest != "sha256:nuevo" {
+		t.Errorf("Digest = %q, quería el normalizado", saved.Digest)
 	}
 }
 
