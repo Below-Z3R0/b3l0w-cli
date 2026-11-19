@@ -148,6 +148,18 @@ func ExpandHome(path string) string {
 // pisa un binario que está corriendo ("text file busy") y no queda un
 // archivo a medias si algo falla.
 func ReplaceFile(src, dest string) error {
+	return replaceFile(src, dest, 0o644)
+}
+
+// ReplaceBinary reemplaza un ejecutable.
+//
+// Igual que ReplaceFile pero el modo por defecto es 0755: un binario
+// nuevo que se escribe 0644 se instala y no se puede correr.
+func ReplaceBinary(src, dest string) error {
+	return replaceFile(src, dest, 0o755)
+}
+
+func replaceFile(src, dest string, porDefecto os.FileMode) error {
 	// Si el destino es un symlink (por ejemplo ~/.local/bin/prog ->
 	// ~/.config/prog/prog), se reemplaza el archivo real: si no, quedaría
 	// el symlink convertido en una copia y el binario duplicado.
@@ -164,7 +176,7 @@ func ReplaceFile(src, dest string) error {
 
 	// Se conserva el modo del destino: un config 0644 no tiene que
 	// terminar 0755 por reemplazarlo.
-	modo := os.FileMode(0o644)
+	modo := porDefecto
 	if info, err := os.Stat(dest); err == nil {
 		modo = info.Mode().Perm()
 	}

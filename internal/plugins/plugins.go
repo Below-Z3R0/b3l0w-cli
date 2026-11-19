@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Below-Z3R0/b3l0w-cli/kit/paths"
+	"github.com/Below-Z3R0/b3l0w-cli/kit/system"
 )
 
 // Prefix es el prefijo de los binarios de extensión.
@@ -45,6 +46,12 @@ func Discover() []string {
 
 // Find devuelve la ruta de una extensión, o "" si no existe.
 func Find(name string) string {
+	// El nombre viene de la línea de comandos: sin esto, un "../" sale
+	// del directorio privado y el CLI ejecuta un binario de cualquier
+	// parte del disco.
+	if err := system.SafeName(name); err != nil {
+		return ""
+	}
 	path := filepath.Join(paths.PluginsDir(), Prefix+name)
 	info, err := os.Stat(path)
 	if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {

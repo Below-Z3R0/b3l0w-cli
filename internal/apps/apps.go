@@ -42,13 +42,18 @@ func Run(args []string) int {
 		return exec(false, "-Q")
 	}
 
-	flag := pacmanArgs[0]
-
-	if partialUpgrade(flag) {
-		output.Fail("eso es un partial upgrade: sincroniza la DB sin actualizar y deja el sistema a medias")
-		fmt.Println("  usá: b3l0w apps -Syu")
-		return 1
+	// El freno mira TODOS los argumentos, no el primero: con
+	// `--noconfirm -Sy firefox` el -Sy queda en la posición 1 y el
+	// freno no lo veía.
+	for _, arg := range pacmanArgs {
+		if partialUpgrade(arg) {
+			output.Fail("eso es un partial upgrade: sincroniza la DB sin actualizar y deja el sistema a medias")
+			fmt.Println("  usá: b3l0w apps -Syu")
+			return 1
+		}
 	}
+
+	flag := pacmanArgs[0]
 
 	// El freno de DB vieja aplica a las instalaciones, no a -Syu.
 	//

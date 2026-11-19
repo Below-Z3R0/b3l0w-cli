@@ -347,6 +347,12 @@ func updateDotfiles(opts Options) int {
 	state := filepath.Join(home, ".local", "state", "b3l0w", "dotfiles.json")
 
 	if opts.Adopt {
+		if opts.DryRun {
+			// Adopt registra el estado de cada archivo: no hay forma de
+			// previsualizarlo sin escribir. Se dice y no se ejecuta.
+			output.Warn("--adopt no tiene preview: registra el estado de cada archivo")
+			return 0
+		}
 		n, err := dotfiles.Adopt(dir, home, state)
 		if err != nil {
 			output.Fail(err.Error())
@@ -358,8 +364,14 @@ func updateDotfiles(opts Options) int {
 
 	// Snapshot antes de tocar el home. Si snapper no tiene config `home`,
 	// el 3-way sigue protegiendo: no se pisa ningún cambio local.
-	if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
-		output.Warn("no home snapshot: " + err.Error())
+	//
+	// En dry-run no: el flag promete no tocar nada y una snapshot es
+	// escribir en el sistema. Antes se creaba igual, así que
+	// `--dotfiles --dry-run` dejaba una snapshot real por corrida.
+	if !opts.DryRun {
+		if err := snapshot.Create("b3l0w pre-dotfiles"); err != nil {
+			output.Warn("no home snapshot: " + err.Error())
+		}
 	}
 
 	// Detectar conflictos antes de escribir: si los hay, preguntar si

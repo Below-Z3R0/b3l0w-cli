@@ -300,3 +300,11 @@ terminar. Cubrieron: la clasificación de banderas con un flag global adelante
 `pacman --noconfirm -Qi bash` sale con 0 (pacman acepta las banderas globales
 antes de la operación) y que `pacman -Qi no-existe` sale con 1 (A2). El
 estado final del worktree no tiene archivos de probe.
+
+---
+
+## Arreglado
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | El freno de partial upgrade recorre **todos** los argumentos, no solo `pacmanArgs[0]`. `--noconfirm -Sy firefox` ahora sale con 1. | `TestRunRechazaPartialUpgradeNoPrimero` |

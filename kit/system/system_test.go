@@ -119,3 +119,39 @@ func TestReplaceFileResuelveSymlink(t *testing.T) {
 		t.Error("el symlink se convirtió en copia: queda duplicado el binario")
 	}
 }
+
+// TestReplaceBinaryDejaEjecutable es el bug M2 de internal/programs: un
+// binario nuevo escrito con ReplaceFile queda 0644 y no se puede correr.
+// ReplaceBinary tiene que dejarlo ejecutable.
+func TestReplaceBinaryDejaEjecutable(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dest := filepath.Join(dir, "dest")
+
+	if err := os.WriteFile(src, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceBinary(src, dest); err != nil {
+		t.Fatalf("ReplaceBinary: %v", err)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("el binario quedó %o, sin permiso de ejecución", info.Mode().Perm())
+	}
+
+	// Y un binario que ya existía conserva su modo: no se fuerza 0755
+	// sobre uno que el usuario dejó 0700.
+	if err := os.Chmod(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceBinary(src, dest); err != nil {
+		t.Fatal(err)
+	}
+	info, _ = os.Stat(dest)
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("ReplaceBinary pisó el modo: quedó %o, quería 0700", info.Mode().Perm())
+	}
+}

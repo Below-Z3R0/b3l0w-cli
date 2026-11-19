@@ -187,7 +187,19 @@ func selectPlugins(m *Manifest, id string) ([]Entry, error) {
 }
 
 func installOne(entry Entry, pluginsDir string, dryRun bool) error {
-	dest := filepath.Join(pluginsDir, slug(entry))
+	name := slug(entry)
+	// El nombre sale del manifiesto y termina en un os.RemoveAll: sin
+	// esta validación, un ID o un Path con ".." borra el directorio
+	// padre del de plugins. remove.go ya valida igual; acá faltaba.
+	if err := system.SafeName(name); err != nil {
+		return fmt.Errorf("plugin %s: nombre inválido: %w", entry.ID, err)
+	}
+	if entry.Path != "" && entry.Path != name {
+		if err := system.SafeName(entry.Path); err != nil {
+			return fmt.Errorf("plugin %s: path inválido: %w", entry.ID, err)
+		}
+	}
+	dest := filepath.Join(pluginsDir, name)
 	if dryRun {
 		fmt.Printf("  → %s %s en %s\n", entry.ID, entry.Version, dest)
 		return nil
@@ -196,7 +208,7 @@ func installOne(entry Entry, pluginsDir string, dryRun bool) error {
 	if err := os.RemoveAll(dest); err != nil {
 		return err
 	}
-	if entry.Path != slug(entry) {
+	if entry.Path != "" && entry.Path != name {
 		if err := os.RemoveAll(filepath.Join(pluginsDir, entry.Path)); err != nil {
 			return err
 		}

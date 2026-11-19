@@ -26,7 +26,10 @@ func Path() string {
 // Current lee el canal guardado; si no hay, lo detecta por pacman.
 func Current() string {
 	if data, err := os.ReadFile(Path()); err == nil {
-		if value := strings.TrimSpace(string(data)); value != "" {
+		// Solo los canales conocidos: un archivo editado a mano con
+		// "nightly" se devolvía tal cual y update lo trataba como edge.
+		// Un valor desconocido se ignora y se detecta.
+		if value := strings.TrimSpace(string(data)); value == Stable || value == Edge {
 			return value
 		}
 	}

@@ -88,7 +88,7 @@ func InstallVerified(p config.Program, requireSignature bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := system.ReplaceFile(tmp, dest); err != nil {
+	if err := system.ReplaceBinary(tmp, dest); err != nil {
 		return "", fmt.Errorf("no se pudo escribir %s: %w", dest, err)
 	}
 	return version, nil

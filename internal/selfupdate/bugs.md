@@ -326,3 +326,11 @@ una lista de releases en orden de creación (A1), el comportamiento de
 probe del paquete `internal/programs` con `system.ReplaceFile` y un destino
 inexistente. El estado final del worktree no tiene archivos de prueba
 nuevos.
+
+---
+
+## Arreglado
+
+| ID | Arreglo | Test |
+|---|---|---|
+| A1 | `Check` elige el tag de versión más alta con `compareVersions`, no el primero de la lista. Draft y prerelease se siguen ignorando. | `TestCheckDevuelveElMayor` y `TestCheckIgnoraDraftYPrerelease` |

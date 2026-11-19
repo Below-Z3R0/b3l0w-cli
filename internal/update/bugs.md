@@ -710,3 +710,11 @@ reprodujo porque `updateServices` necesita Docker y estados reales, pero
 el `return 0` incondicional de `update.go:243` y el `return` descartado de
 `update.go:131` son verificables leyendo el código. El estado final del
 worktree no tiene archivos de prueba nuevos.
+
+---
+
+## Arreglado
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `updateDotfiles` no crea la snapshot cuando `opts.DryRun`: el flag promete no tocar nada y una snapshot es escribir. `--adopt` en dry-run tampoco ejecuta (registra estado y no tiene preview). | `TestDryRunNoCreaSnapshot` (y `TestSinDryRunSiCreaSnapshot` como contraste) |
