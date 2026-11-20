@@ -17,8 +17,30 @@ func sessionsDir(dataDir string) string {
 	return filepath.Join(dataDir, "sessions")
 }
 
+// sessionPath arma la ruta del archivo de una sesión. El id puede venir de
+// afuera (--session o current.json), así que la ruta no puede depender de él
+// para salirse de sessions/: filepath.Base deja el nombre plano y el
+// filepath.Join no puede escapar del directorio (Y10).
 func sessionPath(dataDir, id string) string {
-	return filepath.Join(sessionsDir(dataDir), id+".json")
+	return filepath.Join(sessionsDir(dataDir), filepath.Base(id)+".json")
+}
+
+// sessionIDValido dice si un id de sesión puede usarse como nombre de
+// archivo. Los ids los genera newSessionID ("s" + hex) o los pasa el panel con
+// --session: un "../../escaped" no es un id (Y10).
+func sessionIDValido(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-' || r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func newSessionID() string {
@@ -73,6 +95,9 @@ func buildRadio(ctx context.Context, c *Client, videoID, sessionID string) (Sess
 
 // SaveSession persiste la cola y deja el puntero a la sesión activa.
 func SaveSession(dataDir string, session Session) error {
+	if !sessionIDValido(session.ID) {
+		return fmt.Errorf("sesiones: id de sesión inválido: %q", session.ID)
+	}
 	if err := EnsureDir(sessionsDir(dataDir)); err != nil {
 		return fmt.Errorf("sesiones: %w", err)
 	}
@@ -92,6 +117,11 @@ func LoadSession(dataDir, id string) (Session, error) {
 			return Session{}, fmt.Errorf("no hay una sesión de reproducción activa")
 		}
 		id = pointer.Session
+	}
+	// Un id con "../" no es un id: sin esta validación la lectura salía de
+	// sessions/ y podía leer cualquier JSON del disco (Y10).
+	if !sessionIDValido(id) {
+		return Session{}, fmt.Errorf("sesión desconocida: %s", id)
 	}
 	var session Session
 	if err := readJSON(sessionPath(dataDir, id), &session); err != nil {

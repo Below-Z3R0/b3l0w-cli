@@ -72,9 +72,25 @@ func videoSeconds(ctx context.Context, c *Client, videoID string) (int, error) {
 	return seconds, nil
 }
 
+// clockOf formatea los segundos como reloj del panel: "3:45", y "1:02:03"
+// cuando hay horas. Devuelve "" para 0 o negativos: la duración desconocida no
+// se muestra como 0:00.
 func clockOf(seconds int) string {
 	if seconds <= 0 {
 		return ""
+	}
+	return Clock(seconds)
+}
+
+// Clock formatea los segundos como reloj. Es el reloj del panel: con horas
+// ("1:02:03"), y "0:00" para 0 o negativos.
+//
+// clockOf no se puede usar desde el CLI (no está exportado) y el CLI tenía su
+// propio reloj, que mostraba "62:03" para una hora de pista (Y15). Ahora los
+// dos usan el mismo.
+func Clock(seconds int) string {
+	if seconds < 0 {
+		seconds = 0
 	}
 	hours := seconds / 3600
 	minutes := (seconds % 3600) / 60

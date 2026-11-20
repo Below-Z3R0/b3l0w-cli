@@ -28,6 +28,21 @@ const (
 	radioPlaylistPrefix = "RDAMVM"
 )
 
+// retrySleep es la espera entre reintentos. Es una variable para que el test
+// pueda contarla: la espera tiene que caer ENTRE intentos, no después del
+// último, que ya no se usa (Y18).
+var retrySleep = time.Sleep
+
+// waitBeforeRetry espera 400 ms antes del siguiente intento. Después del
+// último intento no espera: ese resultado ya no se usa y la espera sólo
+// retrasa la respuesta del panel (Y18).
+func waitBeforeRetry(attempt int) {
+	if attempt >= 1 {
+		return
+	}
+	retrySleep(400 * time.Millisecond)
+}
+
 // Client es un cliente innertube mínimo con el contexto correcto.
 type Client struct {
 	HTTP *http.Client
@@ -100,7 +115,7 @@ func (c *Client) post(ctx context.Context, endpoint string, body map[string]any,
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("innertube %s: %w", short(endpoint), err)
-			time.Sleep(400 * time.Millisecond)
+			waitBeforeRetry(attempt)
 			continue
 		}
 		payload, readErr := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
@@ -112,7 +127,7 @@ func (c *Client) post(ctx context.Context, endpoint string, body map[string]any,
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("innertube %s: HTTP %d: %s", short(endpoint), resp.StatusCode, snippet(payload))
 			if resp.StatusCode >= 500 {
-				time.Sleep(400 * time.Millisecond)
+				waitBeforeRetry(attempt)
 				continue
 			}
 			return nil, lastErr

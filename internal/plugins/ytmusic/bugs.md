@@ -1,73 +1,3 @@
-# BUGS — internal/plugins/ytmusic
-
-Revisión de integridad en contexto cero sobre `internal/plugins/ytmusic`:
-**2.286 líneas de producción** (1.896 del paquete + 390 de `cli/root.go`) y
-**3.967 de tests** (13 archivos de test + `cli/root_test.go`). Base: `main`
-en `aebf878`, working tree limpio. **No se corrigió nada**: este archivo es el
-reporte.
-
-El módulo nunca pasó por una revisión de integridad: los 151 hallazgos de la
-auditoría anterior cubrieron `internal/*`, no los plugins.
-
-Estado de la suite al cerrar:
-
-```
-$ cd /home/b3low-z3r0/Documents/Github/Cli/b3l0w-cli
-$ go test ./internal/plugins/ytmusic/... -count=1
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic	1.706s	coverage: 85.0% of statements
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli	0.003s	coverage: 32.5% of statements
-$ go build ./...
-(sin salida)
-```
-
-Los dos verdes: no se tocó código de producción ni de test.
-
-## Cómo se corrieron las reproducciones
-
-Cada hallazgo va con un probe que se ejecutó **contra una copia del paquete**,
-para no dejar un archivo de test en el repo:
-
-```bash
-mkdir -p /tmp/ytprobe/ytmusic
-cd /home/b3low-z3r0/Documents/Github/Cli/b3l0w-cli
-cp internal/plugins/ytmusic/*.go /tmp/ytprobe/ytmusic/
-printf 'module ytprobe\n\ngo 1.27.3\n' > /tmp/ytprobe/go.mod
-# + el probe del hallazgo (van abajo, en package ytmusic)
-cd /tmp/ytprobe && go test ./ytmusic/ -run TestProbe -v -count=1
-```
-
-Los nombres de los probes son `TestProbe<N>` y el prefijo de cada línea de
-salida (`P<N>`) corresponde al hallazgo. Las salidas citadas son literales.
-
-## Resumen
-
-| ID | Sev | Qué | Línea | Estado |
-|---|---|---|---|---|
-| Y1 | CRÍTICO | `Stop` mata el grupo de procesos del PID que dice `player.json`, **sin validar que sea el nuestro**: mata procesos ajenos | `player.go:209-235` | arreglado |
-| Y2 | ALTO | `Status` y `Stop` borran el archivo que dice el campo `socket` de `player.json`: borrado de archivo arbitrario | `player.go:232,257` | arreglado |
-| Y3 | ALTO | `findRenderer` camina el map en el orden **aleatorio** de Go: el token de continuación (y el `videoId`) cambian entre llamadas al mismo payload | `parse.go:75-94,170-188` | arreglado |
-| Y4 | ALTO | El rebase de `next` escribe la cola **truncada** en disco antes del guardado final: si ese guardado falla, se pierde la cola | `radio.go:140` + `radio.go:58,65-73` | arreglado |
-| Y5 | ALTO | `writeJSON` usa un `.tmp` de **nombre fijo**: dos escritores del mismo archivo se pisan, uno falla con ENOENT y la actualización del otro se pierde | `model.go:142-152` | arreglado |
-| Y6 | MEDIO | `Play` no tiene timeout en ningún punto: un `yt-dlp` colgado cuelga el comando para siempre | `player.go:51,88` + `cli/root.go:244,305` | abierto |
-| Y7 | MEDIO | `Play` deja el proceso de reproducción **huérfano** si el estado no se puede guardar | `player.go:148` | abierto |
-| Y8 | MEDIO | `EnsureDir` no ajusta los permisos de un directorio que ya existe: el socket de mpv puede quedar en un dir `0755` | `model.go:90-95` | abierto |
-| Y9 | MEDIO | `Thumbs` arma la ruta con el `videoId` que viene de la red, sin sanear: puede escribir **fuera** del directorio de portadas | `thumbs.go:32,57` | abierto |
-| Y10 | MEDIO | `sessionPath` arma la ruta con el valor de `--session`: puede leer/escribir **fuera** de `sessions/` | `radio.go:20-22` | abierto |
-| Y11 | MEDIO | `bestThumb` se queda **sin portada** si todas las que trae la página son de más de 400 px | `parse.go:149-166` | abierto |
-| Y12 | MEDIO | `durationToSeconds` **desborda** con un número enorme: devuelve segundos negativos o absurdos | `model.go:115-138` | abierto |
-| Y13 | MEDIO | Un `player.json` corrupto hace que `status` diga "parado" para siempre y **nunca** limpia el archivo roto | `player.go:239-243` | abierto |
-| Y14 | BAJO | `limit <= 0` significa cosas distintas: `Thumbs` baja **todas** las portadas, `EnrichDurations` no hace nada | `thumbs.go:26` vs `durations.go:20` | abierto |
-| Y15 | BAJO | El reloj del CLI no lleva horas: 3.723 s se muestran como `62:03` | `cli/root.go:361-366` | abierto |
-| Y16 | BAJO | `seek abc` no falla: el error de `Sscanf` se ignora y salta a 0 | `cli/root.go:330` | abierto |
-| Y17 | BAJO | Código muerto: `if song.Title == "" { song.Title = "" }` | `cli/root.go:302-304` | abierto |
-| Y18 | BAJO | El reintento espera 400 ms **también después del último intento** | `client.go:103` | abierto |
-| Y19 | BAJO | La cobertura que promete el README (83,7 %) no es la real (85,0 % del paquete, 32,5 % de `cli/`) | `README.md:139` | abierto |
-| Y20 | BAJO | El paquete no compila fuera de Unix (`syscall.Kill`, `Setsid`) y no tiene build tag | `player.go:127,216` | abierto |
-
-Totales: **1 CRÍTICO, 4 ALTO, 8 MEDIO, 7 BAJO** (20 hallazgos, todos reproducidos).
-
----
-
 ## Arreglados
 
 Ola del 2026-11-19: los 5 hallazgos CRÍTICOS y ALTOS. Cada arreglo tiene un test
@@ -105,20 +35,121 @@ cola corta.
 se pisaran: el primero renombraba y al segundo le daba ENOENT. Ahora cada uno
 tiene su temporal y el rename final sigue siendo atómico.
 
+Ola del 2026-11-20: los 15 hallazgos MEDIO y BAJO (Y6–Y20). Cada arreglo
+tiene un test que se verificó **revirtiéndolo**: con el código viejo falla con
+el mensaje del bug, no con un error de compilación.
+
+| ID | Arreglo | Test |
+|---|---|---|
+| Y6 | `Play` recibe un contexto y `resolveMetadata` usa `exec.CommandContext` con `WaitDelay`: un `yt-dlp` colgado se corta en vez de colgar el panel | `TestPlayCortaElYTDLPColgado` |
+| Y7 | Si el estado no se puede guardar, `Play` mata el grupo del proceso que arrancó (`killStarted`) | `TestPlayMataElProcesoSiNoGuardaElEstado` |
+| Y8 | `EnsureDir` hace `chmod 0700` después de `MkdirAll`: un directorio que ya existía no queda en 0755 | `TestEnsureDirAjustaLosPermisosDeUnDirectorioExistente` |
+| Y9 | `Thumbs` sanea el `videoId` (`safeThumbName`): un id con `/` o `..` se descarta y no se escribe fuera del directorio | `TestThumbsNoEscribeFueraDelDirectorio` |
+| Y10 | `sessionPath` usa `filepath.Base` y `LoadSession`/`SaveSession` validan el id: la ruta nunca sale de `sessions/` | `TestSessionPathNoSaleDeSessions` |
+| Y11 | `bestThumb` tiene red de seguridad: si todas las portadas son de más de 400 px, se queda con la más chica | `TestBestThumbUsaUnaPortadaGrandeSiNoHayChica` |
+| Y12 | `durationToSeconds` tiene techo (`maxDurationSeconds`, un año) y acumula en `int64`: no hay overflow ni segundos negativos | `TestDurationToSecondsNoDesborda` |
+| Y13 | `Status` distingue "no hay player.json" de "el estado está roto": el corrupto es error y se limpia el archivo | `TestStatusConEstadoCorruptoEsErrorYLimpiaElArchivo` |
+| Y14 | `limit <= 0` significa "ninguna" en `Thumbs` y en `EnrichDurations`; el CLI no deja pasar un `--limit` negativo | `TestThumbsConLimiteNoPositivoNoBajaNinguna` |
+| Y15 | El reloj del CLI usa `ytmusic.Clock`: una hora se muestra como `1:00:00`, no como `60:00` | `TestElRelojDelCLILlevaHoras` |
+| Y16 | `seek` parsea con `strconv.Atoi` y falla si el argumento no es un número, en vez de saltar a 0 | `TestSeekConUnArgumentoQueNoEsNumeroFalla` |
+| Y17 | Se borró la rama muerta `if song.Title == "" { song.Title = "" }` del comando `play` | `TestElComandoPlayNoTieneCodigoMuerto` |
+| Y18 | La espera de 400 ms cae **entre** intentos: después del último no se espera (`waitBeforeRetry`) | `TestElReintentoNoEsperaDespuesDelUltimoIntento` |
+| Y19 | El README declara la cobertura real, por paquete, y un test la mide en un subproceso y falla si deja de coincidir | `TestElREADMEDeclaraLaCoberturaReal` |
+| Y20 | Lo que es de Unix (`setsid`, grupos de procesos, señales) vive en `player_unix.go` con build tag; `player_other.go` hace que el paquete compile en cualquier plataforma | `TestElPlayerCompilaFueraDeUnix` |
+
+**Y6 — `player.go`, `cli/root.go`.** `Play` ahora recibe un
+`context.Context`. La metadata se pide con `exec.CommandContext` y un
+`WaitDelay` de 2 s: si el `yt-dlp` deja hijos con los pipes abiertos, el
+`Output()` se quedaba esperando el EOF de esos pipes. El CLI le pasa un
+contexto de 45 s. El `playTimeout` (45 s) es el techo interno de la fase de
+metadata, así que tampoco depende de que el llamador pase contexto.
+
+**Y7 — `player.go`.** Si `writeJSON` del `player.json` falla, el reproductor
+ya está corriendo pero sin estado: `killStarted` manda SIGTERM al grupo y,
+al final, SIGKILL (el `sh` puede forkear a `yt-dlp` y `mpv` después del
+SIGTERM). El PID es del proceso que este código acaba de lanzar, así que no
+hace falta la validación de `startTime` que hace `Stop`.
+
+**Y8 — `model.go`.** `EnsureDir` hace `chmod 0700` después de `MkdirAll`.
+`MkdirAll` no toca los permisos de un directorio que ya existía: un `dataDir`
+de una corrida anterior en 0755 dejaba el socket de mpv legible por otros.
+
+**Y9 — `thumbs.go`.** `safeThumbName` acepta sólo `[A-Za-z0-9_-]` y hasta 64
+caracteres. Un `videoId` con `/` o `..` (viene de la red, sin validar) se
+descarta: la canción queda sin portada en vez de escribir donde le digan.
+
+**Y10 — `radio.go`.** `sessionPath` usa `filepath.Base` (la ruta no puede
+escapar del directorio) y `LoadSession`/`SaveSession` validan el id con
+`sessionIDValido` antes de tocar el disco. Un id con `../` es un error
+explícito, no una lectura de cualquier JSON del disco.
+
+**Y11 — `parse.go`.** `pickThumb` separa la mejor candidata (la más grande de
+hasta 400 px) del respaldo (la más chica de las que pasan). Si no hay ninguna
+candidata chica, devuelve el respaldo: la fila deja de quedar sin imagen. La
+preferencia por la portada chica no cambió.
+
+**Y12 — `model.go`.** `durationToSeconds` acumula en `int64` y corta con
+`maxDurationSeconds` (un año). Una duración absurda da `0`, como las demás
+entradas raras: nunca un segundo negativo ni un número que desborda.
+
+**Y13 — `player.go`.** `Status` separa los dos casos: si el `player.json` no
+existe, "parado" con `exit 0`; si existe pero no se puede leer, es un error
+("el estado del player está roto") y el archivo roto se limpia, para que el
+siguiente `status` no vuelva a leerlo. `Stop` también limpia el estado
+corrupto.
+
+**Y14 — `thumbs.go`, `durations.go`, `cli/root.go`.** `limit <= 0` significa
+"ninguna" en las dos funciones. En el CLI, `flags.number` cae al default con
+un valor no positivo: `--limit -1` ya no significa "todas" en un comando y
+"ninguna" en el otro.
+
+**Y15 — `durations.go`, `cli/root.go`.** `clockOf` ahora delega en `Clock`,
+que se exporta. El CLI usa `ytmusic.Clock`: los dos relojes son el mismo y una
+hora se muestra como `1:00:00`.
+
+**Y16 — `cli/root.go`.** `seek` parsea con `strconv.Atoi` y falla con un
+error legible si el argumento no es un número. "12abc" también falla (antes
+se aceptaba como 12).
+
+**Y17 — `cli/root.go`.** La rama `if song.Title == "" { song.Title = "" }`
+era un esqueleto: la decisión ya está implícita en `Play`, que resuelve la
+metadata con yt-dlp cuando el título viene vacío. El arreglo no cambia el
+comportamiento, así que su test mira el código: la rama muerta no puede
+volver.
+
+**Y18 — `client.go`.** `waitBeforeRetry` sólo espera si hay otro intento
+después. Con un 5xx permanente el comando tardaba 800 ms de más.
+
+**Y19 — `README.md`, `coverage_test.go`.** El README declara la cobertura
+real por paquete. `TestElREADMEDeclaraLaCoberturaReal` mide la cobertura de
+verdad en un subproceso (`go test -cover`) y falla si el README deja de
+coincidir con ella, así que el número no puede volver a mentir.
+
+**Y20 — `player_unix.go`, `player_other.go`.** `setsid`, `syscall.Kill` y el
+`EPERM` de `alive` no existen fuera de Unix: viven en `player_unix.go` con
+`//go:build unix`. `player_other.go` (`//go:build !unix`) da los stubs que
+dicen que el reproductor sólo funciona en Unix. El resto del paquete compila
+en cualquier plataforma.
+
 ### Verificación de los arreglos
 
 ```console
 $ go build ./... && go vet ./internal/plugins/ytmusic/... && go test ./internal/plugins/ytmusic/... -count=2
-ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic
-ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli
 ```
+
+Cada test se verificó **revirtiendo su arreglo**: el test falla con el
+mensaje del bug, no con un error de compilación. Los 20 quedaron
+verificados (Y1–Y5 en la ola del 2026-11-19, Y6–Y20 en la del 2026-11-20).
 
 Los fixtures de `player_ipc_test.go` y `player_stop_test.go` se actualizaron al
 contrato nuevo: el socket vive en `<dataDir>/mpv.sock` y el `playerFile` lleva el
 starttime real del proceso de prueba. Sin eso, los tests viejos probaban un
 contrato que ya no existe.
 
-**Sigue abierto:** Y6–Y20 (8 MEDIO y 7 BAJO).
+**Sigue abierto:** nada. Los 20 hallazgos de este reporte están cerrados.
+
 
 
 ---
@@ -626,7 +657,7 @@ Dos intentos, dos esperas: la segunda sobra.
 
 ## Y19 — la cobertura del README no es la real (BAJO)
 
-`README.md:139` dice "Cobertura: **83,7 %**". La medida de hoy:
+`README.md:139` decía "Cobertura: **83,7 %**". La medida de hoy:
 
 ```
 $ go test ./internal/plugins/ytmusic/... -count=1 -cover
@@ -637,6 +668,19 @@ ok  	.../internal/plugins/ytmusic/cli	0.003s	coverage: 32.5% of statements
 El 83,7 % no corresponde ni al paquete (85,0 %) ni a `cli/` (32,5 %). Si la
 cifra era del paquete, hay que actualizarla; si era de las dos juntas, hay
 que aclarar de qué se mide.
+
+**Arreglado.** El README declara la cobertura real, por paquete, y un test
+(`TestElREADMEDeclaraLaCoberturaReal`) la mide en un subproceso y falla si
+deja de coincidir. La medida después de esta ola de arreglos:
+
+```
+$ go test ./internal/plugins/ytmusic/... -count=1 -cover
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic	15.119s	coverage: 87.9% of statements
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/ytmusic/cli	0.003s	coverage: 38.4% of statements
+```
+
+Los números del README son estos, no los de arriba (que eran los de la
+auditoría).
 
 ## Y20 — el paquete no compila fuera de Unix (BAJO)
 
@@ -670,25 +714,25 @@ están arriba; las que sí, acá:
 | 12 s para la descarga de portadas | `thumbs.go:40` | se sostiene |
 | `net.DialTimeout` de 1,2 s al socket de mpv | `player.go:316` | se sostiene |
 | Deadline de 1,5 s en la conexión IPC | `player.go:321` | se sostiene, pero el error del `SetDeadline` se ignora (`player.go:321`) |
-| Contexto de 45 s para feeds y 40 s para radio/next | `cli/root.go:156,199,218` | se sostiene para esos tres; **`play` no tiene contexto** (Y6) |
+| Contexto de 45 s para feeds y 40 s para radio/next | `cli/root.go:156,199,218` | se sostiene; `play` también tiene contexto (45 s) desde Y6 |
 | Headers `X-YouTube-Client-Name: 67`, versión, Origin, Referer y User-Agent | `client.go:92-98` | se sostiene |
 | `post` mira `playabilityStatus` y lo traduce a error legible | `client.go:129-133`, `client.go:142-156` | se sostiene |
-| 2 intentos con 400 ms de espera; 5xx y red se reintentan, 4xx no | `client.go:87-119` | se sostiene (con Y18: espera de más) |
+| 2 intentos con 400 ms de espera entre ellos; 5xx y red se reintentan, 4xx no | `client.go:87-119` | se sostiene (Y18 lo arregló: después del último intento no espera) |
 | Cuerpo limitado a 32 MB | `client.go:106` | se sostiene |
 | Errores recortados a 160 caracteres | `client.go:166-175` | se sostiene |
 | `durationToSeconds("3:45")` → 225, tolera `"1:02:03"`, da 0 en las entradas raras | `model.go:115-138` | se sostiene (el caso `"5"` → 5 es intencional y está testeado en `durations_test.go:41`) |
-| `clockOf(225)` → `"3:45"`, `""` para 0 o negativos, `"1:02:03"` con horas | `durations.go:75-85` | se sostiene (el CLI tiene su propio reloj: Y15) |
+| `clockOf(225)` → `"3:45"`, `""` para 0 o negativos, `"1:02:03"` con horas | `durations.go:75-85` | se sostiene (Y15: el CLI ahora usa el mismo `Clock`) |
 | `EnrichDurations` en paralelo, hasta 6 a la vez, corta en `limit` | `durations.go:26-47` | se sostiene |
-| `bestThumb` descarta las portadas de más de 400 px | `parse.go:161` | se sostiene, pero sin fallback (Y11) |
+| `bestThumb` descarta las portadas de más de 400 px | `parse.go:161` | se sostiene (Y11 le agregó el fallback: si sólo hay grandes, usa la más chica) |
 | Charts prefiere Top 100 > Top 50 > Top > Trending, +10 "songs", +5 "global" | `charts.go:49-72` | se sostiene |
 | Un chart vacío es un error | `charts.go:44` | se sostiene |
 | Home tiene fallback a la primera playlist | `home.go:28-34`, `home.go:49-77` | se sostiene |
 | `search` manda el filtro de canciones | `client.go:194-196` | se sostiene |
-| El player es detachado (`setsid`) y se mata por grupo (`-pid`) | `player.go:127`, `player.go:216` | se sostiene el mecanismo; **no valida el PID** (Y1) |
+| El player es detachado (`setsid`) y se mata por grupo (`-pid`) | `player_unix.go`, `player.go:216` | se sostiene el mecanismo; **no valida el PID** (Y1) |
 | La posición sale de mpv; si no hay `time-pos` se informa `starting` con la duración de catálogo | `player.go:278-285` | se sostiene |
 | EOF es la señal de "pasa a la siguiente" y llega antes de que muera el proceso | `player.go:260-272` | se sostiene |
-| El estado se escribe de forma atómica (temporal + rename) | `model.go:142-152` | **no se sostiene contra otro escritor** (Y5) |
-| `DataDir` con permisos 0700 | `model.go:90-95` | **no se sostiene si el directorio ya existía** (Y8) |
+| El estado se escribe de forma atómica (temporal + rename) | `model.go:142-152` | se sostiene, también contra otro escritor (Y5) |
+| `DataDir` con permisos 0700 | `model.go:90-95` | se sostiene (Y8: los permisos se ajustan aunque el directorio ya exista) |
 | `LoadSession` rechaza un cursor fuera de rango y cubre las cinco operaciones | `radio.go:96-100` | se sostiene |
 | `next` avanza el cursor, pide la tanda siguiente y siembra otra si se agotó | `radio.go:128-162` | se sostiene el flujo; el rebase deja la cola truncada si el guardado final falla (Y4) |
 | `prev` decrece y falla en la primera | `radio.go:182-185` | se sostiene |
@@ -696,7 +740,7 @@ están arriba; las que sí, acá:
 | `enqueue` agrega al final e ignora repetidos | `radio.go:262-267` | se sostiene |
 | `queue` devuelve la cola y el cursor tal como están | `radio.go:283-295` | se sostiene |
 | Ninguna prueba sale a la red | `fakeserver_test.go:34-69` (transporte reescrito) | se sostiene |
-| Cobertura 83,7 % | — | **no se sostiene** (Y19) |
+| Cobertura por paquete | `README.md` | se sostiene (Y19: el README declara la real y un test la mide) |
 
 ## Revisado y limpio (lo que se buscó y no se encontró)
 

@@ -2,6 +2,7 @@ package ytmusic
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -10,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -18,6 +18,10 @@ import (
 // el service se recarga, la música no se corta. El PID vive en player.json y se
 // mata por GRUPO (-pid), porque el grupo es `yt-dlp | mpv` y matar sólo a mpv
 // deja a yt-dlp escribiendo a un pipe sin lector.
+//
+// Lo que es de Unix (setsid, grupos de procesos, señales) vive en
+// player_unix.go con su build tag: este archivo compila en cualquier
+// plataforma (Y20).
 
 type playerFile struct {
 	PID     int    `json:"pid"`
@@ -36,14 +40,19 @@ type playerFile struct {
 func playerPath(dataDir string) string { return filepath.Join(dataDir, "player.json") }
 func socketPath(dataDir string) string { return filepath.Join(dataDir, "mpv.sock") }
 
-// Play arranca la reproducción de un videoId. Reemplaza lo que estuviera
-// sonando: matar y relanzar van en la misma operación para que no queden dos
-// mpv peleando por el dispositivo de audio.
+// playTimeout es el techo del trabajo de `play`: resolver la metadata con
+// yt-dlp y esperar el socket de mpv. Sin este techo, un yt-dlp colgado por la
+// red dejaba el comando esperando para siempre (Y6).
+const playTimeout = 45 * time.Second
+
 // resolveMetadata consulta la metadata real de una pista con yt-dlp.
 // Se usa cuando la canción llega sin título (por ejemplo `play <videoId>`
 // directo): sin esto, el panel muestra el identificador como si fuera el
 // nombre de la canción.
-func resolveMetadata(videoID string) (Song, error) {
+//
+// El contexto manda: si se vence, el yt-dlp se corta y el comando no se
+// queda esperando (Y6).
+func resolveMetadata(ctx context.Context, videoID string) (Song, error) {
 	url := "https://music.youtube.com/watch?v=" + videoID
 	args := []string{
 		"--no-warnings",
@@ -51,7 +60,12 @@ func resolveMetadata(videoID string) (Song, error) {
 		"--print", "%(title)s\t%(artist)s\t%(duration)s\t%(duration_string)s",
 		url,
 	}
-	out, err := exec.Command("yt-dlp", args...).Output()
+	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
+	// WaitDelay: si el contexto se vence pero el proceso deja hijos con los
+	// pipes abiertos, Output() se queda esperando el EOF de esos pipes. El
+	// delay corta la espera: el comando no puede colgarse (Y6).
+	cmd.WaitDelay = 2 * time.Second
+	out, err := cmd.Output()
 	if err != nil {
 		return Song{}, err
 	}
@@ -88,7 +102,13 @@ func parseSeconds(value string) int {
 	return int(seconds)
 }
 
-func Play(dataDir string, song Song, session string) (PlayerState, error) {
+// Play arranca la reproducción de un videoId. Reemplaza lo que estuviera
+// sonando: matar y relanzar van en la misma operación para que no queden dos
+// mpv peleando por el dispositivo de audio.
+//
+// El contexto acota el trabajo: la metadata con yt-dlp y la espera del socket
+// no pueden dejar el comando colgado para siempre (Y6).
+func Play(ctx context.Context, dataDir string, song Song, session string) (PlayerState, error) {
 	if song.VideoID == "" {
 		return PlayerState{}, fmt.Errorf("play: falta el videoId")
 	}
@@ -103,7 +123,17 @@ func Play(dataDir string, song Song, session string) (PlayerState, error) {
 	// se resuelve con yt-dlp: sin esto el panel muestra el videoId como
 	// título y la playerbar queda sin artista ni duración.
 	if song.Title == "" || song.Title == song.VideoID {
-		if meta, err := resolveMetadata(song.VideoID); err == nil {
+		metaCtx, cancel := context.WithTimeout(ctx, playTimeout)
+		meta, err := resolveMetadata(metaCtx, song.VideoID)
+		// El error del contexto se mira ANTES de cancelar: si el deadline
+		// se agotó, el comando se quedaba esperando para siempre (Y6).
+		ctxErr := metaCtx.Err()
+		cancel()
+		if err != nil {
+			if ctxErr != nil {
+				return PlayerState{}, fmt.Errorf("play: se agotó el tiempo esperando la metadata: %w", ctxErr)
+			}
+		} else {
 			song.Title = meta.Title
 			if song.Artist == "" {
 				song.Artist = meta.Artist
@@ -127,7 +157,7 @@ func Play(dataDir string, song Song, session string) (PlayerState, error) {
 	}, " ")
 
 	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setSessionAttr(cmd)
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -153,6 +183,10 @@ func Play(dataDir string, song Song, session string) (PlayerState, error) {
 		StartTime: started,
 	}
 	if err := writeJSON(playerPath(dataDir), state); err != nil {
+		// El reproductor ya arrancó pero su estado no se pudo guardar: sin
+		// player.json no hay forma de controlarlo y la música sigue sonando
+		// sin control. Se lo mata antes de devolver el error (Y7).
+		killStarted(pid)
 		return PlayerState{}, fmt.Errorf("play: %w", err)
 	}
 
@@ -163,9 +197,36 @@ func Play(dataDir string, song Song, session string) (PlayerState, error) {
 		if _, err := os.Stat(socket); err == nil {
 			break
 		}
-		time.Sleep(120 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return PlayerState{}, fmt.Errorf("play: se agotó el tiempo esperando a mpv: %w", ctx.Err())
+		case <-time.After(120 * time.Millisecond):
+		}
 	}
 	return Status(dataDir)
+}
+
+// killStarted mata el proceso que Play acaba de arrancar, cuando no se pudo
+// guardar su estado (Y7). El PID es del proceso que este código lanzó, así
+// que no hace falta validarlo como en `Stop`: no hay riesgo de Recycled PID.
+//
+// Se manda SIGTERM al grupo y, al final, SIGKILL al grupo sin condición: el
+// `sh` puede haber forked a `yt-dlp` y `mpv` justo después del SIGTERM, y
+// esos hijos tampoco pueden quedar vivos.
+func killStarted(pid int) {
+	if pid <= 0 {
+		return
+	}
+	_ = killGroup(pid, signalTerm)
+	deadline := time.Now().Add(600 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if !alive(pid) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = killGroup(pid, signalKill)
+	_ = killProcess(pid, signalKill)
 }
 
 // Pause alterna pausa/reanudación. Un solo comando para un solo botón.
@@ -217,12 +278,17 @@ func Seek(dataDir string, seconds int) (PlayerState, error) {
 func Stop(dataDir string) error {
 	state, err := loadPlayer(dataDir)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			// El estado está roto: no hay nada sonando y el archivo roto se
+			// limpia, así el siguiente status no lo vuelve a leer (Y13).
+			_ = os.Remove(playerPath(dataDir))
+		}
 		return nil // no había nada sonando
 	}
 	if ours(state) {
 		// -pid: el grupo que creó setsid (sh + yt-dlp + mpv).
-		if err := syscall.Kill(-state.PID, syscall.SIGTERM); err != nil {
-			_ = syscall.Kill(state.PID, syscall.SIGTERM)
+		if err := killGroup(state.PID, signalTerm); err != nil {
+			_ = killProcess(state.PID, signalTerm)
 		}
 		deadline := time.Now().Add(1200 * time.Millisecond)
 		for time.Now().Before(deadline) {
@@ -232,8 +298,8 @@ func Stop(dataDir string) error {
 			time.Sleep(60 * time.Millisecond)
 		}
 		if alive(state.PID) {
-			if err := syscall.Kill(-state.PID, syscall.SIGKILL); err != nil {
-				_ = syscall.Kill(state.PID, syscall.SIGKILL)
+			if err := killGroup(state.PID, signalKill); err != nil {
+				_ = killProcess(state.PID, signalKill)
 			}
 		}
 	}
@@ -246,10 +312,24 @@ func Stop(dataDir string) error {
 
 // Status devuelve el estado vivo consultando el socket de mpv: la posición sale
 // de mpv, no de un reloj nuestro, así una pausa o un buffer lento no mienten.
+//
+// Un player.json CORRUPTO es un error, no "parado": antes cualquier fallo de
+// lectura se traducía en "parado" con exit 0 y el archivo roto nunca se
+// limpiaba, así que cada status posterior volvía a leer el mismo JSON inválido
+// (Y13). Un player.json ausente sigue siendo "parado": no hay nada que
+// limpiar.
 func Status(dataDir string) (PlayerState, error) {
 	state, err := loadPlayer(dataDir)
 	if err != nil {
-		return PlayerState{Playing: false}, nil
+		if os.IsNotExist(err) {
+			return PlayerState{Playing: false}, nil
+		}
+		// El estado está roto: se limpia (si no, el panel no puede
+		// distinguir "no suena nada" de "el estado está roto") y se informa
+		// el error.
+		_ = os.Remove(playerPath(dataDir))
+		_ = os.Remove(socketPath(dataDir))
+		return PlayerState{Playing: false}, fmt.Errorf("el estado del player está roto: %w", err)
 	}
 	out := PlayerState{
 		PID:      state.PID,
@@ -312,13 +392,8 @@ func loadPlayer(dataDir string) (playerFile, error) {
 	return state, nil
 }
 
-func alive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
-}
+// alive y las señales viven en player_unix.go / player_other.go: son de
+// Unix (Y20).
 
 // processStartTime lee el campo 22 de /proc/<pid>/stat (starttime, en ticks
 // desde el boot). Junto al PID es la identidad del proceso: el número solo se

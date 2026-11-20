@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -88,6 +89,9 @@ func (f flags) value(name, fallback string) string {
 	return fallback
 }
 
+// number lee un flag numérico. Un valor que no se puede parsear, un cero o un
+// negativo caen al default: un `--limit -1` no puede significar dos cosas
+// distintas según el comando (Y14).
 func (f flags) number(name string, fallback int) int {
 	raw, ok := f.values[name]
 	if !ok {
@@ -95,7 +99,7 @@ func (f flags) number(name string, fallback int) int {
 	}
 	value := 0
 	fmt.Sscanf(raw, "%d", &value)
-	if value == 0 {
+	if value <= 0 {
 		return fallback
 	}
 	return value
@@ -241,7 +245,13 @@ func runStep(args []string, direction string) int {
 		"continuation": result.Continuation,
 	}
 	if f.bools["play"] {
-		state, playErr := ytmusic.Play(dataDir, result.Song, result.Session)
+		// El play lleva su propio presupuesto: la metadata con yt-dlp no
+		// puede dejar el comando colgado para siempre (Y6). No se deriva del
+		// contexto del paso: si la radio tardó 35 s, al play le quedaría 5 s
+		// y fallaría con una pista que antes sonaba.
+		playCtx, cancelPlay := context.WithTimeout(context.Background(), 45*time.Second)
+		state, playErr := ytmusic.Play(playCtx, dataDir, result.Song, result.Session)
+		cancelPlay()
 		if playErr != nil {
 			return fail(playErr, f.bools["json"])
 		}
@@ -299,10 +309,9 @@ func runPlay(args []string) int {
 	// El título NO se rellena con el videoId: si queda vacío, `Play` lo
 	// resuelve con yt-dlp. Poner el id como título hacía que la playerbar
 	// mostrara "Z85lxckrtzg" en lugar de "Thriller".
-	if song.Title == "" {
-		song.Title = ""
-	}
-	state, err := ytmusic.Play(dataDir, song, f.value("session", ""))
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	state, err := ytmusic.Play(ctx, dataDir, song, f.value("session", ""))
 	if err != nil {
 		return fail(err, f.bools["json"])
 	}
@@ -327,7 +336,14 @@ func runControl(args []string, action string) int {
 	case "seek":
 		seconds := 0
 		if len(f.pos) > 0 {
-			fmt.Sscanf(f.pos[0], "%d", &seconds)
+			// Un argumento que no es un número es un error: antes el error
+			// de Sscanf se ignoraba y el comando saltaba a 0 en silencio
+			// (Y16).
+			parsed, err := strconv.Atoi(strings.TrimSpace(f.pos[0]))
+			if err != nil {
+				return fail(fmt.Errorf("seek: %q no es un número de segundos", f.pos[0]), f.bools["json"])
+			}
+			seconds = parsed
 		} else {
 			seconds = f.number("seconds", 0)
 		}
@@ -358,11 +374,10 @@ func runStatus(args []string) int {
 	})
 }
 
+// clock formatea los segundos como reloj del panel. Con horas: una pista de
+// una hora se muestra como "1:00:00", no como "60:00" (Y15).
 func clock(seconds int) string {
-	if seconds < 0 {
-		seconds = 0
-	}
-	return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+	return ytmusic.Clock(seconds)
 }
 
 func emit(value any, asJSON bool, human func()) int {
