@@ -2,6 +2,8 @@ package anilist
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -177,7 +179,10 @@ func FetchList(ctx context.Context, c *Client, userID int, kind string) ([]Entry
 }
 
 // Sync trae viewer + ambas listas. Si una lista falla, devuelve la otra con
-// Partial=true en vez de tirar todo el trabajo a la basura.
+// Partial=true en vez de tirar todo el trabajo a la basura. Si fallan las DOS,
+// devuelve error: "no pude leer la biblioteca" no es lo mismo que "la
+// biblioteca está vacía", y confundirlos hacía que el GC borrara las carátulas
+// del usuario (C1).
 func Sync(ctx context.Context, c *Client, userID int) (Library, error) {
 	lib := Library{FetchedAt: time.Now().Unix()}
 	if userID == 0 {
@@ -190,16 +195,16 @@ func Sync(ctx context.Context, c *Client, userID int) (Library, error) {
 	} else {
 		lib.Viewer.ID = userID
 	}
-	if entries, err := FetchList(ctx, c, userID, "ANIME"); err == nil {
-		lib.Anime = entries
-	} else if lib.Anime == nil {
+	anime, animeErr := FetchList(ctx, c, userID, "ANIME")
+	manga, mangaErr := FetchList(ctx, c, userID, "MANGA")
+	if animeErr != nil && mangaErr != nil {
+		return lib, fmt.Errorf("biblioteca: %w", errors.Join(animeErr, mangaErr))
+	}
+	if animeErr != nil || mangaErr != nil {
 		lib.Partial = true
 	}
-	if entries, err := FetchList(ctx, c, userID, "MANGA"); err == nil {
-		lib.Manga = entries
-	} else {
-		lib.Partial = true
-	}
+	lib.Anime = anime
+	lib.Manga = manga
 	if lib.Anime == nil {
 		lib.Anime = []Entry{}
 	}

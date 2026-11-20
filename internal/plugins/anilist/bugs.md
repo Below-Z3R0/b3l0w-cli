@@ -47,6 +47,56 @@ Los probes que se citan son de tres tipos:
 
 ---
 
+## Arreglados
+
+Ola del 2026-11-19: los 5 hallazgos CRÍTICOS y ALTOS. Cada arreglo viene con un
+test que se verificó **revirtiéndolo**: con el código viejo el test falla con el
+mensaje del bug, no con un error de compilación.
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `Sync` devuelve error si fallan las dos listas; `sync --gc` no borra con `partial` y sale con 1 | `TestSyncDevuelveErrorSiLasDosListasFallan`, `TestSyncConGcNoBorraSiLaBibliotecaEstaIncompleta` |
+| A1 | `SyncCovers` acumula los ids fallidos y `gcOrphans` los respeta | `TestGCMantieneLaCaratulaSiLaDescargaFalla` |
+| A2 | `adopt` copia el `.meta.json` (nunca lo hardlinkea); el meta se escribe atómico y después del JPG | `TestReuseNoCorrompeElMetaDelOrigen` |
+| A3 | `currentListQuery` pagina con `$page` y `pageInfo.hasNextPage` | `TestFetchSchedulePaginaLaListaYLosCapitulos` |
+| A4 | `scheduleQuery` pagina igual, con corte extra si la página viene vacía | idem |
+
+**C1 — `library.go`, `cli/root.go`.** `Sync` distingue "una lista falló"
+(`Partial = true`) de "no pude leer nada" (error). El GC se desactiva cuando la
+biblioteca es parcial y el comando sale con 1 después de emitir el JSON, así el
+plugin se entera por código de salida y no sólo por el texto. `partial` ya
+viajaba en el JSON por la promoción de campos de la `Library` embebida.
+
+**A1 — `covers.go`.** Una descarga fallida (500/404) ya no convierte en huérfana
+una carátula que estaba bien en disco: el id fallido se saltea en el GC.
+
+**A2 — `covers.go`.** El hardlink queda sólo para el `.jpg`; el `.meta.json` se
+copia con inode propio. El meta se escribe en un `.part` y se renombra después
+del JPG, que además rompe el vínculo con el caché de origen. Esto cubre también
+el mecanismo de B1 (escritura atómica y posterior al rename), pero B1 no se
+marca cerrado porque no tiene test propio de atomicidad.
+
+**A3 / A4 — `schedule.go`.** Las dos queries llevan `$page` y
+`pageInfo { hasNextPage }`. El loop corta por `hasNextPage == false` o por
+página vacía, que es la red contra un `hasNextPage` que mienta. De paso se
+corrigió un comentario con caracteres CJK en la cabecera de `Schedule`.
+
+### Verificación de los arreglos
+
+```console
+$ go build ./... && go vet ./internal/plugins/anilist/... && go test ./internal/plugins/anilist/... -count=1
+ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist
+ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist/cli
+```
+
+Cada uno de los 5 tests se corrió con su arreglo revertido y falló con el
+mensaje del hallazgo (C1, A1, A2, A3/A4 y el gate CLI de C1). Los tests nuevos
+están en `fixes_test.go` y `cli/gc_test.go`.
+
+**Sigue abierto:** M1–M9 y B1–B5. B1 quedó cubierto de paso, sin test propio.
+
+---
+
 ## C1 — CRÍTICO · `sync --gc` borra todas las carátulas si la API falla
 
 **Dónde.** `internal/plugins/anilist/library.go:193-201`, `covers.go:203-205`,
