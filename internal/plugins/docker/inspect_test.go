@@ -15,7 +15,13 @@ const inspectJSON = `{
   "State": {
     "Status": "running",
     "StartedAt": "2024-01-01T10:00:00.000000000Z",
-    "FinishedAt": "0001-01-01T00:00:00Z"
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "Health": {
+      "Status": "healthy",
+      "FailingStreak": 0,
+      "Log": [{"Start": "2024-01-01T10:00:00Z", "End": "2024-01-01T10:00:01Z", "ExitCode": 0, "Output": "ok"},
+              {"Start": "2024-01-01T10:01:00Z", "End": "2024-01-01T10:01:01Z", "ExitCode": 0, "Output": "check 1"}]
+    }
   },
   "RestartCount": 2,
   "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}},
@@ -26,8 +32,7 @@ const inspectJSON = `{
     "Image": "nginx:latest",
     "Env": ["PATH=/usr/bin", "NGINX_VERSION=1.27"],
     "Labels": {"com.docker.compose.project": "shop"},
-    "Cmd": ["nginx", "-g", "daemon off;"],
-    "Health": {"Log": [{"Output": "ok"}, {"Output": "check 1"}]}
+    "Cmd": ["nginx", "-g", "daemon off;"]
   },
   "Mounts": [
     {"Type": "bind", "Source": "/srv/datos", "Destination": "/data", "Mode": "rw", "RW": true},
@@ -118,7 +123,7 @@ func TestInspectCortaElHealthLog(t *testing.T) {
 	for i := 1; i <= 7; i++ {
 		entradas = append(entradas, `{"Output":"linea `+string(rune('0'+i))+`"}`)
 	}
-	payload := `{"Id":"x","Name":"/c","State":{"Status":"running"},"Config":{"Health":{"Log":[` +
+	payload := `{"Id":"x","Name":"/c","State":{"Status":"running","Health":{"Status":"healthy","Log":[` +
 		strings.Join(entradas, ",") + `]}}}`
 	f := nuevoFake().con("inspect --format {{json .}} c", payload)
 	info, err := InspectContainer(context.Background(), f.run, "c")
@@ -128,8 +133,13 @@ func TestInspectCortaElHealthLog(t *testing.T) {
 	if len(info.HealthLog) != 5 {
 		t.Fatalf("HealthLog tiene %d entradas, quería 5 (el tope)", len(info.HealthLog))
 	}
-	if info.HealthLog[0] != "linea 1" {
-		t.Errorf("HealthLog[0] = %q", info.HealthLog[0])
+	// El log de health va de más antiguo a más reciente: se conservan las
+	// ÚLTIMAS cinco entradas, no las primeras.
+	if info.HealthLog[0] != "linea 3" || info.HealthLog[4] != "linea 7" {
+		t.Errorf("HealthLog = %v, quería las últimas cinco (linea 3..linea 7)", info.HealthLog)
+	}
+	if info.Health != "healthy" {
+		t.Errorf("Health = %q, quería healthy", info.Health)
 	}
 }
 

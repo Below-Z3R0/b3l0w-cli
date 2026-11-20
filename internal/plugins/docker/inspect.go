@@ -51,6 +51,15 @@ func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, erro
 			Status     string `json:"Status"`
 			StartedAt  string `json:"StartedAt"`
 			FinishedAt string `json:"FinishedAt"`
+			// El healthcheck NO vive en Config: `docker inspect` lo pone
+			// en State.Health (con Status y Log). Leerlo de Config hacía
+			// que la salud saliera siempre vacía (D1).
+			Health *struct {
+				Status string `json:"Status"`
+				Log    []struct {
+					Output string `json:"Output"`
+				} `json:"Log"`
+			} `json:"Health"`
 		} `json:"State"`
 		RestartCount int `json:"RestartCount"`
 		HostConfig   struct {
@@ -66,11 +75,6 @@ func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, erro
 			Env    []string          `json:"Env"`
 			Labels map[string]string `json:"Labels"`
 			Cmd    []string          `json:"Cmd"`
-			Health *struct {
-				Log []struct {
-					Output string `json:"Output"`
-				} `json:"Log"`
-			} `json:"Health"`
 		} `json:"Config"`
 		Mounts []struct {
 			Type        string `json:"Type"`
@@ -83,9 +87,11 @@ func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, erro
 			Networks map[string]json.RawMessage `json:"Networks"`
 		} `json:"NetworkSettings"`
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
+	if err := json.Unmarshal([]byte(extraerJSON(raw)), &payload); err != nil {
 		return Inspect{}, err
 	}
+	// Las listas y el mapa salen vacíos, nunca nil: en JSON un nil sale
+	// `null` y el plugin Luau hace `#payload.mounts` sobre null (D14).
 	out := Inspect{
 		ID:            shortID(payload.ID),
 		Name:          strings.TrimPrefix(payload.Name, "/"),
@@ -97,9 +103,17 @@ func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, erro
 		RestartPolicy: payload.HostConfig.RestartPolicy.Name,
 		Platform:      payload.Platform,
 		Command:       append([]string{payload.Path}, payload.Args...),
-		Env:           payload.Config.Env,
-		Labels:        payload.Config.Labels,
+		Env:           []string{},
+		Labels:        map[string]string{},
+		Mounts:        []Mount{},
 		Networks:      make([]string, 0, len(payload.NetworkSettings.Networks)),
+		HealthLog:     []string{},
+	}
+	if len(payload.Config.Env) > 0 {
+		out.Env = payload.Config.Env
+	}
+	for clave, valor := range payload.Config.Labels {
+		out.Labels[clave] = valor
 	}
 	for nombre := range payload.NetworkSettings.Networks {
 		out.Networks = append(out.Networks, nombre)
@@ -113,14 +127,18 @@ func InspectContainer(ctx context.Context, run Runner, id string) (Inspect, erro
 			ReadOnly:    !mount.RW,
 		})
 	}
-	if payload.Config.Health != nil {
-		for _, entrada := range payload.Config.Health.Log {
+	if payload.State.Health != nil {
+		out.Health = payload.State.Health.Status
+		// El log de health va de más antiguo a más reciente: las últimas
+		// entradas son las que explican el fallo actual (D13).
+		entradas := payload.State.Health.Log
+		if len(entradas) > 5 {
+			entradas = entradas[len(entradas)-5:]
+		}
+		for _, entrada := range entradas {
 			texto := strings.TrimSpace(entrada.Output)
 			if texto != "" {
 				out.HealthLog = append(out.HealthLog, texto)
-			}
-			if len(out.HealthLog) >= 5 {
-				break
 			}
 		}
 	}

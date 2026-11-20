@@ -217,8 +217,14 @@ func TestLogsStopMataElProceso(t *testing.T) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
 	}()
+	// El pidfile lleva el pid y el starttime del proceso: con sólo el pid
+	// no se puede comprobar que el número no fue reciclado (D3).
 	_, pidFile := rutaLog("web")
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+	start, ok := leerStartTime(cmd.Process.Pid)
+	if !ok {
+		t.Skip("no se pudo leer el starttime del proceso")
+	}
+	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)+" "+strconv.Itoa(start)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	salida := capturaStdout(t, func() {
@@ -420,8 +426,8 @@ func TestLogsFollowRespetaElTail(t *testing.T) {
 // WriteFile falla con EISDIR sin depender de permisos ni de ser root.
 func TestLogsStreamMataElProcesoSiNoPuedeGuardarElPid(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	dir := dirLogs()
-	if err := os.Mkdir(filepath.Join(dir, "web.pid"), 0o755); err != nil {
+	archivo, pidFile := rutaLog("web")
+	if err := os.Mkdir(pidFile, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Un `docker` falso que se queda vivo: anota su pid y duerme.
@@ -429,7 +435,6 @@ func TestLogsStreamMataElProcesoSiNoPuedeGuardarElPid(t *testing.T) {
 	dirDocker := dockerFalso(t, "#!/bin/sh\necho $$ > \""+marca+"\"\nsleep 300\n")
 	defer limpiarProcesoDocker(dirDocker, marca)
 
-	archivo, _ := rutaLog("web")
 	codigo := 0
 	salida := capturaStderr(t, func() {
 		codigo = Run([]string{"logs-stream", "web"})

@@ -1,8 +1,14 @@
 # Bugs de `internal/plugins/docker`
 
 Revisión de integridad en contexto cero, hecha sobre `mod/rev-docker` (base
-`main` en `68d4a8d`). **No se arregló nada**: este archivo sólo describe lo que
-se encontró.
+`main` en `68d4a8d`). Las secciones `## D1` … `## D21` son el **diagnóstico
+original** (no se tocaron); al final está `## Arreglados`, con lo que se hizo
+para cerrar cada ID y qué test lo cubre.
+
+Todo lo encontrado está **arreglado**: 21 de 21. Los cinco hallazgos que
+estaban codificados como comportamiento correcto en tests existentes (D1,
+D13, D14, D15 y el hueco de D9) se ajustaron al contrato nuevo; está dicho
+en la entrada de cada uno.
 
 Método: se leyó el módulo completo (13 archivos de producción + la capa de
 comandos `cli/root.go`) y se contrastó cada afirmación del `README.md` contra el
@@ -24,29 +30,29 @@ Ningún probe levantó un daemon de Docker: `docker` nunca se ejecutó de verdad
 
 ## Resumen
 
-| ID | Sev | Archivo:línea | Síntoma |
-|---|---|---|---|
-| D1 | ALTO | `inspect.go:69-73` + `116-126` | `Inspect.Health` y `HealthLog` salen **siempre vacíos**: el parser lee `Config.Health`, pero `docker inspect` pone el health bajo `State.Health` |
-| D2 | ALTO | `cli/root.go:239` | `logs-stream` mete el id del contenedor en un `sh -c` con `%q`: un id con `$(...)` **ejecuta comandos** |
-| D3 | ALTO | `cli/root.go:287-290` | `logs-stop` manda `SIGTERM` al grupo del pid del pidfile **sin validar que ese pid sea el del seguimiento**: mata un proceso ajeno |
-| D4 | ALTO | `cli/root.go:1249-1258` | `volume-export` con ruta relativa monta **la raíz del host** (`-v /:/respaldo`) y escribe el tar en `/` |
-| D5 | ALTO | `cli/root.go:420` + `441` | `compose --action` se pierde cuando el flag va **después** del proyecto: corre `restart` en vez de lo pedido |
-| D6 | MEDIO | `containers.go:87-89` | `Exec` devuelve un error **vacío** cuando docker falla sin escribir nada (binario ausente, timeout) |
-| D7 | MEDIO | `containers.go:85-89` | `Exec` mezcla stderr con stdout: el "error" puede ser una línea de salida normal, no el error |
-| D8 | MEDIO | `actions.go:137` | `RunImage` ignora `RunOptions.Detach`: `if opts.Detach \|\| true` siempre mete `-d` |
-| D9 | MEDIO | `compose.go:128` | `Events` **traga el error** de docker si la salida no viene vacía: devuelve eventos parciales como si fueran buenos |
-| D10 | MEDIO | `system.go:57` | `DiskUsage` **ignora el error** del segundo `docker system df`: el total queda vacío sin avisar |
-| D11 | MEDIO | `cli/root.go:203-215` | `rutaLog` normaliza a minúsculas y trunca a 40: dos contenedores distintos **comparten log y pidfile** |
-| D12 | MEDIO | `cli/root.go:782-796`, `930-941`, `968-980` | Varios comandos pasan el id sin validar: un id que empieza con `-` se interpreta como flag de docker |
-| D13 | MEDIO | `inspect.go:116-126` | `HealthLog` se queda con las **primeras** 5 entradas del log, no con las últimas |
-| D14 | MEDIO | `stats.go:41`, `system.go:28`, `containers.go:193` | Varias listas internas salen `null` en el JSON (`"stats":null`, `"rows":null`, `"ports":null`) |
-| D15 | MEDIO | `containers.go:130-141` | `healthFromStatus` no reconoce la forma real `(health: starting)`: el estado `starting` nunca se ve |
-| D16 | MEDIO | `compose.go:47-49` | `GroupProjects` **duplica** el servicio cuando hay réplicas (`Services: [web web]`) |
-| D17 | BAJO | `actions.go:27-36` | `AllowedActions` no lo usa nadie: el comentario promete un control que no existe |
-| D18 | BAJO | `cli/root.go:386` | `sacarFlag` reusa el backing array del slice que recibe y pisa el slice del caller |
-| D19 | BAJO | `cli/root.go:281-293` | `logs-stop` contesta "detenido" aunque no hubiera ningún proceso vivo, y borra el pidfile |
-| D20 | BAJO | `cli/root.go:230-271` | `logs-stream` con un contenedor inexistente devuelve **código 0** y deja el pidfile de un proceso muerto |
-| D21 | BAJO | `desktop.go:16` + `cli/root.go:801` | `ExecResult.Exit` es siempre 0: el código de salida real del comando dentro del contenedor no viaja |
+| ID | Sev | Archivo:línea | Síntoma | Estado |
+|---|---|---|---|---|
+| D1 | ALTO | `inspect.go:69-73` + `116-126` | `Inspect.Health` y `HealthLog` salen **siempre vacíos**: el parser lee `Config.Health`, pero `docker inspect` pone el health bajo `State.Health` | arreglado |
+| D2 | ALTO | `cli/root.go:239` | `logs-stream` mete el id del contenedor en un `sh -c` con `%q`: un id con `$(...)` **ejecuta comandos** | arreglado |
+| D3 | ALTO | `cli/root.go:287-290` | `logs-stop` manda `SIGTERM` al grupo del pid del pidfile **sin validar que ese pid sea el del seguimiento**: mata un proceso ajeno | arreglado |
+| D4 | ALTO | `cli/root.go:1249-1258` | `volume-export` con ruta relativa monta **la raíz del host** (`-v /:/respaldo`) y escribe el tar en `/` | arreglado |
+| D5 | ALTO | `cli/root.go:420` + `441` | `compose --action` se pierde cuando el flag va **después** del proyecto: corre `restart` en vez de lo pedido | arreglado |
+| D6 | MEDIO | `containers.go:87-89` | `Exec` devuelve un error **vacío** cuando docker falla sin escribir nada (binario ausente, timeout) | arreglado |
+| D7 | MEDIO | `containers.go:85-89` | `Exec` mezcla stderr con stdout: el "error" puede ser una línea de salida normal, no el error | arreglado |
+| D8 | MEDIO | `actions.go:137` | `RunImage` ignora `RunOptions.Detach`: `if opts.Detach \|\| true` siempre mete `-d` | arreglado |
+| D9 | MEDIO | `compose.go:128` | `Events` **traga el error** de docker si la salida no viene vacía: devuelve eventos parciales como si fueran buenos | arreglado |
+| D10 | MEDIO | `system.go:57` | `DiskUsage` **ignora el error** del segundo `docker system df`: el total queda vacío sin avisar | arreglado |
+| D11 | MEDIO | `cli/root.go:203-215` | `rutaLog` normaliza a minúsculas y trunca a 40: dos contenedores distintos **comparten log y pidfile** | arreglado |
+| D12 | MEDIO | `cli/root.go:782-796`, `930-941`, `968-980` | Varios comandos pasan el id sin validar: un id que empieza con `-` se interpreta como flag de docker | arreglado |
+| D13 | MEDIO | `inspect.go:116-126` | `HealthLog` se queda con las **primeras** 5 entradas del log, no con las últimas | arreglado |
+| D14 | MEDIO | `stats.go:41`, `system.go:28`, `containers.go:193` | Varias listas internas salen `null` en el JSON (`"stats":null`, `"rows":null`, `"ports":null`) | arreglado |
+| D15 | MEDIO | `containers.go:130-141` | `healthFromStatus` no reconoce la forma real `(health: starting)`: el estado `starting` nunca se ve | arreglado |
+| D16 | MEDIO | `compose.go:47-49` | `GroupProjects` **duplica** el servicio cuando hay réplicas (`Services: [web web]`) | arreglado |
+| D17 | BAJO | `actions.go:27-36` | `AllowedActions` no lo usa nadie: el comentario promete un control que no existe | arreglado |
+| D18 | BAJO | `cli/root.go:386` | `sacarFlag` reusa el backing array del slice que recibe y pisa el slice del caller | arreglado |
+| D19 | BAJO | `cli/root.go:281-293` | `logs-stop` contesta "detenido" aunque no hubiera ningún proceso vivo, y borra el pidfile | arreglado |
+| D20 | BAJO | `cli/root.go:230-271` | `logs-stream` con un contenedor inexistente devuelve **código 0** y deja el pidfile de un proceso muerto | arreglado |
+| D21 | BAJO | `desktop.go:16` + `cli/root.go:801` | `ExecResult.Exit` es siempre 0: el código de salida real del comando dentro del contenedor no viaja | arreglado |
 
 **Totales:** 0 CRÍTICO · 5 ALTO · 11 MEDIO · 5 BAJO — 21 hallazgos.
 
@@ -1149,22 +1155,24 @@ Contrastadas una por una contra el código. Las que se sostienen:
 | "**75%** de `cli/root.go`" | medido: **76.6%** (`go test ./internal/plugins/docker/cli/ -cover`) |
 | "Nunca se ejecuta docker real en los tests" | los 11 archivos de test usan el runner falso o un `docker` falso en el `PATH` |
 
-Las que **no** se sostienen:
+Las que **no** se sostenían (y **ya no se sostienen**: el README se corrigió
+en esta ronda):
 
-| Afirmación del README | Hallazgo |
-|---|---|
-| línea 94: "`Health` y `HealthLog` (las últimas 5 entradas)" | **D1** (siempre vacíos) y **D13** (primeras 5, no últimas) |
-| línea 68: "`Health` (`healthy`/`unhealthy`/`starting`)" | **D15** (`starting` nunca se ve) |
-| líneas 54-56: "Las listas son **vacías, nunca `null`**" | **D14** (`stats`, `rows`, `ports`, `mounts`, `env`, `labels`) |
-| línea 119-120: "Un `OK: false` trae el error en `Output`" | **D21** (y las validaciones de `actions.go` devuelven `Output` vacío) |
-| línea 124-125: "`Exec` recorta el error de docker a la primera línea" | **D6** (puede ser vacía) y **D7** (puede ser stdout) |
-| línea 145-147: "Timeout por comando" — no menciona `volume-export`/`volume-import` | los dos usan `ctxDe()` (60 s), que es corto para un `tar` de un volumen grande |
 
-Y una afirmación del propio README que queda desmentida por el código:
+| Afirmación del README | Hallazgo | Cómo quedó |
+|---|---|---|
+| línea 94: "`Health` y `HealthLog` (las últimas 5 entradas)" | **D1** (siempre vacíos) y **D13** (primeras 5, no últimas) | Corregido: el README dice que el health sale de `State.Health` y que el log trae las **últimas** cinco. |
+| línea 68: "`Health` (`healthy`/`unhealthy`/`starting`)" | **D15** (`starting` nunca se ve) | Corregido: el README aclara que docker escribe `(health: starting)` y que esa forma se reconoce. |
+| líneas 54-56: "Las listas son **vacías, nunca `null`**" | **D14** (`stats`, `rows`, `ports`, `mounts`, `env`, `labels`) | Corregido: el README aclara que la regla vale para todo el módulo, no sólo para el snapshot. |
+| línea 119-120: "Un `OK: false` trae el error en `Output`" | **D21** (y las validaciones de `actions.go` devuelven `Output` vacío) | Corregido: el README dice "**también en las validaciones previas**". |
+| línea 124-125: "`Exec` recorta el error de docker a la primera línea" | **D6** (puede ser vacía) y **D7** (puede ser stdout) | Corregido: el README dice que el mensaje sale de **stderr** y que si docker no escribe nada el error es el de Go, nunca vacío. |
+| líneas 145-147: "Timeout por comando" — no menciona `volume-export`/`volume-import` | los dos usan `ctxDe()` (60 s), que es corto para un `tar` de un volumen grande | Corregido: el README dice que los dos usan 30 minutos. |
 
-| Afirmación | Realidad |
-|---|---|
-| línea 27-36: "`AllowedActions` documenta lo que el CLI acepta: cualquier acción fuera de esta lista tiene que fallar" | **D17**: no lo consulta nadie |
+Y una afirmación del propio README que quedaba desmentida por el código:
+
+| Afirmación | Realidad | Cómo quedó |
+|---|---|---|
+| línea 27-36: "`AllowedActions` documenta lo que el CLI acepta: cualquier acción fuera de esta lista tiene que fallar" | **D17**: no lo consulta nadie | Corregido: el CLI ahora consulta la lista (`comandosMutantes`) y el README lo dice. |
 
 ---
 
@@ -1307,3 +1315,274 @@ $ git status --short
 
 Sólo los dos entregables nuevos. No se modificó código de producción ni
 tests, no se commiteó y no se hizo push.
+
+---
+
+## Arreglados
+
+Los 21 hallazgos están cerrados. Cada entrada dice qué se cambió y qué test
+falla si se revierte el arreglo (verificado revirtiendo el cambio y
+corrriendo el test: todos fallan).
+
+### D1 — ALTO · `Inspect.Health` y `HealthLog` salían siempre vacíos
+
+**Arreglo.** El health se lee de **`State.Health`** (con `Status` y `Log`),
+que es donde `docker inspect` lo pone, y no de `Config.Health`, que no
+existe. `Inspect.Health` ahora se asigna: antes no había ningún
+`out.Health = ...` en el archivo.
+
+**Test.** `TestInspectLeeElHealthDeState` (paquete) y
+`TestInspectIgnoraElHealthDeConfig`.
+
+**Test ajustado.** `inspect_test.go`: el fixture tenía el health bajo
+`Config` — la forma que **no** manda docker. Se movió a `State.Health`. El
+test pasaba porque el test y el código compartían el mismo error.
+
+### D2 — ALTO · `logs-stream` ejecutaba comandos con el id del contenedor
+
+**Arreglo.** Se dejó de usar `sh -c`. El comando se arma con
+`exec.Command("docker", "logs", "-f", "--tail", "200", id)` y la redirección
+al archivo la hace Go con un `*os.File` (`os.OpenFile`). El id nunca pasa por
+un shell, así que un id con `$(...)`, `;` o backticks no ejecuta nada.
+
+**Test.** `TestLogsStreamNoEjecutaComandosDelId` (CLI): un id con
+`$(touch ...)` deja de crear el archivo y el id llega a docker como un
+argumento literal. `TestLogsStreamAceptaIdsConCaracteresRaros` cubre el `;`.
+
+### D3 — ALTO · `logs-stop` mataba un proceso que no era el seguimiento
+
+**Arreglo.** El pidfile ahora guarda **pid + starttime** (el campo 22 de
+`/proc/<pid>/stat`, los ticks desde el arranque del sistema). Antes de
+mandar la señal, `logs-stop` comprueba que el proceso vivo tenga ese
+starttime: si el número fue reciclado, el starttime no coincide y **no se
+manda ninguna señal**. Es el mismo criterio que ya usa `ytmusic` (Y1).
+
+**Test.** `TestLogsStopNoMataUnProcesoAjeno` (CLI): con un pidfile cuyo
+starttime no es el del proceso, el proceso sigue vivo y el comando contesta
+"sin seguimiento". `TestLogsStopMataElSeguimientoValido` comprueba que con
+pid y starttime correctos el seguimiento sí se corta.
+
+**Test ajustado.** `TestLogsStopMataElProceso` (CLI) escribía el pidfile con
+sólo el pid; ahora escribe el par pid + starttime, que es el formato nuevo.
+
+### D4 — ALTO · `volume-export` con ruta relativa montaba la raíz del host
+
+**Arreglo.** `splitPath` (que devolvía `("/", nombre)` para una ruta sin
+barra) fue reemplazada por `rutaRespaldo`: la ruta se resuelve a absoluta
+dentro del directorio actual y **se rechaza** lo que queda fuera (`../x`) y lo
+que queda en la raíz del sistema. El mismo camino lo usa `volume-import`.
+
+**Test.** `TestVolumeExportConRutaRelativaNoMontaLaRaiz` y
+`TestVolumeImportConRutaRelativaNoMontaLaRaiz` (CLI): el comando ya no lleva
+`-v /:/respaldo` sino `-v <cwd>:/respaldo`.
+`TestVolumeExportRechazaRutaFueraDelDirectorio` cubre el rechazo.
+
+**Test ajustado.** `TestSplitPath` (CLI) fijaba el contrato viejo
+(`"backup.tar.gz"` ⇒ `("/", "backup.tar.gz")`, o sea la raíz del host). Se
+reemplazó por `TestRutaRespaldoSeparaCarpetaYArchivo`,
+`TestRutaRespaldoResuelveLaRelativaDentroDelDirectorioActual` y
+`TestRutaRespaldoRechazaLoQueQuedaFuera`.
+
+### D5 — ALTO · `compose --action` se perdía tras el proyecto
+
+**Arreglo.** `composeCmd` ya no usa el `flag` de Go (que deja de parsear en
+el primer posicional): ahora saca el flag con `extraerValor`, que funciona
+en cualquier posición, y el proyecto es el primer argumento que sobra.
+
+**Test.** `TestComposeAceptaElActionDespuesDelProyecto` (CLI): las tres
+formas (`compose shop --action up`, `compose --action up shop` y
+`compose shop --action=up`) arman `compose -p shop up -d`.
+`TestComposeSinActionUsaRestart` fija el default.
+
+### D6 — MEDIO · `Exec` devolvía un error vacío
+
+**Arreglo.** Cuando docker no escribe nada, el error que se devuelve es el
+propio de Go (`exec: "docker": executable file not found in $PATH`,
+`context canceled`), no la cadena vacía.
+
+**Test.** `TestExecSinBinarioDevuelveElErrorReal` (paquete): sin docker en el
+`PATH` el error no es vacío y nombra al binario.
+
+### D7 — MEDIO · `Exec` mezclaba stderr con stdout
+
+**Arreglo.** stderr se guarda en su propio buffer: el mensaje del error sale
+de **stderr** (primera línea, 200 caracteres) y no de la primera línea de
+stdout, que en una salida progresiva es una línea de progreso. Los dos
+parsers que hacen `Unmarshal` de toda la salida (`Inspect` y `GetInfo`) aíslan
+el objeto JSON con `extraerJSON`, así que un warning por stderr no los rompe.
+
+**Detalle extra (encontrado por `-race`).** `os/exec` copia stdout y stderr
+en **goroutines separadas**, así que el buffer de salida va protegido con un
+mutex (`bufferSeguro`). Sin eso, `go test -race` reporta la carrera.
+
+**Test.** `TestExecTomaElErrorDeStderr` (paquete): el error es el de stderr y
+no la línea de progreso de stdout.
+`TestGetInfoAguantaUnWarningPorStderr` cubre el parseo del JSON.
+
+### D8 — MEDIO · `RunImage` ignoraba `RunOptions.Detach`
+
+**Arreglo.** `if opts.Detach || true` → `if opts.Detach`. El CLI, que
+quería el contenedor en segundo plano, ahora lo pide explícitamente
+(`Detach: true`).
+
+**Test.** `TestRunImageRespetaDetach` (paquete): con `Detach: false` el
+comando es `run nginx`, sin `-d`. `TestRunImageConDetachPoneElDashD` cubre
+el otro lado.
+
+**Test ajustado.** `TestRunImageArmaElComando` (paquete) pedía `run -d ...`
+sin pedir detach; ahora pide `Detach: true` explícitamente.
+
+### D9 — MEDIO · `Events` tragaba el error de docker
+
+**Arreglo.** El error se propaga siempre: si docker falla después de haber
+escrito algo, los eventos son parciales y hay que avisar. Antes sólo se
+propagaba cuando la salida venía vacía.
+
+**Test.** `TestEventsPropagaElErrorConSalidaParcial` (paquete): un runner
+que falla **con salida parcial** devuelve el error y ningún evento.
+
+**Test ajustado.** `TestEventsPropagaElError` (paquete) cubría sólo el caso
+de salida vacía (que `Events` sí manejaba): el hueco era justo el caso
+parcial, ahora cubierto por el test nuevo.
+
+### D10 — MEDIO · `DiskUsage` ignoraba el error del segundo `system df`
+
+**Arreglo.** El error del comando del total se propaga: si falla, el total
+no es "vacío", es "no lo sé".
+
+**Test.** `TestDiskUsagePropagaElErrorDelTotal` (paquete): el primer
+`system df` funciona y el segundo falla → vuelve el error.
+
+### D11 — MEDIO · `rutaLog` hacía colisionar dos contenedores
+
+**Arreglo.** El nombre del archivo es el id saneado (en minúsculas, lo que no
+es alfanumérico a `_`) **más un hash corto del id original** (sha256, 8 hex).
+Sin el hash, "Web" y "web" —dos contenedores válidos y distintos en docker—
+daban el mismo `web.log` y el mismo pidfile. El truncado a 40 caracteres
+también dejaba dos nombres largos con el mismo prefijo en el mismo archivo.
+
+**Test.** `TestRutaLogNoColisiona` (CLI): "Web" y "web" no comparten log ni
+pidfile, y dos ids largos con el mismo prefijo tampoco.
+
+**Test ajustado.** `TestRutaLogSaneaElNombre` (CLI) exigía el nombre exacto
+`web_server_01.log`; ahora exige el prefijo `web_server_01-` y el sufijo
+`.log` (el hash va en el medio).
+
+### D12 — MEDIO · Los ids se pasaban a docker sin validar
+
+**Arreglo.** Ningún identificador que empiece con `-` llega a docker: se
+rechaza antes de armar el comando. La validación está en **las dos capas**:
+
+- el CLI (`cli/root.go`): `exec`, `commit`, `rename`, `tag`, `pause`,
+  `unpause`, `diff`, `export`, `port`, `pull`, `push`, `save`, `load`,
+  `volume-inspect`, `network-inspect`, `cp` y `volume-export/import`.
+- el paquete: `Start`, `Stop`, `Restart`, `Remove`, `RemoveImage`,
+  `RemoveVolume`, `RemoveNetwork`, `Pull`, `Push`, `CreateVolume`,
+  `CreateNetwork`, `SaveImage`, `LoadImage`, `ExportContainer`, `Diff`,
+  `Pause`, `Unpause`, `Rename`, `Tag`, `Top`, `History`, `Commit`, `Copy`,
+  `CopyFrom` y `ExecInContainer`.
+
+El error va también en `Action.Output` (que antes venía vacío).
+
+**Test.** `TestIdsConGuionSeRechazan` (CLI, 15 comandos) y
+`TestLasAccionesRechazanIdsConGuion` + `TestCopyRechazaIdConGuion`
+(paquete, 21 acciones).
+
+### D13 — MEDIO · `HealthLog` se quedaba con las primeras 5 entradas
+
+**Arreglo.** El log de health de docker va de más antiguo a más reciente: se
+conservan las **últimas** cinco entradas, que son las que explican el fallo
+actual.
+
+**Test.** `TestHealthLogTomaLasUltimasCinco` (paquete).
+
+**Test ajustado.** `TestInspectCortaElHealthLog` (paquete) afirmaba que la
+primera conservada era `"linea 1"`: **codificaba** el bug. Ahora exige
+`"linea 3".."linea 7"`.
+
+### D14 — MEDIO · Varias listas internas salían `null` en el JSON
+
+**Arreglo.** Las listas del módulo salen vacías, nunca `null`: `Stats`,
+`DiskUsage` (las filas), `ParsePorts` (y por lo tanto `Container.Ports`) y las
+de `Inspect` (`env`, `mounts`, `healthLog` y `labels`).
+
+**Test.** `TestListasDelSnapshotNoSonNull`, `TestStatsYDFNoSonNull` y
+`TestInspectNoTieneListasNull` (paquete).
+
+**Test ajustado.** `TestParsePortsSalidaVacia` (paquete) **exigía** que
+`Ports` fuera `nil`: el contrato estaba invertido. Ahora exige una lista
+vacía. `TestContainersContenedorParado` (paquete) hacía lo mismo con
+`Container.Ports`.
+
+### D15 — MEDIO · El estado de salud `starting` nunca se veía
+
+**Arreglo.** `healthFromStatus` reconoce la forma real de docker,
+`(health: starting)`: se saca el prefijo `health:` antes de comparar.
+
+**Test.** `TestHealthStartingEsReconocido` (paquete).
+
+**Test ajustado.** `TestHealthFromStatus` (paquete) afirmaba que
+`(health: starting)` ⇒ `""`: **codificaba** el bug. Ahora ⇒ `"starting"`.
+
+### D16 — MEDIO · `GroupProjects` duplicaba el servicio con réplicas
+
+**Arreglo.** Los servicios se deduplican por proyecto: con
+`docker compose up --scale web=2` los N contenedores llevan la misma label
+`com.docker.compose.service` y el proyecto listaba `web, web`.
+
+**Test.** `TestGroupProjectsNoRepiteServicios` (paquete).
+
+### D17 — BAJO · `AllowedActions` no lo usaba nadie
+
+**Arreglo.** La lista es ahora una barrera real: el CLI consulta
+`docker.AllowedActions` antes de ejecutar cualquier comando que mute estado
+(`comandosMutantes` en `cli/root.go`). Si la acción no está en la lista, el
+comando falla con código 2 y **no llama a docker**. La lista se completó con
+las acciones que el CLI expone y no estaban ahí.
+
+**Test.** `TestComandoFueraDeLaListaNoSeEjecuta` (CLI): sacando "start" de
+la lista, `start web` falla y no llama a docker.
+`TestTodasLasAccionesMutantesEstanPermitidas` (CLI) y
+`TestAllowedActionsIncluyeLasAccionesDelPaquete` (paquete) fijan que la
+lista y el CLI no se desincronicen.
+
+### D18 — BAJO · `sacarFlag` pisaba el slice del caller
+
+**Arreglo.** `sacarFlag` copia los argumentos en un slice nuevo en vez de
+reusar el backing array del que recibe (`args[:0]`).
+
+**Test.** `TestSacarFlagNoMutaElSliceDelCaller` (CLI): el slice de entrada
+queda intacto.
+
+### D19 — BAJO · `logs-stop` decía "detenido" sin haber parado nada
+
+**Arreglo.** Si el proceso no está vivo (o no es el seguimiento), el comando
+contesta **"sin seguimiento"** en vez de "detenido", y no dice que detuvo algo
+que no detuvo. El pidfile obsoleto se borra igual.
+
+**Test.** `TestLogsStopConProcesoMuertoNoDiceDetenido` (CLI).
+
+### D20 — BAJO · `logs-stream` con un contenedor inexistente devolvía 0
+
+**Arreglo.** El `Wait` del proceso corre en una goroutine: si docker termina
+enseguida (contenedor inexistente), el comando falla con el error que docker
+escribió en el log y **no deja pidfile de un proceso muerto**.
+
+**Test.** `TestLogsStreamConContenedorInexistenteFalla` (CLI): código de
+salida distinto de 0, el error de docker en stderr y sin pidfile.
+
+### D21 — BAJO · `ExecResult.Exit` era siempre 0
+
+**Arreglo.** El código de salida real viaja en `ExecResult.Exit`: `Exec`
+deja de perder el `*exec.ExitError` y devuelve un `*ErrorDocker` con el
+código, y `ExecInContainer` lo propaga. Cuando el runner es falso y el error
+no trae código, se calcula del texto (`exit status N`).
+
+**Test.** `TestExecResultPropagaElCodigoDeSalida` y
+`TestExecResultExitEnElErrorDelDaemon` (paquete).
+
+---
+
+## Descartados
+
+Ninguno. Los 21 hallazgos se reprodujeron y se arreglaron.

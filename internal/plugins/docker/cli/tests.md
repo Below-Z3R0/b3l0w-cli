@@ -29,10 +29,12 @@ a `t.TempDir()`, con `$XDG_CACHE_HOME` y `$PATH` temporales.
 | `TestSacarFlagQuitaTodasLasOcurrencias` | `sacarFlag` quita **todas** las ocurrencias del flag. |
 | `TestSacarFlagSinElFlag` | `sacarFlag` sin el flag deja los argumentos como estaban. |
 | `TestPartirRutaContenedor` | `id:/ruta` se parte en id y ruta; una ruta normal queda con el prefijo vacío. |
-| `TestSplitPath` | `splitPath` separa archivo y carpeta en rutas absolutas y relativas. |
+| `TestRutaRespaldoSeparaCarpetaYArchivo` | `rutaRespaldo` separa archivo y carpeta en rutas absolutas. |
+| `TestRutaRespaldoResuelveLaRelativaDentroDelDirectorioActual` | Una ruta relativa se resuelve **dentro** del directorio actual: nunca se convierte en la raíz del host. |
+| `TestRutaRespaldoRechazaLoQueQuedaFuera` | `../fuera.tar.gz`, `/backup.tar.gz` y la ruta vacía se rechazan. |
 | `TestRecorta` | `recorta` recorta por runes (no por bytes) y pone la elipsis. |
 | `TestListaFlagAcumula` | `listaFlag` acumula valores y su `String` los junta con espacios. |
-| `TestRutaLogSaneaElNombre` | `rutaLog` baja a minúsculas, cambia lo no alfanumérico por `_` y limita el nombre. |
+| `TestRutaLogSaneaElNombre` | `rutaLog` baja a minúsculas, cambia lo no alfanumérico por `_` y le pega un hash corto del id original (para que dos contenedores distintos no compartan el archivo). |
 | `TestRutaLogAcortaElNombre` | Un id larguísimo no produce un nombre de más de 45 caracteres. |
 | `TestLeerPid` | `leerPid` lee un pid, devuelve 0 con un archivo inexistente y también con basura. |
 | `TestProcesoVivo` | `procesoVivo` es falso para 0 y para negativos, y verdadero para el proceso actual. |
@@ -50,7 +52,7 @@ a `t.TempDir()`, con `$XDG_CACHE_HOME` y `$PATH` temporales.
 | `TestPruneConDestinoInvalidoDevuelveDos` | Un destino de prune inválido devuelve 2 y explica el motivo: en JSON como documento, en texto por stderr. |
 | `TestControlSinIdDevuelveDos` | `start`, `stop`, `restart` y `remove` sin id devuelven 2. |
 | `TestLogsStopSinSeguimiento` | `logs-stop` sin pidfile dice `sin seguimiento` y devuelve 0. |
-| `TestLogsStopMataElProceso` | `logs-stop` manda la señal, dice `detenido` y borra el pidfile. |
+| `TestLogsStopMataElProceso` | `logs-stop` manda la señal, dice `detenido` y borra el pidfile. El pidfile lleva **pid + starttime**: con el starttime verificado, un pid reciclado no se mata. |
 | `TestComandosSimplesConRunnerFalso` | Todos los subcomandos de una línea consultan el runner y devuelven 0. |
 | `TestComandosDeLecturaConRunnerFalso` | `df`, `info`, `events`, `compose ls` y `snapshot` devuelven JSON parseable. |
 | `TestVolumeExportEImportArmanElComando` | `volume-export` y `volume-import` arman el comando y devuelven 0. |
@@ -64,6 +66,30 @@ a `t.TempDir()`, con `$XDG_CACHE_HOME` y `$PATH` temporales.
 | `TestExecSinIdDevuelveUno` | `exec` sin `--id` devuelve 1. |
 | `TestBuildSinTagDevuelveUno` | `build` sin `--tag` devuelve 1. |
 | `TestCopySinDestinoDevuelveUno` | `cp` sin `--out` devuelve 1. |
+
+## `fixes_test.go` — los arreglos de los hallazgos
+
+Un test por hallazgo, cada uno **falla si se revierte el arreglo** (verificado
+revirtiendo el cambio en el código y corriendo el test).
+
+| Test | Hallazgo | Contrato que fija |
+|---|---|---|
+| `TestLogsStreamNoEjecutaComandosDelId` | D2 | Un id con `$(...)` **no ejecuta nada** y llega a docker como un argumento literal. |
+| `TestLogsStreamAceptaIdsConCaracteresRaros` | D2 | Un id con `;` tampoco se interpreta. |
+| `TestLogsStopNoMataUnProcesoAjeno` | D3 | Con un pidfile cuyo starttime no es el del proceso, el proceso **sigue vivo** y el comando dice "sin seguimiento". |
+| `TestLogsStopMataElSeguimientoValido` | D3 | Con pid + starttime correctos, el seguimiento se corta y el pidfile se borra. |
+| `TestVolumeExportConRutaRelativaNoMontaLaRaiz` | D4 | Con ruta relativa el comando monta el directorio actual, **no** `-v /:/respaldo`. |
+| `TestVolumeImportConRutaRelativaNoMontaLaRaiz` | D4 | Idem para `volume-import`. |
+| `TestVolumeExportRechazaRutaFueraDelDirectorio` | D4 | Una ruta que se sale del directorio actual se rechaza **sin llamar a docker**. |
+| `TestComposeAceptaElActionDespuesDelProyecto` | D5 | `--action` funciona antes y después del proyecto, y con `=`. |
+| `TestComposeSinActionUsaRestart` | D5 | Sin `--action`, el default sigue siendo `restart`. |
+| `TestRutaLogNoColisiona` | D11 | "Web" y "web" (y dos ids largos con el mismo prefijo) no comparten log ni pidfile. |
+| `TestIdsConGuionSeRechazan` | D12 | 15 comandos del CLI rechazan un id con `-` y **no llaman a docker**. |
+| `TestComandoFueraDeLaListaNoSeEjecuta` | D17 | Una acción fuera de `docker.AllowedActions` falla con código 2 y no llama a docker. |
+| `TestTodasLasAccionesMutantesEstanPermitidas` | D17 | Todo comando que muta estado está en la lista de acciones permitidas. |
+| `TestSacarFlagNoMutaElSliceDelCaller` | D18 | `sacarFlag` no pisa el slice que recibe. |
+| `TestLogsStopConProcesoMuertoNoDiceDetenido` | D19 | Sin proceso vivo, `logs-stop` dice "sin seguimiento", nunca "detenido". |
+| `TestLogsStreamConContenedorInexistenteFalla` | D20 | Con un contenedor inexistente el comando falla con el error de docker y **no deja pidfile**. |
 
 ## Qué no está cubierto
 
@@ -79,3 +105,6 @@ a `t.TempDir()`, con `$XDG_CACHE_HOME` y `$PATH` temporales.
 - **La carrera entre el `docker logs -f` que arranca y el `logs-stop` que lo
   mata.** `logs-stop` manda la señal al grupo y al proceso; que el `docker`
   real la obeyezca es cosa de Docker, no del CLI.
+- **El daemon de Docker.** Ningún test de este subpaquete lo toca: los que
+  necesitan un proceso real usan un script `docker` falso en el `PATH` y los
+  que necesitan estado usan el runner falso del paquete.

@@ -21,11 +21,13 @@ type Port struct {
 // ParsePorts toma el campo Ports de `docker ps` y devuelve la lista limpia,
 // ordenada por puerto de host.
 func ParsePorts(raw string) []Port {
+	// Slice vacío, nunca nil: un contenedor sin puertos publicados salía
+	// con `"ports": null` en el JSON (D14).
+	out := []Port{}
 	if strings.TrimSpace(raw) == "" {
-		return nil
+		return out
 	}
 	seen := map[string]bool{}
-	var out []Port
 	for _, trozo := range strings.Split(raw, ",") {
 		trozo = strings.TrimSpace(trozo)
 		if trozo == "" {

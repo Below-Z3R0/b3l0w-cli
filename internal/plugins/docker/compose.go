@@ -25,6 +25,10 @@ type Project struct {
 // GroupProjects arma los stacks a partir de los contenedores ya listados.
 func GroupProjects(containers []Container) []Project {
 	porNombre := map[string]*Project{}
+	// Los servicios ya agregados por proyecto: un servicio escalado
+	// (`--scale web=2`) aparece en varios contenedores y no debe
+	// repetirse en la lista (D16).
+	serviciosVistos := map[string]map[string]bool{}
 	for _, c := range containers {
 		nombre := c.Project
 		if nombre == "" {
@@ -45,7 +49,15 @@ func GroupProjects(containers []Container) []Project {
 			p.Unhealthy++
 		}
 		if c.Service != "" {
-			p.Services = append(p.Services, c.Service)
+			vistos, ok := serviciosVistos[nombre]
+			if !ok {
+				vistos = map[string]bool{}
+				serviciosVistos[nombre] = vistos
+			}
+			if !vistos[c.Service] {
+				vistos[c.Service] = true
+				p.Services = append(p.Services, c.Service)
+			}
 		}
 	}
 	out := make([]Project, 0, len(porNombre))
@@ -125,7 +137,9 @@ func Events(ctx context.Context, run Runner, since string) ([]Event, error) {
 		"--until", "0s",
 		"--filter", "type=container",
 		"--format", "{{json .}}")
-	if err != nil && strings.TrimSpace(out) == "" {
+	// El error se propaga siempre: si docker falla después de haber
+	// escrito algo, los eventos son parciales y hay que avisar (D9).
+	if err != nil {
 		return []Event{}, err
 	}
 	eventos := []Event{}

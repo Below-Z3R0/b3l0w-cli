@@ -110,11 +110,17 @@ func TestParsePortsOrdenaPorPuertoDeHost(t *testing.T) {
 }
 
 func TestParsePortsSalidaVacia(t *testing.T) {
-	if ports := ParsePorts(""); ports != nil {
-		t.Errorf("sin puertos debería quedar nil, obtuve %+v", ports)
+	// La lista vacía, nunca nil: en JSON un nil sale `null` y el plugin
+	// Luau hace `#payload.ports` sobre null (D14).
+	if ports := ParsePorts(""); ports == nil {
+		t.Error("sin puertos la lista debería quedar vacía, no nil")
+	} else if len(ports) != 0 {
+		t.Errorf("sin puertos la lista debería quedar vacía, obtuve %+v", ports)
 	}
-	if ports := ParsePorts("   "); ports != nil {
-		t.Errorf("sin puertos debería quedar nil, obtuve %+v", ports)
+	if ports := ParsePorts("   "); ports == nil {
+		t.Error("sin puertos la lista debería quedar vacía, no nil")
+	} else if len(ports) != 0 {
+		t.Errorf("sin puertos la lista debería quedar vacía, obtuve %+v", ports)
 	}
 }
 

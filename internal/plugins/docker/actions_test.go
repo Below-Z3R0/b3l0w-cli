@@ -88,6 +88,7 @@ func TestRunImageArmaElComando(t *testing.T) {
 		Network: "shop",
 		Ports:   []string{"8080:80"},
 		Env:     []string{"CLAVE=valor"},
+		Detach:  true,
 	})
 	if err != nil {
 		t.Fatalf("RunImage: %v", err)

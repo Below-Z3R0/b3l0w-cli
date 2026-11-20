@@ -25,11 +25,20 @@ func ExecInContainer(ctx context.Context, run Runner, id string, argv []string) 
 	if len(argv) == 0 {
 		return ExecResult{}, fmt.Errorf("exec: falta el comando")
 	}
+	// Un id que empieza con "-" lo tomaría docker como un flag suyo
+	// (--privileged, --user root) y no como un contenedor (D12).
+	if strings.HasPrefix(id, "-") {
+		msg := fmt.Sprintf("exec: el id no puede empezar con '-': %q", id)
+		return ExecResult{Output: msg}, fmt.Errorf("%s", msg)
+	}
 	run = runnerDe(run)
 	args := append([]string{"exec", id}, argv...)
 	salida, err := run(ctx, args...)
 	if err != nil {
-		return ExecResult{Output: salida}, err
+		// El código de salida real viaja en `Exit`: antes siempre era 0 y
+		// el plugin no podía distinguir un comando que falló de uno que
+		// terminó bien (D21).
+		return ExecResult{Exit: codigoDeSalida(err), Output: salida}, err
 	}
 	return ExecResult{Running: true, Exit: 0, Output: strings.TrimSpace(salida)}, nil
 }
@@ -43,6 +52,9 @@ type CopyResult struct {
 
 // Copy copia archivos de o hacia un contenedor (`docker cp`).
 func Copy(ctx context.Context, run Runner, id string, origen string, destino string) (CopyResult, error) {
+	if idInvalido(id) {
+		return CopyResult{}, fmt.Errorf("copy: el id no puede empezar con '-': %q", id)
+	}
 	run = runnerDe(run)
 	salida, err := run(ctx, "cp", origen, id+":"+destino)
 	if err != nil {
@@ -53,6 +65,9 @@ func Copy(ctx context.Context, run Runner, id string, origen string, destino str
 
 // CopyFrom copia archivos de un contenedor al host.
 func CopyFrom(ctx context.Context, run Runner, id string, origen string, destino string) (CopyResult, error) {
+	if idInvalido(id) {
+		return CopyResult{}, fmt.Errorf("copy: el id no puede empezar con '-': %q", id)
+	}
 	run = runnerDe(run)
 	salida, err := run(ctx, "cp", id+":"+origen, destino)
 	if err != nil {
@@ -64,6 +79,9 @@ func CopyFrom(ctx context.Context, run Runner, id string, origen string, destino
 // Commit crea una imagen a partir del estado actual de un contenedor
 // (Docker Desktop: "Commit to image").
 func Commit(ctx context.Context, run Runner, id string, repo string, tag string, mensaje string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("commit", id)
+	}
 	args := []string{"commit"}
 	if mensaje != "" {
 		args = append(args, "-m", mensaje)
@@ -80,21 +98,33 @@ func Commit(ctx context.Context, run Runner, id string, repo string, tag string,
 
 // Pause congela un contenedor (docker pause).
 func Pause(ctx context.Context, run Runner, id string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("pause", id)
+	}
 	return ejecutar(ctx, run, "pause", id)
 }
 
 // Unpause reanuda un contenedor congelado.
 func Unpause(ctx context.Context, run Runner, id string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("unpause", id)
+	}
 	return ejecutar(ctx, run, "unpause", id)
 }
 
 // Rename cambia el nombre de un contenedor.
 func Rename(ctx context.Context, run Runner, id string, nombre string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("rename", id)
+	}
 	return ejecutar(ctx, run, "rename", id, nombre)
 }
 
 // Tag etiqueta una imagen con un repositorio y tag nuevos.
 func Tag(ctx context.Context, run Runner, id string, repo string, tag string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("tag", id)
+	}
 	if tag == "" {
 		tag = "latest"
 	}
@@ -103,11 +133,17 @@ func Tag(ctx context.Context, run Runner, id string, repo string, tag string) (A
 
 // Top lista los procesos que corren dentro de un contenedor (`docker top`).
 func Top(ctx context.Context, run Runner, id string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("top", id)
+	}
 	return ejecutar(ctx, run, "top", id)
 }
 
 // History devuelve el historial de capas de una imagen.
 func History(ctx context.Context, run Runner, id string) (Action, error) {
+	if idInvalido(id) {
+		return idRechazado("history", id)
+	}
 	return ejecutar(ctx, run, "history", "--no-trunc", id)
 }
 
@@ -132,7 +168,8 @@ func PruneDetailed(ctx context.Context, run Runner, what string, todas bool) (Ac
 			args = append(args, "-a", "--volumes")
 		}
 	default:
-		return Action{OK: false, Command: "docker prune"}, fmt.Errorf("destino inválido: %q", what)
+		msg := fmt.Sprintf("destino inválido: %q", what)
+		return Action{OK: false, Command: "docker prune", Output: msg}, fmt.Errorf("%s", msg)
 	}
 	args = append(args, "--force")
 	return ejecutar(ctx, run, args...)

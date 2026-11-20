@@ -63,7 +63,12 @@ func TestContainersContenedorParado(t *testing.T) {
 	if c.HasShell {
 		t.Error("un contenedor parado no debería ofrecer shell")
 	}
-	if c.Ports != nil {
+	// Sin puertos publicados la lista queda vacía, nunca nil: en JSON un
+	// nil sale `null` y el plugin Luau hace `#payload.ports` (D14).
+	if c.Ports == nil {
+		t.Error("sin puertos publicados la lista debería quedar vacía, no nil")
+	}
+	if len(c.Ports) != 0 {
 		t.Errorf("sin puertos publicados la lista debería quedar vacía: %+v", c.Ports)
 	}
 }
@@ -254,7 +259,7 @@ func TestHealthFromStatus(t *testing.T) {
 	}{
 		{"Up 3 hours (healthy)", "", "healthy"},
 		{"Up 3 hours (unhealthy)", "", "unhealthy"},
-		{"Up 3 hours (health: starting)", "", ""},
+		{"Up 3 hours (health: starting)", "", "starting"},
 		{"Up 3 hours (starting)", "", "starting"},
 		{"Exited (0) 2 hours ago", "", ""},
 		{"", "", ""},

@@ -25,7 +25,9 @@ func DiskUsage(ctx context.Context, run Runner) ([]DiskRow, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	var filas []DiskRow
+	// Slice vacío, nunca nil: en JSON un nil sale `null` y el plugin hace
+	// `#payload.rows` sobre null (D14).
+	filas := []DiskRow{}
 	scanner := bufio.NewScanner(strings.NewReader(raw))
 	for scanner.Scan() {
 		linea := strings.TrimSpace(scanner.Text())
@@ -53,8 +55,13 @@ func DiskUsage(ctx context.Context, run Runner) ([]DiskRow, string, error) {
 		})
 	}
 	// La última línea de `docker system df` sin --format es el total; con
-	// --format no viene, así que se pide aparte en texto.
-	total, _ := run(ctx, "system", "df")
+	// --format no viene, así que se pide aparte en texto. El error de este
+	// segundo comando también se propaga: si falla, el total no es "vacío",
+	// es "no lo sé" (D10).
+	total, err := run(ctx, "system", "df")
+	if err != nil {
+		return filas, "", err
+	}
 	return filas, ultimaLinea(total), nil
 }
 
@@ -88,7 +95,8 @@ var PruneTargets = map[string][]string{
 func Prune(ctx context.Context, run Runner, what string) (Action, error) {
 	args, ok := PruneTargets[what]
 	if !ok {
-		return Action{OK: false}, fmt.Errorf("prune inválido %q: containers, images, volumes, builder o system", what)
+		msg := fmt.Sprintf("prune inválido %q: containers, images, volumes, builder o system", what)
+		return Action{OK: false, Output: msg}, fmt.Errorf("%s", msg)
 	}
 	return ejecutar(ctx, run, args...)
 }

@@ -89,7 +89,7 @@ func TestPartirRutaContenedor(t *testing.T) {
 	}
 }
 
-func TestSplitPath(t *testing.T) {
+func TestRutaRespaldoSeparaCarpetaYArchivo(t *testing.T) {
 	casos := []struct {
 		ruta    string
 		carpeta string
@@ -97,17 +97,48 @@ func TestSplitPath(t *testing.T) {
 	}{
 		{"/tmp/backup.tar.gz", "/tmp", "backup.tar.gz"},
 		{"/a/b/c/d.tar", "/a/b/c", "d.tar"},
-		{"backup.tar.gz", "/", "backup.tar.gz"},
-		// Con la barra pegada al nombre, el archivo conserva la barra: el
-		// comando queda con una doble barra ("/respaldo//backup.tar.gz"),
-		// que tar resuelve igual. No es un crash, pero es raro.
-		{"/backup.tar.gz", "/", "/backup.tar.gz"},
 	}
 	for _, c := range casos {
-		carpeta, archivo := splitPath(c.ruta)
+		carpeta, archivo, err := rutaRespaldo(c.ruta)
+		if err != nil {
+			t.Errorf("rutaRespaldo(%q): %v", c.ruta, err)
+			continue
+		}
 		if carpeta != c.carpeta || archivo != c.archivo {
-			t.Errorf("splitPath(%q) = %q, %q; quería %q, %q",
+			t.Errorf("rutaRespaldo(%q) = %q, %q; quería %q, %q",
 				c.ruta, carpeta, archivo, c.carpeta, c.archivo)
+		}
+	}
+}
+
+// Una ruta relativa se resuelve dentro del directorio actual: antes
+// devolvía la raíz del sistema y el comando montaba "/" del host (D4).
+func TestRutaRespaldoResuelveLaRelativaDentroDelDirectorioActual(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	carpeta, archivo, err := rutaRespaldo("backup.tar.gz")
+	if err != nil {
+		t.Fatalf("rutaRespaldo: %v", err)
+	}
+	if carpeta != cwd {
+		t.Errorf("carpeta = %q, quería el directorio actual %q", carpeta, cwd)
+	}
+	if archivo != "backup.tar.gz" {
+		t.Errorf("archivo = %q", archivo)
+	}
+	if carpeta == "/" {
+		t.Error("una ruta relativa no puede convertirse en la raíz del host")
+	}
+}
+
+// Lo que queda fuera del directorio actual se rechaza, y la raíz nunca.
+func TestRutaRespaldoRechazaLoQueQuedaFuera(t *testing.T) {
+	casos := []string{"../fuera.tar.gz", "/backup.tar.gz", "", "   "}
+	for _, ruta := range casos {
+		if _, _, err := rutaRespaldo(ruta); err == nil {
+			t.Errorf("rutaRespaldo(%q) debería fallar", ruta)
 		}
 	}
 }
@@ -157,8 +188,14 @@ func TestRutaLogSaneaElNombre(t *testing.T) {
 	if strings.ContainsAny(base, "/ ") {
 		t.Errorf("el nombre del archivo debería estar saneado: %q", base)
 	}
-	if base != "web_server_01.log" {
-		t.Errorf("base = %q, quería web_server_01.log", base)
+	// El nombre es el id saneado más un hash corto del id original: sin
+	// el hash dos contenedores distintos ("Web" y "web") compartían el
+	// archivo de log y el pidfile (D11).
+	if !strings.HasPrefix(base, "web_server_01-") {
+		t.Errorf("base = %q, quería el prefijo 'web_server_01-'", base)
+	}
+	if !strings.HasSuffix(base, ".log") {
+		t.Errorf("base = %q, quería el sufijo '.log'", base)
 	}
 }
 
