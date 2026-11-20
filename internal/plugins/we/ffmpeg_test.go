@@ -188,6 +188,29 @@ func TestProbeArchivoInexistente(t *testing.T) {
 	}
 }
 
+func TestToolDirsOrdenanPorVersionYNoAlfabetico(t *testing.T) {
+	// El orden es por versión: "ffmpeg-9.0" es mayor que "ffmpeg-10.0" como
+	// texto, así que al revés la 9.0 le ganaba a la 10.0.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(toolDirEnv, "")
+	for _, v := range []string{"ffmpeg-7.1", "ffmpeg-8.0", "ffmpeg-9.0", "ffmpeg-10.0"} {
+		if err := os.MkdirAll(filepath.Join(home, ".hermes", "tools", v, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dirs := toolDirs()
+	if len(dirs) != 4 {
+		t.Fatalf("toolDirs = %v, quería 4", dirs)
+	}
+	want := []string{"10.0", "9.0", "8.0", "7.1"}
+	for i, v := range want {
+		if !strings.Contains(dirs[i], "ffmpeg-"+v) {
+			t.Errorf("toolDirs[%d] = %q, quería la versión %s (orden: %v)", i, dirs[i], v, dirs)
+		}
+	}
+}
+
 func TestRunPropagaStderr(t *testing.T) {
 	// sh siempre está; nos sirve para verificar que el error arrastra la cola.
 	sh, err := locate("sh")

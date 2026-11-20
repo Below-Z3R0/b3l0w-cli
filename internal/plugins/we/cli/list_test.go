@@ -103,6 +103,22 @@ func TestListaAceptaElTipoConIgual(t *testing.T) {
 	}
 }
 
+func TestListaFallaConUnTipoInvalido(t *testing.T) {
+	// Un typo en --type tiene que ser un error: si no, el usuario cree que
+	// filtró y ve el catálogo entero.
+	root := raizWorkshop(t, map[string]string{
+		"111": `{"title":"Alfa","type":"video"}`,
+		"222": `{"title":"Beta","type":"scene"}`,
+	})
+	codigo, salida, errSalida := correr(t, "list", "--root", root, "--type", "videoz")
+	if codigo != 1 {
+		t.Fatalf("código = %d, quería 1 (stdout: %q)", codigo, salida)
+	}
+	if !strings.Contains(errSalida, "--type") {
+		t.Errorf("stderr = %q, quería que nombre el flag", errSalida)
+	}
+}
+
 func TestListaOpcionDesconocidaFalla(t *testing.T) {
 	codigo, _, errSalida := correr(t, "list", "--no-existe")
 	if codigo != 1 {

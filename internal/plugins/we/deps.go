@@ -163,7 +163,13 @@ func (d Deps) Summary() string {
 	parts = append(parts, mark("engine", d.Engine.Ok))
 	parts = append(parts, mark("ffmpeg", d.Ffmpeg.Ok))
 	parts = append(parts, mark("ffprobe", d.Ffprobe.Ok))
-	parts = append(parts, fmt.Sprintf("workshop:%d items", d.Workshop.Items))
+	// El workshop usa el mismo par ok/falta que los otros bloques: un
+	// workshop inexistente y uno vacío se ven distinto.
+	if d.Workshop.Ok {
+		parts = append(parts, fmt.Sprintf("workshop:ok %d items", d.Workshop.Items))
+	} else {
+		parts = append(parts, "workshop:falta")
+	}
 	rec := d.Record.Reason
 	if d.Record.Supported {
 		rec = "ok"

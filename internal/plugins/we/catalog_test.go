@@ -3,6 +3,7 @@ package we
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,31 @@ func TestFilterYFind(t *testing.T) {
 	}
 }
 
+func TestFilterConUnTipoQueNoExisteNoDevuelveElCatalogoEntero(t *testing.T) {
+	items := []Item{
+		{ID: "1", Title: "Rainy Day", Type: "video"},
+		{ID: "2", Title: "Bosque", Type: "scene"},
+		{ID: "3", Title: "Sin tipo", Type: "unknown"},
+	}
+	// Un typo no puede devolver el catálogo entero: no matchea con nada.
+	if got := Filter(items, "videoz", ""); len(got) != 0 {
+		t.Errorf("Filter con un tipo inexistente = %d items, quería 0", len(got))
+	}
+	// "unknown" es un tipo legítimo: filtra por los unknown, no por todo.
+	got := Filter(items, "unknown", "")
+	if len(got) != 1 || got[0].ID != "3" {
+		t.Errorf("Filter(unknown) = %+v, quería sólo el item 3", got)
+	}
+	// Los tipos de verdad siguen filtrando.
+	if got := Filter(items, "video", ""); len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("Filter(video) = %+v, quería sólo el item 1", got)
+	}
+	// Sin tipo no se filtra por tipo, sólo por query.
+	if got := Filter(items, "", "bosque"); len(got) != 1 || got[0].ID != "2" {
+		t.Errorf("Filter sin tipo = %+v, quería sólo el item 2", got)
+	}
+}
+
 func TestSlugYOutputName(t *testing.T) {
 	cases := map[string]string{
 		"Campfire PC":                    "campfire-pc",
@@ -85,6 +111,80 @@ func TestSlugYOutputName(t *testing.T) {
 	it := Item{ID: "42", Title: "Rainy Day"}
 	if got := OutputName(it, "mp4"); got != "42-rainy-day.mp4" {
 		t.Errorf("OutputName = %q", got)
+	}
+}
+
+func TestSlugConservaLasLetrasAcentuadas(t *testing.T) {
+	// Las letras acentuadas no se tiran: se transliteran.
+	casos := map[string]string{
+		"Café Münster Ñandú": "cafe-munster-nandu",
+		"Piñata":              "pinata",
+		"Über":                "uber",
+	}
+	for in, want := range casos {
+		if got := Slug(in); got != want {
+			t.Errorf("Slug(%q) = %q, quería %q", in, got, want)
+		}
+	}
+}
+
+func TestScanRechazaUnFileQueSaleDelItem(t *testing.T) {
+	// El project.json lo baja Steam: el `file` no lo escribió el usuario y
+	// puede traer `../` o una ruta absoluta.
+	root := t.TempDir()
+	writeItem(t, root, "111", `{"title":"T","type":"Video","file":"../../etc/passwd"}`)
+	writeItem(t, root, "222", `{"title":"T","type":"Video","file":"/etc/passwd"}`)
+	writeItem(t, root, "333", `{"title":"T","type":"Video","file":"../secret.mp4"}`)
+	writeItem(t, root, "444", `{"title":"T","type":"Video","preview":"../../preview.png"}`)
+	// El archivo real que un project.json malicioso intentaría copiar.
+	escribir := func(path, contenido string) {
+		if err := os.WriteFile(path, []byte(contenido), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	escribir(filepath.Join(root, "secret.mp4"), "CLAVE-DE-PRUEBA")
+
+	items, err := Scan(root)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, it := range items {
+		if it.File != "" {
+			t.Errorf("item %s: File = %q, quería vacío (la ruta se sale del item)", it.ID, it.File)
+		}
+		if it.Preview != "" {
+			t.Errorf("item %s: Preview = %q, quería vacío (la ruta se sale del item)", it.ID, it.Preview)
+		}
+		if it.Err == "" {
+			t.Errorf("item %s: quería Err cargado (ruta fuera del item)", it.ID)
+		}
+	}
+}
+
+func TestScanAceptaUnFileDentroDelItem(t *testing.T) {
+	root := t.TempDir()
+	writeItem(t, root, "111", `{"title":"T","type":"Video","file":"video.mp4","preview":"previews/p.jpg"}`)
+
+	items, err := Scan(root)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, quería 1", len(items))
+	}
+	it := items[0]
+	if it.Err != "" {
+		t.Errorf("un file legítimo no debería dar Err: %q", it.Err)
+	}
+	if filepath.Base(it.File) != "video.mp4" {
+		t.Errorf("File = %q, quería video.mp4", it.File)
+	}
+	if filepath.Base(it.Preview) != "p.jpg" {
+		t.Errorf("Preview = %q, quería p.jpg", it.Preview)
+	}
+	// Un file en una subcarpeta del item también vale.
+	if !strings.HasPrefix(it.Preview, filepath.Join(root, "111")) {
+		t.Errorf("Preview = %q, tenía que quedar dentro del item", it.Preview)
 	}
 }
 

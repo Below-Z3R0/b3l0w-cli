@@ -138,6 +138,31 @@ archivos y qué cubre cada uno.
 | `cli/limites_test.go` | Los bordes: `--all` procesa todo, `--overwrite` rehace, `--format webm`, `--method extract` se acepta, formato inexistente, `--dir=`, carpeta sin permisos, carpeta de miniaturas inválida, `--size 8xzz`, destino de `still` que no se puede crear, y `humanTitle` sin texto. | 12 |
 | `cli/helpers_test.go` | Sin tests: son los auxiliares compartidos (`captura`, `correr`, `escribirItem`, `raizWorkshop`, `homeConWorkshop`, los stubs de ffmpeg y del motor, `pathSinBinarios`, `escribirPNG`). Los usa el resto de la suite. | 0 |
 
+## Tests de los fixes (18)
+
+Cada uno fija un hallazgo del `bugs.md` y se verificó revirtiendo su arreglo.
+
+| Test | Archivo | Contrato que fija |
+|---|---|---|
+| `TestScanRechazaUnFileQueSaleDelItem` | `catalog_test.go` | Un `file` con `..` fuera del item no se resuelve (C1) |
+| `TestScanAceptaUnFileDentroDelItem` | `catalog_test.go` | Un `file` relativo dentro del item sí se resuelve (C1) |
+| `TestConvertNoCopiaUnArchivoDeFueraDelItem` | `cli/convert_test.go` | `convert` no copia un item con el `file` fuera (C1) |
+| `TestStillNoBorraLaMiniaturaPreviaSiFfmpegFalla` | `cli/still_test.go` | Si ffmpeg falla, la miniatura anterior sigue en disco (A1) |
+| `TestSolidElTopeDeSizeNoSeSaltaConOverflow` | `cli/solid_test.go` | `--size` gigante no desborda: da error (A2) |
+| `TestSolidNoPisaElArchivoDeSalida` | `cli/solid_test.go` | `solid` no pisa la salida sin `--overwrite` (A3) |
+| `TestSolidConOverwriteReemplazaElArchivo` | `cli/solid_test.go` | Con `--overwrite` sí reemplaza (A3) |
+| `TestFilterConUnTipoQueNoExisteNoDevuelveElCatalogoEntero` | `catalog_test.go` | Un tipo inexistente devuelve vacío, no todo (M1) |
+| `TestListaFallaConUnTipoInvalido` | `cli/list_test.go` | `--type` inválido falla con motivo (M1) |
+| `TestToolDirsOrdenanPorVersionYNoAlfabetico` | `ffmpeg_test.go` | ffmpeg-10.0 gana sobre ffmpeg-9.0 (M2) |
+| `TestScanKindInvalidoFalla` | `cli/scan_test.go` | `--kind` inválido falla (M3) |
+| `TestScanKindEnMayusculasSeAcepta` | `cli/scan_test.go` | `--kind VIDEO` se normaliza (M3) |
+| `TestScanNoDejaUnaMiniaturaACortarEnDisco` | `cli/thumbs_test.go` | Una miniatura cortada no queda cacheada (M4) |
+| `TestManifestLoadRechazaUnaVersionDesconocida` | `manifest_test.go` | `version` 99 es error, no se acepta (M5) |
+| `TestConvertNoTocaUnManifiestoDeVersionDesconocida` | `cli/convert_test.go` | `convert` no reescribe un manifiesto futuro (M5) |
+| `TestSlugConservaLasLetrasAcentuadas` | `catalog_test.go` | `Café Ñandú` → `cafe-nandu` (B1) |
+| `TestPosterDelayDocumentadoEnFrames` | `poster_test.go` | `Delay` documentado en frames (B2) |
+| `TestSummaryDistingueElWorkshopAusenteDelVacio` | `deps_test.go` | `workshop:falta` vs `workshop:ok` (B3) |
+
 ## Qué no cubre la suite
 
 Los huecos verificados durante la revisión de integridad

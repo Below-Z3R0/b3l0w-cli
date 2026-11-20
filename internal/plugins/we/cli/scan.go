@@ -120,7 +120,10 @@ func cmdScan(args []string) int {
 			if !ok {
 				return fail("--kind necesita un valor")
 			}
-			kind = v
+			kind = strings.ToLower(strings.TrimSpace(v))
+			if kind != "image" && kind != "video" {
+				return fail("--kind inválido: %s (image|video)", v)
+			}
 		case a == "--max" || strings.HasPrefix(a, "--max="):
 			v, ok := value()
 			if !ok {

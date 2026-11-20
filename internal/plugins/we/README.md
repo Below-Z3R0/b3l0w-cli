@@ -34,7 +34,7 @@ Todos aceptan `--help`. Los que emiten JSON lo hacen **una sola vez** y completo
 | `we info <id>` | detalle de un item, con `properties` | `catalog.go` + `cli/list.go` | nada |
 | `we convert --out DIR` | saca el video de un wallpaper | `extract.go` + `cli/convert.go` | `<id>-<slug>.<ext>` y `manifest.json` |
 | `we poster --out DIR` | PNG del wallpaper con el motor | `poster.go` + `cli/poster.go` | `<id>.png` y `manifest.json` |
-| `we still --file V --out J` | un cuadro de un video local | `cli/still.go` (ffmpeg) | la imagen de salida |
+| `we still --file V --out J` | un cuadro de un video local | `cli/still.go` (ffmpeg) | la imagen de salida (atómica: si ffmpeg falla queda la anterior) |
 | `we scan --dir R` | lista imágenes/videos de una carpeta | `cli/scan.go` | con `--thumbs`: miniaturas JPEG |
 | `we solid --color H --out P` | PNG de un solo color | `cli/solid.go` | el PNG |
 | `we deps` | qué falta en el sistema | `deps.go` + `cli/deps.go` | nada |
@@ -47,7 +47,7 @@ el proceso.
 
 | Comando | Tope | Cómo se calcula | Por qué |
 |---|---|---|---|
-| `we solid --size` | `8192x8192` | se rechaza `width*height > 1<<26` | RGBA son 4 bytes por píxel: `100000x100000` son 40 GB de una, y el kernel mata el proceso |
+| `we solid --size` | `8192x8192` | se rechaza `width > 1<<26/height` (dividir, no multiplicar: el producto en `int64` se desborda y el tope se saltaba) | RGBA son 4 bytes por píxel: `100000x100000` son 40 GB de una, y el kernel mata el proceso |
 | `we scan --max` | `100000` | se rechaza `max > 100000` | `--max` es la capacidad del slice de resultados: un valor enorme reserva esa memoria de una y mata el proceso |
 
 El tope de `solid` es generoso para un fondo (3840x2160 entra sin problema) y corta el caso
@@ -58,9 +58,14 @@ hostil o un typo.
 
 Genera un PNG de un solo color con la biblioteca estándar (`image/png`), sin ffmpeg ni motor.
 Acepta `#rrggbb` y `#rgb` (este último se expande duplicando cada dígito: `#f0a` → `#ff00aa`),
-también el valor sin `#`; cualquier otra cosa se rechaza con error. El PNG es opaco (alpha
+También el valor sin `#`; cualquier otra cosa se rechaza con error. El PNG es opaco (alpha
 `255`), sin canal transparente. Tamaño default `3840x2160`, override con `--size ANCHOxALTO`.
 Imprime por stdout la ruta del PNG.
+
+**Nunca pisa un archivo que ya existe** sin `--overwrite`: avisa por stderr y deja el
+archivo como estaba (misma regla que `convert` y `poster`). El PNG se escribe a un
+temporal en la misma carpeta y se renombra al final, así que el destino nunca queda a
+medias.
 
 **Paletas**: el módulo **no maneja paletas**. No hay concepto de paleta, tema ni colección acá:
 el color entra ya resuelto como un hex por `--color` y sale como un PNG de ese color. Las
@@ -78,7 +83,9 @@ array de objetos con `id`, `file`, `type`, `size`, `mod`, `name`, `title` y `thu
 él la tarjeta mostraba la ruta absoluta.
 
 `--thumbs DIR` genera un JPEG por imagen con ffmpeg, en cuatro procesos en paralelo, reusado
-mientras el original no cambie de fecha. El nombre es `v-<djb2(ruta)>.jpg`: es el **mismo**
+mientras el original no cambie de fecha. Cada miniatura se escribe a un temporal y se
+renombra al final: un ffmpeg cortado no deja un JPEG a medias que el caché daría por
+fresco en la corrida siguiente. El nombre es `v-<djb2(ruta)>.jpg`: es el **mismo**
 esquema que usa el plugin en Luau (`video_thumb_path`), así que si cambiás la fórmula hay que
 cambiarla allá o el plugin deja de encontrar las miniaturas.
 
@@ -93,9 +100,17 @@ probadas.
 `Scan` recorre la raíz y lee el `project.json` de cada carpeta de nombre numérico (los ids del
 workshop), normalizándolo a un `Item`. El `type` viene con capitalización inconsistente
 (`Video`, `video`): `NormalizeType` lo baja a minúsculas y lo unifica a `video | scene | web |
-unknown`. `Filter(items, typ, query)` filtra por tipo y busca en el título o en el id;
-`Find(items, id)` busca uno por id. `Slug` convierte el título en un nombre de archivo seguro
-(kebab-case, 60 caracteres máximo) y `OutputName` arma `<id>-<slug>.<ext>`. `Properties`
+unknown`. `Filter(items, typ, query)` filtra por tipo y busca en el título o en el id; un tipo que no
+existe (`videoz`) no matchea con nada en vez de devolver el catálogo entero, y `unknown` es
+un tipo legítimo que filtra por los items sin tipo conocido. `Find(items, id)` busca uno por
+id. `Slug` convierte el título en un nombre de archivo seguro (kebab-case, 60 caracteres
+máximo; las letras acentuadas se transliteran, no se pierden: `Café Münster Ñandú` →
+`cafe-munster-nandu`) y `OutputName` arma `<id>-<slug>.<ext>`.
+
+El `file` y el `preview` del `project.json` (que baja Steam, no lo escribió el usuario) se
+**resuelven dentro de la carpeta del item**: una ruta con `..`, absoluta o un symlink que
+apunte afuera deja el item roto con `Err` cargado y `File` vacío, en vez de apuntar a un
+archivo cualquiera del disco. `Properties`
 conserva el bloque `general.properties` **tal cual** (sin interpretarlo): es lo que el plugin
 usa para configurar cada fondo. **Un item roto no aborta el catálogo**: si falta o no se puede
 parsear el `project.json`, vuelve con `Err` cargado y el resto sigue.
@@ -107,14 +122,17 @@ parsear el `project.json`, vuelve con `Err` cargado y el resto sigue.
 falta queda con `Ok=false` y el CLI decide el exit code (`we deps` sale con 2 si falta `ffmpeg`
 o el workshop). `MissingDeps()` devuelve las **obligatorias** que faltan: `ffmpeg` y `workshop`
 — el motor es opcional, porque los videos se extraen sin render, así que no entra en la lista.
-`Summary()` arma una línea legible (`engine:ok ffmpeg:falta …`) para el modo tabla. El sondeo de
+`Summary()` arma una línea legible (`engine:ok ffmpeg:falta workshop:ok 41 items …`) para el
+modo tabla: el bloque del workshop usa el mismo par `ok`/`falta` que los demás, así un
+workshop inexistente y uno vacío se distinguen. El sondeo de
 versión tiene timeout de 3 s: si un binario se cuelga, `we deps` no se queda esperando. `Record`
 decide si se puede grabar video de un wallpaper renderizado: hacen falta `grim` (capturar
 frames) y el motor, y se reporta el primer faltante.
 
 `Locate` (ffmpeg) y `LocateProbe` (ffprobe) resuelven el binario en este orden: el `PATH`;
-después `~/.hermes/tools/ffmpeg-*/bin/`, en orden inverso para que gane la versión más nueva
-(ffprobe se busca ahí mismo, como hermano del ffmpeg, porque el tarball los trae juntos); y por
+después `~/.hermes/tools/ffmpeg-*/bin/`, ordenados por versión (la más nueva primero: `ffmpeg-10.0`
+gana sobre `ffmpeg-9.0`, que alfabéticamente pierde) (ffprobe se busca ahí mismo, como hermano
+del ffmpeg, porque el tarball los trae juntos); y por
 último `B3L0W_FFMPEG_DIR`, que manda **sólo** ese directorio. Si no aparece, el error lista las
 rutas probadas.
 
@@ -141,7 +159,10 @@ binario devolviendo, si falla, un error con las últimas 20 líneas de su stderr
 sincroniza y recién ahí lo renombra), así que un corte a mitad de escritura deja el manifest
 anterior intacto. `LoadManifest` envuelve `os.ErrNotExist` si no está, para que el llamador
 decida si arranca uno nuevo; un manifest vacío o truncado es error y nunca se ignora en
-silencio. `Upsert` reemplaza el `Entry` con el mismo id o lo agrega al final. Los tags JSON del
+silencio. Una `version` que no sea la del contrato (`ErrVersionDesconocida`) también es error:
+un manifiesto de una versión futura tiene una forma de `items` que este código no entiende, y
+reescribirlo pisaría campos ajenos. Por eso `we convert` y `we poster` **no tocan** un
+manifiesto así: fallan con un error en vez de rehacerlo. `Upsert` reemplaza el `Entry` con el mismo id o lo agrega al final. Los tags JSON del
 manifest son **el contrato con el plugin de Noctalia**: no se tocan sin coordinar con el plugin.
 
 ## Decisiones técnicas (y por qué)

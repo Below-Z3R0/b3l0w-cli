@@ -102,6 +102,73 @@ func TestConvertFallaSiElWallpaperNoEsVideo(t *testing.T) {
 	}
 }
 
+func TestConvertNoCopiaUnArchivoDeFueraDelItem(t *testing.T) {
+	// El project.json lo baja Steam: un `file` con `../` apuntaría a un
+	// archivo cualquiera del disco y el manifiesto lo declararía "ok".
+	root := raizWorkshop(t, map[string]string{
+		"999": `{"title":"T","type":"video","file":"../secret.mp4"}`,
+	})
+	escribirArchivo(t, filepath.Join(root, "secret.mp4"), "CLAVE-DE-PRUEBA")
+	out := t.TempDir()
+
+	codigo, _, _ := correr(t, "convert", "--out", out, "--root", root, "--id", "999", "--crf", "0")
+	if codigo != 2 {
+		t.Fatalf("código = %d, quería 2 (el item no tiene un archivo válido)", codigo)
+	}
+	// Salida: sólo el manifiesto. Ningún archivo copiado.
+	entradas, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entradas {
+		if e.Name() != "manifest.json" {
+			t.Errorf("copió %s a la salida: no debía copiar nada del item", e.Name())
+		}
+	}
+	// Y el manifiesto no lo declara ok.
+	datos, err := os.ReadFile(filepath.Join(out, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m we.Manifest
+	if err := json.Unmarshal(datos, &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Items) != 1 || m.Items[0].Status != "failed" {
+		t.Errorf("manifiesto = %+v, quería el item 999 con status failed", m.Items)
+	}
+	if m.Items[0].Source != "" {
+		t.Errorf("Source = %q, quería vacío (no puede apuntar afuera del item)", m.Items[0].Source)
+	}
+}
+
+func TestConvertNoTocaUnManifiestoDeVersionDesconocida(t *testing.T) {
+	// La `version` del manifiesto es el contrato con el plugin: si este
+	// código no la entiende, no puede reescribir el manifiesto.
+	root := raizWorkshop(t, map[string]string{
+		"111": `{"title":"Alfa","type":"video","file":"a.mp4"}`,
+	})
+	escribirArchivo(t, filepath.Join(root, "111", "a.mp4"), "video falso")
+	out := t.TempDir()
+	manifiesto := filepath.Join(out, "manifest.json")
+	escribirArchivo(t, manifiesto, `{"version":99,"items":[{"id":"999","status":"ok"}]}`)
+
+	codigo, _, errSalida := correr(t, "convert", "--out", out, "--root", root, "--id", "111", "--crf", "0", "--manifest", manifiesto)
+	if codigo != 1 {
+		t.Fatalf("código = %d, quería 1 (stderr: %s)", codigo, errSalida)
+	}
+	if !strings.Contains(errSalida, "99") {
+		t.Errorf("stderr = %q, quería que diga la versión que no entiende", errSalida)
+	}
+	contenido, err := os.ReadFile(manifiesto)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contenido) != `{"version":99,"items":[{"id":"999","status":"ok"}]}` {
+		t.Errorf("el manifiesto se reescribió: %s", contenido)
+	}
+}
+
 func TestConvertSinOutFalla(t *testing.T) {
 	codigo, _, errSalida := correr(t, "convert", "--root", t.TempDir())
 	if codigo != 1 {

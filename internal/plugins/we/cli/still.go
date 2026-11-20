@@ -122,7 +122,22 @@ func cmdStill(args []string) int {
 
 	var lastErr error
 	for _, seek := range seeks {
-		_ = os.Remove(abs)
+		// Se escribe a un temporal en el mismo directorio y recién al final
+		// se renombra: si ffmpeg falla, la miniatura anterior sigue en disco.
+		// Es el patrón que ya usan extract.go y manifest.go.
+		tmp, err := os.CreateTemp(filepath.Dir(abs), ".still-*"+filepath.Ext(abs))
+		if err != nil {
+			return fail("crear temporal en %s: %v", filepath.Dir(abs), err)
+		}
+		tmpPath := tmp.Name()
+		if err := tmp.Close(); err != nil {
+			os.Remove(tmpPath)
+			return fail("cerrar temporal %s: %v", tmpPath, err)
+		}
+		// ffmpeg no pisa un archivo que ya existe: se lo saca de en medio.
+		if err := os.Remove(tmpPath); err != nil {
+			return fail("preparar temporal %s: %v", tmpPath, err)
+		}
 		cmdArgs := []string{"-y"}
 		if seek != "" {
 			cmdArgs = append(cmdArgs, "-ss", seek)
@@ -132,18 +147,24 @@ func cmdStill(args []string) int {
 			"-frames:v", "1",
 			"-vf", fmt.Sprintf("scale=%d:-2", w),
 			"-q:v", "3",
-			abs,
+			tmpPath,
 		)
 		if err := we.Run(ctx, ff.Path, cmdArgs...); err != nil {
 			// Un JPEG/GIF sin frame en ese segundo sale con error: se reintenta
 			// desde el principio antes de darlo por fallido.
+			os.Remove(tmpPath)
 			lastErr = err
 			continue
 		}
-		if info, statErr := os.Stat(abs); statErr == nil && info.Size() > 0 {
+		if info, statErr := os.Stat(tmpPath); statErr == nil && info.Size() > 0 {
+			if err := os.Rename(tmpPath, abs); err != nil {
+				os.Remove(tmpPath)
+				return fail("renombrar %s: %v", abs, err)
+			}
 			fmt.Println(abs)
 			return 0
 		}
+		os.Remove(tmpPath)
 		lastErr = fmt.Errorf("ffmpeg no escribió %s", abs)
 	}
 	return fail("no se pudo extraer un cuadro de %s: %v", file, lastErr)
