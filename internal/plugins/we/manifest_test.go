@@ -170,6 +170,28 @@ func TestManifestLoadErrores(t *testing.T) {
 	}
 }
 
+func TestManifestLoadRechazaUnaVersionDesconocida(t *testing.T) {
+	// La `version` es el contrato con el plugin: una versión que este código
+	// no conoce no se puede reescribir (se pisarían campos ajenos).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "manifest.json")
+	if err := os.WriteFile(path, []byte(`{"version":99,"items":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadManifest(path); err == nil {
+		t.Fatal("un manifest con versión 99 debería fallar")
+	} else if !errors.Is(err, ErrVersionDesconocida) {
+		t.Errorf("el error debería ser ErrVersionDesconocida: %v", err)
+	}
+	// La versión actual se sigue aceptando.
+	if err := os.WriteFile(path, []byte(`{"version":1,"items":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadManifest(path); err != nil {
+		t.Errorf("un manifest con la versión %d no debería fallar: %v", ManifestVersion, err)
+	}
+}
+
 func TestManifestSaveSinItemsSerializaArrayVacio(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "manifest.json")
 	if err := SaveManifest(path, Manifest{}); err != nil {

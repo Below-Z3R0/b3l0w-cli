@@ -36,6 +36,52 @@ arreglos: **no** es el inventario de este módulo y no se tocó.
 
 ---
 
+## Arreglados
+
+Ola del 2026-11-20: los 12 hallazgos. Cada arreglo tiene un test que se verificó
+**revirtiéndolo**: con el código viejo el test falla con el mensaje del bug, no
+con un error de compilación. La verificación se corrió con un script de mutación
+que revierte el cambio mínimo de cada ID, corre su test dirigido y restaura el
+archivo (`hermes-verify-we-mutacion.py`, 12/12 OK).
+
+| ID | Arreglo | Test |
+|---|---|---|
+| C1 | `resolveInDir` + `dentroDe`: rechaza rutas absolutas, `..` y symlinks que salen del item | `TestScanRechazaUnFileQueSaleDelItem`, `TestScanAceptaUnFileDentroDelItem`, `TestConvertNoCopiaUnArchivoDeFueraDelItem` |
+| A1 | `still` escribe a un temporal y recién renombra si ffmpeg dejó algo | `TestStillNoBorraLaMiniaturaPreviaSiFfmpegFalla` |
+| A2 | El tope de píxeles se mide dividiendo, no multiplicando: no hay overflow | `TestSolidElTopeDeSizeNoSeSaltaConOverflow` |
+| A3 | `we solid` no pisa la salida sin `--overwrite` | `TestSolidNoPisaElArchivoDeSalida`, `TestSolidConOverwriteReemplazaElArchivo` |
+| M1 | `Filter` valida el tipo contra el catálogo: uno inexistente devuelve vacío | `TestFilterConUnTipoQueNoExisteNoDevuelveElCatalogoEntero`, `TestListaFallaConUnTipoInvalido` |
+| M2 | Las copias portables se ordenan por versión numérica, no alfabética | `TestToolDirsOrdenanPorVersionYNoAlfabetico` |
+| M3 | `--kind` se normaliza y se valida (`image|video`) | `TestScanKindInvalidoFalla`, `TestScanKindEnMayusculasSeAcepta` |
+| M4 | La miniatura se escribe a un temporal y se renombra al final | `TestScanNoDejaUnaMiniaturaACortarEnDisco` |
+| M5 | `LoadManifest` rechaza una versión desconocida y `convert` no la reescribe | `TestManifestLoadRechazaUnaVersionDesconocida`, `TestConvertNoTocaUnManifiestoDeVersionDesconocida` |
+| B1 | `Slug` translitera los acentos en vez de tirarlos | `TestSlugConservaLasLetrasAcentuadas` |
+| B2 | `PosterOptions.Delay` documentado en frames, que es lo que usa el engine | `TestPosterDelayDocumentadoEnFrames` |
+| B3 | `Summary()` distingue `workshop:ok` de `workshop:falta` | `TestSummaryDistingueElWorkshopAusenteDelVacio` |
+
+**Detalle por ID**
+
+- **C1:** `filepath.Join` limpia la ruta pero no la contiene: un `file` con
+  `../` salía del item. Ahora `Scan` resuelve el nombre con `resolveInDir`, que
+  exige una ruta relativa, comprueba que el resultado siga dentro del item y,
+  si el archivo existe, resuelve el symlink y vuelve a comprobar. Si se sale, el
+  item queda con `Err` en vez de apuntar afuera, y `convert` no copia nada.
+- **A1 / M4:** los dos escribían directo al destino final. Ahora van a un
+  `.tmp`/`.thumb-*` en el mismo directorio y renombran sólo si el archivo quedó
+  con contenido: un ffmpeg cortado no destruye lo anterior.
+- **A2:** `width*height` en `int64` se desbordaba con valores grandes y el
+  producto negativo pasaba el chequeo. La comparación ahora es
+  `width > tope/height`.
+- **M5:** `ErrVersionDesconocida` es un error propio (`errors.Is`); el
+  manifiesto de una versión futura no se reescribe porque este código no conoce
+  la forma de sus `items`.
+- **B1:** `transliterar` mapea `á/é/í/ó/ú/ñ/ü` y compañía a ASCII antes de
+  aplicar el patrón de slug.
+
+**Sigue abierto:** nada. Los 12 están cerrados.
+
+---
+
 ## C1 — CRÍTICO · `we convert` copia un archivo de fuera del workshop
 
 **Dónde.** `internal/plugins/we/catalog.go:136-141`.

@@ -130,6 +130,70 @@ func TestSolidSizeDemasiadoGrandeFalla(t *testing.T) {
 	}
 }
 
+func TestSolidElTopeDeSizeNoSeSaltaConOverflow(t *testing.T) {
+	// width*height en int64 se desborda con estos números: el producto da
+	// negativo y el tope no dispara. El comando tiene que cortarlo antes de
+	// que image.NewRGBA entre en panic.
+	dir := t.TempDir()
+	codigo, _, errSalida := correr(t, "solid", "--color", "#fff", "--out", filepath.Join(dir, "f.png"),
+		"--size", "4611686018427387904x4611686018427387904")
+	if codigo != 1 {
+		t.Fatalf("código = %d, quería 1 (stderr: %s)", codigo, errSalida)
+	}
+	if !strings.Contains(errSalida, "demasiado grande") {
+		t.Errorf("stderr = %q, quería que diga que es demasiado grande", errSalida)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "f.png")); err == nil {
+		t.Error("no debería haber escrito el PNG")
+	}
+}
+
+func TestSolidNoPisaElArchivoDeSalida(t *testing.T) {
+	// El destino puede ser un archivo que el usuario tiene ahí: sin
+	// --overwrite no se pisa.
+	dir := t.TempDir()
+	out := filepath.Join(dir, "fondo.png")
+	escribirArchivo(t, out, "CONTENIDO PREVIO")
+
+	codigo, _, errSalida := correr(t, "solid", "--color", "#ff0000", "--out", out, "--size", "8x4")
+	if codigo != 0 {
+		t.Fatalf("código = %d, quería 0 (stderr: %s)", codigo, errSalida)
+	}
+	contenido, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contenido) != "CONTENIDO PREVIO" {
+		t.Errorf("el archivo de salida se pisó: %q", contenido)
+	}
+	if !strings.Contains(errSalida, "--overwrite") {
+		t.Errorf("stderr = %q, quería que diga cómo reemplazarlo", errSalida)
+	}
+}
+
+func TestSolidConOverwriteReemplazaElArchivo(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "fondo.png")
+	escribirArchivo(t, out, "CONTENIDO PREVIO")
+
+	codigo, _, errSalida := correr(t, "solid", "--color", "#ff0000", "--out", out, "--size", "8x4", "--overwrite")
+	if codigo != 0 {
+		t.Fatalf("código = %d, quería 0 (stderr: %s)", codigo, errSalida)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatalf("no escribió el PNG: %v", err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("el PNG no se pudo decodificar: %v", err)
+	}
+	if r, _, _, _ := img.At(0, 0).RGBA(); r>>8 != 0xff {
+		t.Errorf("color = %d, quería 255", r>>8)
+	}
+}
+
 func TestSolidOpcionDesconocidaFalla(t *testing.T) {
 	// La ruta de salida es temporal: si el flag desconocido se ignorara, el
 	// comando escribiría el PNG y la carpeta del repo se llenaría de basura.

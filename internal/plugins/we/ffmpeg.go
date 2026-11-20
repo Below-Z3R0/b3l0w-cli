@@ -82,8 +82,65 @@ func toolDirs() []string {
 	if err != nil {
 		return dirs
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+	// El orden es por versión, no alfabético: "ffmpeg-9.0" es mayor que
+	// "ffmpeg-10.0" como texto, así que al revés la 9.0 le ganaba a la 10.0.
+	sort.SliceStable(matches, func(i, j int) bool {
+		return comparaVersiones(versionDeTool(matches[i]), versionDeTool(matches[j])) > 0
+	})
 	return append(dirs, matches...)
+}
+
+// versionDeTool saca el número de versión del directorio de una copia
+// portable: "ffmpeg-9.0.1-linux-x64" -> 9.0.1. Componentes que no son
+// números se cortan: el sufijo de plataforma no manda.
+func versionDeTool(dir string) string {
+	base := filepath.Base(dir)
+	if base == "bin" {
+		base = filepath.Base(filepath.Dir(dir))
+	}
+	base = strings.TrimPrefix(base, "ffmpeg-")
+	var partes []string
+	for _, p := range strings.Split(base, ".") {
+		digitos := 0
+		for digitos < len(p) && p[digitos] >= '0' && p[digitos] <= '9' {
+			digitos++
+		}
+		if digitos == 0 {
+			break
+		}
+		partes = append(partes, p[:digitos])
+	}
+	return strings.Join(partes, ".")
+}
+
+// comparaVersiones ordena dos versiones por componentes numéricos.
+func comparaVersiones(a, b string) int {
+	pa := strings.Split(a, ".")
+	pb := strings.Split(b, ".")
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		var x, y string
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		nx, errx := strconv.Atoi(x)
+		ny, erry := strconv.Atoi(y)
+		if errx == nil && erry == nil {
+			if nx != ny {
+				if nx > ny {
+					return 1
+				}
+				return -1
+			}
+			continue
+		}
+		if c := strings.Compare(x, y); c != 0 {
+			return c
+		}
+	}
+	return 0
 }
 
 // Run ejecuta un binario sin exponer su salida y devuelve un error con la cola

@@ -38,6 +38,9 @@ func cmdList(args []string) int {
 			if !ok {
 				return fail("--type necesita un valor")
 			}
+			if !we.ValidType(v) {
+				return fail("--type inválido: %s (video|scene|web|unknown)", v)
+			}
 			typ = v
 		case a == "--query" || strings.HasPrefix(a, "--query="):
 			v, ok := value()

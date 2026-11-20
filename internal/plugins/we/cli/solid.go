@@ -11,6 +11,10 @@ import (
 	"strings"
 )
 
+// maxSolidPixeles es el tope de píxeles del PNG de `we solid`: 1<<26 son
+// 8192x8192. RGBA son 4 bytes por píxel, así que el tope son 256 MB.
+const maxSolidPixeles = 1 << 26
+
 // parseHexColor acepta "#rrggbb", "rrggbb", "#rgb" y devuelve RGBA opaco.
 func parseHexColor(value string) (color.RGBA, error) {
 	v := strings.TrimPrefix(strings.TrimSpace(value), "#")
@@ -32,11 +36,15 @@ func parseHexColor(value string) (color.RGBA, error) {
 // color" en la API de plugins, así que el plugin apunta setWallpaper a este
 // archivo: es lo mismo que hace el panel built-in al aplicar un color.
 //
-//	uso: b3l0w we solid --color '#1e1e2e' --out archivo.png [--size 3840x2160]
+// Nunca pisa un archivo que ya existe sin `--overwrite`: es la misma regla que
+// siguen `convert` y `poster`.
+//
+//	uso: b3l0w we solid --color '#1e1e2e' --out archivo.png [--size 3840x2160] [--overwrite]
 func cmdSolid(args []string) int {
 	hex := ""
 	out := ""
 	width, height := 3840, 2160
+	overwrite := false
 
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -52,8 +60,10 @@ func cmdSolid(args []string) int {
 		}
 		switch {
 		case a == "-h" || a == "--help":
-			fmt.Println("uso: b3l0w we solid --color '#rrggbb' --out archivo.png [--size 3840x2160]")
+			fmt.Println("uso: b3l0w we solid --color '#rrggbb' --out archivo.png [--size 3840x2160] [--overwrite]")
 			return 0
+		case a == "--overwrite":
+			overwrite = true
 		case a == "--color" || strings.HasPrefix(a, "--color="):
 			v, ok := value()
 			if !ok {
@@ -97,14 +107,12 @@ func cmdSolid(args []string) int {
 	// RGBA son 4 bytes por pixel: 100000x100000 son 40 GB y el kernel
 	// mata el proceso. El limite es generoso para un fondo y corta el
 	// caso que revienta la maquina.
-	if int64(width)*int64(height) > 1<<26 {
+	//
+	// El tope se mide dividiendo, no multiplicando: width*height en int64
+	// se desborda con valores grandes, el producto da negativo y la
+	// comparación sola no alcanzaba (el proceso moría con un panic de image).
+	if int64(width) > maxSolidPixeles/int64(height) {
 		return fail("--size demasiado grande: maximo 8192x8192")
-	}
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			img.SetRGBA(x, y, rgba)
-		}
 	}
 
 	if dir := filepath.Dir(out); dir != "" && dir != "." {
@@ -112,13 +120,48 @@ func cmdSolid(args []string) int {
 			return fail("no se pudo crear %s: %v", dir, err)
 		}
 	}
-	file, err := os.Create(out)
+
+	// Nunca pisa un archivo que ya existe sin --overwrite: el destino puede
+	// ser un archivo que el usuario tiene ahí. Es la misma regla que
+	// siguen convert (extract.go) y poster (poster.go).
+	if !overwrite {
+		if st, err := os.Stat(out); err == nil && !st.IsDir() {
+			fmt.Fprintf(os.Stderr, "b3l0w we: %s ya existe: no lo pisé, usá --overwrite para reemplazarlo\n", out)
+			fmt.Println(out)
+			return 0
+		}
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetRGBA(x, y, rgba)
+		}
+	}
+
+	// Se escribe a un temporal y se renombra al final: el destino nunca
+	// queda truncado a medias.
+	tmp, err := os.CreateTemp(filepath.Dir(out), ".solid-*.png")
 	if err != nil {
 		return fail("no se pudo escribir %s: %v", out, err)
 	}
-	defer file.Close()
-	if err := png.Encode(file, img); err != nil {
+	tmpPath := tmp.Name()
+	if err := png.Encode(tmp, img); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fail("png: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fail("no se pudo escribir %s: %v", out, err)
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		os.Remove(tmpPath)
+		return fail("no se pudo escribir %s: %v", out, err)
+	}
+	if err := os.Rename(tmpPath, out); err != nil {
+		os.Remove(tmpPath)
+		return fail("no se pudo escribir %s: %v", out, err)
 	}
 	fmt.Println(out)
 	return 0

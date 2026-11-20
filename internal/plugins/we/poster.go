@@ -55,7 +55,7 @@ var pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
 type PosterOptions struct {
 	OutDir     string // directorio de salida; se crea si no existe
 	Size       [2]int // ancho y alto del render
-	Delay      int    // segundos de espera antes de capturar
+	Delay      int    // frames de espera antes de capturar (el flag --screenshot-delay cuenta frames)
 	Overwrite  bool   // pisa PNGs existentes
 	Jobs       int    // renders en paralelo
 	EnginePath string // binario del engine; vacío = autodetectar

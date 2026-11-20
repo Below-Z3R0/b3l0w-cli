@@ -188,7 +188,20 @@ func TestDepsMissingYSummary(t *testing.T) {
 	if got := ok.MissingDeps(); len(got) != 0 {
 		t.Errorf("no debería faltar nada: %v", got)
 	}
-	if s := ok.Summary(); !strings.Contains(s, "workshop:41 items") || !strings.Contains(s, "record:ok") {
+	if s := ok.Summary(); !strings.Contains(s, "workshop:ok 41 items") || !strings.Contains(s, "record:ok") {
 		t.Errorf("Summary = %q", s)
+	}
+}
+
+func TestSummaryDistingueElWorkshopAusenteDelVacio(t *testing.T) {
+	// El bloque del workshop usa el mismo par ok/falta que los otros: un
+	// workshop inexistente y uno vacío se ven distinto.
+	ausente := Deps{}.Summary()
+	if !strings.Contains(ausente, "workshop:falta") {
+		t.Errorf("Summary sin workshop = %q, quería workshop:falta", ausente)
+	}
+	vacio := Deps{Workshop: WorkshopOK{Ok: true, Items: 0}}.Summary()
+	if !strings.Contains(vacio, "workshop:ok 0 items") {
+		t.Errorf("Summary con workshop vacío = %q, quería workshop:ok 0 items", vacio)
 	}
 }

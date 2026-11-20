@@ -278,6 +278,43 @@ func TestScanOpcionDesconocidaFalla(t *testing.T) {
 	}
 }
 
+func TestScanKindInvalidoFalla(t *testing.T) {
+	// Un typo en --kind tiene que ser un error, no un "te muestro imágenes
+	// porque no entendí lo que pediste".
+	dir := t.TempDir()
+	escribirArchivo(t, filepath.Join(dir, "a.jpg"), "x")
+	escribirArchivo(t, filepath.Join(dir, "clip.mp4"), "x")
+
+	codigo, _, errSalida := correr(t, "scan", "--dir", dir, "--kind", "videoz")
+	if codigo != 1 {
+		t.Fatalf("código = %d, quería 1", codigo)
+	}
+	if !strings.Contains(errSalida, "--kind") {
+		t.Errorf("stderr = %q, quería que nombre el flag", errSalida)
+	}
+	if !strings.Contains(errSalida, "image|video") {
+		t.Errorf("stderr = %q, quería que liste los valores válidos", errSalida)
+	}
+}
+
+func TestScanKindEnMayusculasSeAcepta(t *testing.T) {
+	dir := t.TempDir()
+	escribirArchivo(t, filepath.Join(dir, "a.jpg"), "x")
+	escribirArchivo(t, filepath.Join(dir, "clip.mp4"), "x")
+
+	codigo, salida, errSalida := correr(t, "scan", "--dir", dir, "--kind", "VIDEO", "--json")
+	if codigo != 0 {
+		t.Fatalf("código = %d, quería 0 (stderr: %s)", codigo, errSalida)
+	}
+	var items []scanItem
+	if err := json.Unmarshal([]byte(salida), &items); err != nil {
+		t.Fatalf("la salida no es JSON: %v (%q)", err, salida)
+	}
+	if len(items) != 1 || items[0].Type != "video" {
+		t.Errorf("items = %+v, quería sólo el mp4", items)
+	}
+}
+
 func TestScanOrdenaPorNombre(t *testing.T) {
 	dir := t.TempDir()
 	for _, nombre := range []string{"c.jpg", "a.jpg", "b.jpg"} {

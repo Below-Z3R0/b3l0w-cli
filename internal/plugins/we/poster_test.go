@@ -104,6 +104,32 @@ func TestPosterOptionsNormalize(t *testing.T) {
 	}
 }
 
+func TestPosterDelayDocumentadoEnFrames(t *testing.T) {
+	// El campo Delay se pasa tal cual a --screenshot-delay, que el engine
+	// cuenta en frames (a 30 fps, 30 frames es un segundo). El doc del
+	// campo decía "segundos": el que lo leyera esperaba 30x más.
+	src, err := os.ReadFile("poster.go")
+	if err != nil {
+		t.Fatalf("leer poster.go: %v", err)
+	}
+	linea := ""
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(l), "Delay") {
+			linea = l
+			break
+		}
+	}
+	if linea == "" {
+		t.Fatal("no encontré el campo Delay en poster.go")
+	}
+	if !strings.Contains(linea, "frames") {
+		t.Errorf("el doc de Delay no dice que está en frames: %q", linea)
+	}
+	if strings.Contains(linea, "segundos") {
+		t.Errorf("el doc de Delay dice segundos: %q", linea)
+	}
+}
+
 func TestPosterSalteaSiElPNGYaExiste(t *testing.T) {
 	out := t.TempDir()
 	previo := writePNG(t, out, "424242.png", "png-viejo")

@@ -186,6 +186,11 @@ func cmdConvert(args []string) int {
 	}
 	manifest, err := we.LoadManifest(manifestPath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, we.ErrVersionDesconocida) {
+			// Un manifiesto de una versión que no entendemos no se toca: al
+			// reescribirlo se pisarían campos que el otro código espera.
+			return fail("%v", err)
+		}
 		fmt.Fprintf(os.Stderr, "  aviso: manifiesto previo ilegible, se rehace (%v)\n", err)
 		manifest = we.Manifest{Version: 1}
 	}

@@ -126,6 +126,11 @@ func cmdPoster(args []string) int {
 	}
 	m, loadErr := we.LoadManifest(manifestPath)
 	if loadErr != nil && !errors.Is(loadErr, fs.ErrNotExist) {
+		if errors.Is(loadErr, we.ErrVersionDesconocida) {
+			// Un manifiesto de una versión que no entendemos no se toca: al
+			// reescribirlo se pisarían campos que el otro código espera.
+			return fail("%v", loadErr)
+		}
 		m = we.Manifest{Version: 1}
 	}
 	if m.Version == 0 {

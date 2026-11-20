@@ -60,10 +60,27 @@ func makeThumbs(items []scanItem, dir string, width int) int {
 					mu.Unlock()
 					continue
 				}
+				// Se escribe a un temporal y recién al final se renombra: un
+				// ffmpeg cortado deja una miniatura a medias que el caché
+				// daba por fresca en la corrida siguiente.
+				tmp, err := os.CreateTemp(filepath.Dir(out), ".thumb-*.jpg")
+				if err != nil {
+					items[i].Thumb = ""
+					continue
+				}
+				tmpPath := tmp.Name()
+				tmp.Close()
+				os.Remove(tmpPath)
 				args := []string{"-v", "error", "-y", "-threads", "1", "-i", items[i].File,
-					"-vf", fmt.Sprintf("scale=%d:-2", width), "-q:v", "5", out}
+					"-vf", fmt.Sprintf("scale=%d:-2", width), "-q:v", "5", tmpPath}
 				if err := exec.CommandContext(ctx, ff.Path, args...).Run(); err != nil {
 					// Sin miniatura la tarjeta muestra el placeholder.
+					os.Remove(tmpPath)
+					items[i].Thumb = ""
+					continue
+				}
+				if err := os.Rename(tmpPath, out); err != nil {
+					os.Remove(tmpPath)
 					items[i].Thumb = ""
 					continue
 				}

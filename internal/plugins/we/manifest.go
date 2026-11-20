@@ -2,6 +2,7 @@ package we
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,12 @@ import (
 
 // ManifestVersion es la versión del contrato que lee el plugin de Noctalia.
 const ManifestVersion = 1
+
+// ErrVersionDesconocida marca un manifiesto con una versión del contrato que
+// este código no conoce. No se puede reescribir: la forma de `items` de una
+// versión futura puede tener campos que este código no entiende y los
+// pisaría al guardar.
+var ErrVersionDesconocida = errors.New("versión de manifiesto desconocida")
 
 // Estados posibles de un Entry.
 const (
@@ -62,6 +69,12 @@ func LoadManifest(path string) (Manifest, error) {
 	}
 	if m.Version == 0 {
 		m.Version = ManifestVersion
+	}
+	if m.Version != ManifestVersion {
+		// El campo `version` es el contrato con el plugin: un manifiesto de
+		// una versión que este código no conoce tiene una forma de `items`
+		// que no entendemos, y reescribirlo pisaría campos ajenos.
+		return Manifest{}, fmt.Errorf("%w: el manifest %s tiene la versión %d y este código entiende hasta la %d", ErrVersionDesconocida, path, m.Version, ManifestVersion)
 	}
 	if m.Items == nil {
 		m.Items = []Entry{}

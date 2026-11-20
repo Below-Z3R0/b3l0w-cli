@@ -60,10 +60,28 @@ printf 'jpeg' > "$out"
 
 	args := argumentosDeFfmpeg(t)
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"-y", "-i " + video, "-frames:v 1", "-vf scale=320:-2", "-q:v 3", out} {
+	for _, want := range []string{"-y", "-i " + video, "frames:v 1", "-vf scale=320:-2", "-q:v 3"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("args de ffmpeg = %q, faltaba %q", joined, want)
 		}
+	}
+	// ffmpeg escribe a un temporal en el mismo directorio (con la misma
+	// extensión) y el comando lo renombra al final: el destino nunca queda
+	// a medias.
+	// El log guarda una línea por llamada: el último argumento es el archivo.
+	partes := strings.Fields(args[len(args)-1])
+	if len(partes) == 0 {
+		t.Fatal("ffmpeg no recibió ningún argumento")
+	}
+	temporal := partes[len(partes)-1]
+	if filepath.Dir(temporal) != filepath.Dir(out) {
+		t.Errorf("ffmpeg escribió en %q, tenía que ser en la carpeta de %q", temporal, out)
+	}
+	if filepath.Ext(temporal) != filepath.Ext(out) {
+		t.Errorf("el temporal %q no tiene la extensión de %q", temporal, out)
+	}
+	if temporal == out {
+		t.Error("ffmpeg no debería escribir directamente sobre el destino")
 	}
 }
 
@@ -214,6 +232,29 @@ func TestStillOpcionDesconocidaFalla(t *testing.T) {
 	}
 	if !strings.Contains(errSalida, "opción desconocida") {
 		t.Errorf("stderr = %q, quería que nombre la opción", errSalida)
+	}
+}
+
+func TestStillNoBorraLaMiniaturaPreviaSiFfmpegFalla(t *testing.T) {
+	// El comando no puede dejar al usuario sin miniatura: si ffmpeg falla, la
+	// que ya estaba tiene que seguir en disco.
+	stubFFmpeg(t, `exit 1`)
+	dir := t.TempDir()
+	video := filepath.Join(dir, "clip.mp4")
+	escribirArchivo(t, video, "video falso")
+	out := filepath.Join(dir, "thumbs", "t.jpg")
+	escribirArchivo(t, out, "MINIATURA PREVIA")
+
+	codigo, _, errSalida := correr(t, "still", "--file", video, "--out", out)
+	if codigo != 1 {
+		t.Fatalf("código = %d, quería 1 (stderr: %s)", codigo, errSalida)
+	}
+	contenido, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("la miniatura previa no quedó en disco: %v", err)
+	}
+	if string(contenido) != "MINIATURA PREVIA" {
+		t.Errorf("la miniatura previa cambió a %q", contenido)
 	}
 }
 

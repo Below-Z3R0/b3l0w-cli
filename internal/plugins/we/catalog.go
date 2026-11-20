@@ -134,10 +134,22 @@ func Scan(root string) ([]Item, error) {
 		it.Content = proj.ContentRating
 		it.Tags = proj.Tags
 		if proj.File != "" {
-			it.File = filepath.Join(dir, proj.File)
+			resolved, err := resolveInDir(dir, proj.File)
+			if err != nil {
+				it.Err = fmt.Sprintf("file del project.json: %v", err)
+			} else {
+				it.File = resolved
+			}
 		}
 		if proj.Preview != "" {
-			it.Preview = filepath.Join(dir, proj.Preview)
+			resolved, err := resolveInDir(dir, proj.Preview)
+			if err != nil {
+				if it.Err == "" {
+					it.Err = fmt.Sprintf("preview del project.json: %v", err)
+				}
+			} else {
+				it.Preview = resolved
+			}
 		}
 		it.Bytes = dirSize(dir)
 		it.Properties = projectProperties(proj)
@@ -147,6 +159,51 @@ func Scan(root string) ([]Item, error) {
 		return strings.ToLower(items[i].Title) < strings.ToLower(items[j].Title)
 	})
 	return items, nil
+}
+
+// resolveInDir resuelve un nombre de archivo que viene de afuera (el
+// project.json lo baja Steam) y lo deja dentro del directorio del item.
+//
+// filepath.Join no neutraliza los `..`: sólo limpia la ruta. Un `file` con
+// `../` sale del item y `we convert` copia a la salida un archivo cualquiera
+// del disco. Por eso la ruta se resuelve y después se comprueba que siga
+// dentro: si se sale, el item vuelve roto en vez de apuntar afuera.
+func resolveInDir(dir, name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("ruta vacía")
+	}
+	if filepath.IsAbs(name) {
+		return "", fmt.Errorf("la ruta %q es absoluta: se espera un archivo dentro del item", name)
+	}
+	base, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolver %s: %w", dir, err)
+	}
+	target := filepath.Join(base, name)
+	if !dentroDe(base, target) {
+		return "", fmt.Errorf("la ruta %q sale del directorio del item", name)
+	}
+	// Si el archivo existe, se resuelve el symlink: un enlace dentro del item
+	// tampoco puede apuntar afuera.
+	if real, err := filepath.EvalSymlinks(target); err == nil {
+		realBase := base
+		if r, err := filepath.EvalSymlinks(base); err == nil {
+			realBase = r
+		}
+		if !dentroDe(realBase, real) {
+			return "", fmt.Errorf("la ruta %q apunta afuera del item", name)
+		}
+	}
+	return target, nil
+}
+
+// dentroDe dice si target está dentro de base (o es base).
+func dentroDe(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // projectProperties devuelve `general.properties` sin interpretarlo: la forma
@@ -166,12 +223,25 @@ func projectProperties(proj Project) map[string]json.RawMessage {
 
 // Filter aplica los filtros de `we list`. query busca en título sin distinguir
 // mayúsculas; typ vacío no filtra.
+//
+// El tipo se valida contra los que el catálogo conoce: un tipo que no existe
+// (un typo) no puede devolver el catálogo entero, y "unknown" es un tipo
+// legítimo que filtra por los items cuyo project.json no dice nada.
 func Filter(items []Item, typ, query string) []Item {
-	typ = NormalizeType(typ)
 	q := strings.ToLower(strings.TrimSpace(query))
+	filtraTipo := strings.TrimSpace(typ) != ""
+	norm := ""
+	if filtraTipo {
+		if !ValidType(typ) {
+			// Un tipo inexistente no matchea nada: devolver todo haría
+			// creer al usuario que filtró.
+			return []Item{}
+		}
+		norm = NormalizeType(typ)
+	}
 	out := make([]Item, 0, len(items))
 	for _, it := range items {
-		if typ != "unknown" && it.Type != typ {
+		if filtraTipo && it.Type != norm {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(it.Title), q) && !strings.Contains(it.ID, q) {
@@ -180,6 +250,16 @@ func Filter(items []Item, typ, query string) []Item {
 		out = append(out, it)
 	}
 	return out
+}
+
+// ValidType dice si el tipo pedido existe en el catálogo. "unknown" cuenta:
+// es el tipo de los items cuyo project.json no declara un tipo conocido.
+func ValidType(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "video", "scene", "web", "website", "unknown":
+		return true
+	}
+	return false
 }
 
 // Find busca un item por id.
@@ -194,9 +274,23 @@ func Find(items []Item, id string) (Item, error) {
 
 var slugDrops = regexp.MustCompile(`[^a-z0-9]+`)
 
+// transliteraciones son las letras acentuadas (y las que no son ASCII) con su
+// equivalente ASCII. Antes el slug las borraba: "Café Münster Ñandú" quedaba
+// "caf-m-nster-and". Ahora se transliteran: "cafe-munster-nandu".
+var transliteraciones = map[rune]string{
+	'á': "a", 'à': "a", 'ä': "a", 'â': "a", 'ã': "a", 'å': "a",
+	'é': "e", 'è': "e", 'ë': "e", 'ê': "e",
+	'í': "i", 'ì': "i", 'ï': "i", 'î': "i",
+	'ó': "o", 'ò': "o", 'ö': "o", 'ô': "o", 'õ': "o", 'ø': "o",
+	'ú': "u", 'ù': "u", 'ü': "u", 'û': "u",
+	'ñ': "n", 'ç': "c", 'ý': "y", 'ÿ': "y", 'š': "s", 'ž': "z", 'ł': "l",
+	'ß': "ss", 'æ': "ae", 'œ': "oe",
+}
+
 // Slug convierte un título en un nombre de archivo seguro (kebab-case, <=60).
 func Slug(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
+	s = transliterar(s)
 	s = slugDrops.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	if len(s) > 60 {
@@ -206,6 +300,20 @@ func Slug(s string) string {
 		s = "wallpaper"
 	}
 	return s
+}
+
+// transliterar reemplaza las letras acentuadas por su equivalente ASCII, para
+// que el slug no pierda letras: "ñ" es "n", no un hueco.
+func transliterar(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if repl, ok := transliteraciones[r]; ok {
+			b.WriteString(repl)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // OutputName arma el nombre de archivo de salida para un item.

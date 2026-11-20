@@ -137,6 +137,39 @@ printf 'jpeg' > "$out"
 	}
 }
 
+func TestScanNoDejaUnaMiniaturaACortarEnDisco(t *testing.T) {
+	// Un ffmpeg cortado escribe un JPEG a medias. La miniatura rota no puede
+	// quedar en disco: el caché la daría por fresca en la corrida siguiente.
+	stubFFmpeg(t, `
+echo "$@" >> "$WE_TEST_LOG"
+for a in "$@"; do out="$a"; done
+printf 'JPEG-PARCIAL' > "$out"
+exit 1
+`)
+	dir := t.TempDir()
+	imagen := filepath.Join(dir, "fondo.png")
+	escribirArchivo(t, imagen, "x")
+	minis := filepath.Join(t.TempDir(), "minis")
+
+	if codigo, _, errSalida := correr(t, "scan", "--dir", dir, "--thumbs", minis, "--json"); codigo != 0 {
+		t.Fatalf("primera pasada: código = %d (stderr: %s)", codigo, errSalida)
+	}
+	esperado := filepath.Join(minis, thumbName(imagen))
+	if _, err := os.Stat(esperado); err == nil {
+		contenido, _ := os.ReadFile(esperado)
+		t.Errorf("quedó una miniatura a medias en disco: %s (%q)", esperado, contenido)
+	}
+	// La segunda pasada tiene que volver a llamar a ffmpeg: la miniatura rota
+	// no puede quedar cacheada como válida.
+	llamadasAntes := len(argumentosDeFfmpeg(t))
+	if codigo, _, errSalida := correr(t, "scan", "--dir", dir, "--thumbs", minis, "--json"); codigo != 0 {
+		t.Fatalf("segunda pasada: código = %d (stderr: %s)", codigo, errSalida)
+	}
+	if len(argumentosDeFfmpeg(t)) == llamadasAntes {
+		t.Error("la segunda pasada no volvió a llamar a ffmpeg: la miniatura rota quedó cacheada")
+	}
+}
+
 func TestScanReusaLaMiniaturaExistente(t *testing.T) {
 	stubFFmpeg(t, `
 echo "$@" >> "$WE_TEST_LOG"
