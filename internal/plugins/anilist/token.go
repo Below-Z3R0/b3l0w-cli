@@ -16,6 +16,16 @@ import (
 // El host lo crea, pero puede no existir si el plugin nunca corrió.
 func DataDir(stateHome, pluginID string) string {
 	if stateHome == "" {
+		// Mismo criterio que los módulos hermanos: el state dir de Noctalia
+		// primero, después el de XDG, y por último el del home. Ignorar las
+		// variables hacía que el CLI no encontrara el token.json que el plugin
+		// había escrito (M9).
+		stateHome = os.Getenv("NOCTALIA_STATE_HOME")
+	}
+	if stateHome == "" {
+		stateHome = os.Getenv("XDG_STATE_HOME")
+	}
+	if stateHome == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return ""

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ Opciones comunes:
   --json             salida JSON (la que usa el plugin)
   --data-dir DIR     directorio de datos del plugin (default: el de b3l0w/anilist)
   --token T          token explícito (default: token.json del plugin)
+  --user USUARIO    id numérico o nombre de AniList (default: el del token)
 
 sync/covers:
   --covers-dir DIR   dónde guardar los JPG (default: <data-dir>/covers)
@@ -47,7 +49,6 @@ media:
   --media-id N       id de la serie (obligatorio)
 
 stats:
-  --user NOMBRE      usuario a consultar (default: el dueño del token)
   --refresh          ignorar el caché de 30 minutos y consultar AniList
 `
 
@@ -89,13 +90,55 @@ func Run(args []string) int {
 }
 
 // newFlags devuelve el set de flags compartido por sync/library/covers.
-func newFlags(name string) (*flag.FlagSet, *bool, *string, *string, *int) {
+//
+// `--user` es un string en TODOS los subcomandos y significa lo mismo: el id
+// numérico de AniList o el nombre del usuario. Antes `library`/`sync` lo
+// tomaban como int y `stats` como string, así que el mismo flag era un error
+// de parseo en un comando y un nombre de usuario en otro (B4).
+func newFlags(name string) (*flag.FlagSet, *bool, *string, *string, *string) {
 	fs := flag.NewFlagSet(name, flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "salida JSON")
 	dataDir := fs.String("data-dir", "", "directorio de datos del plugin")
 	token := fs.String("token", "", "token de AniList")
-	user := fs.Int("user", 0, "user id (0 = el del token)")
+	user := fs.String("user", "", "usuario de AniList: id numérico o nombre (0 = el del token)")
 	return fs, asJSON, dataDir, token, user
+}
+
+// resolverUsuarioID interpreta el valor de `--user` para los comandos que
+// trabajan por id: un número es el id de AniList y cualquier otra cosa es el
+// nombre del usuario, que se resuelve contra la API.
+func resolverUsuarioID(ctx context.Context, c *anilist.Client, valor string) (int, string, error) {
+	valor = strings.TrimSpace(valor)
+	// "" y "0" significan lo mismo: el usuario del token. El flag viejo era
+	// un int con 0 = "el del token" y esa lectura se conserva.
+	if valor == "" || valor == "0" {
+		return 0, "", nil
+	}
+	if id, err := strconv.Atoi(valor); err == nil && id > 0 {
+		return id, "", nil
+	}
+	viewer, err := anilist.FetchUserByName(ctx, c, valor)
+	if err != nil {
+		return 0, "", err
+	}
+	return viewer.ID, viewer.Name, nil
+}
+
+// resolverUsuarioNombre interpreta el valor de `--user` para `stats`, que
+// consulta por nombre: un id numérico se resuelve primero a su nombre.
+func resolverUsuarioNombre(ctx context.Context, c *anilist.Client, valor string) (string, error) {
+	valor = strings.TrimSpace(valor)
+	if valor == "" || valor == "0" {
+		return "", nil
+	}
+	if id, err := strconv.Atoi(valor); err == nil && id > 0 {
+		viewer, err := anilist.FetchUserByID(ctx, c, id)
+		if err != nil {
+			return "", err
+		}
+		return viewer.Name, nil
+	}
+	return valor, nil
 }
 
 func client(token string, dataDirFlag string) (*anilist.Client, string, error) {
@@ -137,9 +180,16 @@ func runSync(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	lib, err := anilist.Sync(ctx, c, *user)
+	userID, userName, err := resolverUsuarioID(ctx, c, *user)
 	if err != nil {
 		return fail(err, *asJSON)
+	}
+	lib, err := anilist.Sync(ctx, c, userID)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	if lib.Viewer.Name == "" && userName != "" {
+		lib.Viewer.Name = userName
 	}
 	all := append(append([]anilist.Entry{}, lib.Anime...), lib.Manga...)
 	// "No pude leer la biblioteca" no es "esa entrada ya no está": con una
@@ -173,9 +223,16 @@ func runLibrary(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	lib, err := anilist.Sync(ctx, c, *user)
+	userID, userName, err := resolverUsuarioID(ctx, c, *user)
 	if err != nil {
 		return fail(err, *asJSON)
+	}
+	lib, err := anilist.Sync(ctx, c, userID)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	if lib.Viewer.Name == "" && userName != "" {
+		lib.Viewer.Name = userName
 	}
 	return emit(lib, *asJSON, func() { printLibrary(lib, anilist.CoverStats{}) })
 }
@@ -211,7 +268,11 @@ func runCovers(args []string) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
-		lib, err = anilist.Sync(ctx, c, *user)
+		userID, _, err := resolverUsuarioID(ctx, c, *user)
+		if err != nil {
+			return fail(err, *asJSON)
+		}
+		lib, err = anilist.Sync(ctx, c, userID)
 		if err != nil {
 			return fail(err, *asJSON)
 		}
@@ -323,7 +384,11 @@ func runStats(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	result, err := anilist.LoadStats(ctx, c, dir, *user, *refresh)
+	nombre, err := resolverUsuarioNombre(ctx, c, *user)
+	if err != nil {
+		return statsFail(err)
+	}
+	result, err := anilist.LoadStats(ctx, c, dir, nombre, *refresh)
 	if err != nil {
 		return statsFail(err)
 	}
@@ -383,7 +448,7 @@ func runSchedule(args []string) int {
 	asJSON := fs.Bool("json", false, "salida JSON")
 	dataDirFlag := fs.String("data-dir", "", "directorio de datos del plugin")
 	token := fs.String("token", "", "token de AniList")
-	user := fs.Int("user", 0, "user id (0 = el del token)")
+	user := fs.String("user", "", "usuario de AniList: id numérico o nombre (0 = el del token)")
 	fs.Parse(args)
 	c, _, err := client(*token, *dataDirFlag)
 	if err != nil {
@@ -391,7 +456,11 @@ func runSchedule(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	schedule, err := anilist.FetchSchedule(ctx, c, *user)
+	userID, _, err := resolverUsuarioID(ctx, c, *user)
+	if err != nil {
+		return fail(err, *asJSON)
+	}
+	schedule, err := anilist.FetchSchedule(ctx, c, userID)
 	if err != nil {
 		return fail(err, *asJSON)
 	}

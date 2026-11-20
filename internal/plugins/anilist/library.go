@@ -9,9 +9,10 @@ import (
 	"time"
 )
 
-// ChunkSize es cuántas entradas pide por página. 50 es el máximo que acepta la
-// API para MediaListCollection.
-const ChunkSize = 50
+// ChunkSize es cuántas entradas pide por página. La API acepta hasta 500
+// entradas por MediaListCollection: pedir de a 50 multiplica por diez las
+// consultas (y con ellas los chances de un 429) sin ganar nada (M3).
+const ChunkSize = 500
 
 // Entry es una entrada de la lista ya normalizada. Los nombres cortos son a
 // propósito: el panel la consume como JSON y cada byte viaja al runtime de Luau.
@@ -75,8 +76,10 @@ func FetchViewer(ctx context.Context, c *Client) (Viewer, error) {
 	return data.Viewer, err
 }
 
+// listResponse usa un puntero para la colección: `MediaListCollection: null`
+// es una respuesta que no se puede leer, no una biblioteca vacía (B3).
 type listResponse struct {
-	MediaListCollection struct {
+	MediaListCollection *struct {
 		HasNextChunk bool `json:"hasNextChunk"`
 		Lists        []struct {
 			Entries []rawEntry `json:"entries"`
@@ -144,7 +147,9 @@ func (r rawEntry) normalize(kind string) Entry {
 // puede aparecer en dos listas (en curso y repetida) y gana la más reciente.
 func FetchList(ctx context.Context, c *Client, userID int, kind string) ([]Entry, error) {
 	byID := map[int]Entry{}
-	for chunk := 0; ; chunk++ {
+	// El chunk arranca en 1: la API devuelve la MISMA página para `chunk: 0` y
+	// `chunk: 1`, así que pedir el 0 es una consulta de más por biblioteca (M4).
+	for chunk := 1; ; chunk++ {
 		variables := map[string]any{
 			"userId":   userID,
 			"type":     kind,
@@ -155,10 +160,16 @@ func FetchList(ctx context.Context, c *Client, userID int, kind string) ([]Entry
 		if err := c.Query(ctx, listQuery, variables, &page); err != nil {
 			return nil, err
 		}
+		// `MediaListCollection: null` no es "el usuario no tiene nada": es una
+		// respuesta que no se puede leer, y sin este error el panel muestra
+		// "anime: 0" como si la biblioteca estuviera vacía (B3).
+		if page.MediaListCollection == nil {
+			return nil, fmt.Errorf("la API devolvió la colección nula de %s del usuario %d", kind, userID)
+		}
 		for _, list := range page.MediaListCollection.Lists {
 			for _, raw := range list.Entries {
 				entry := raw.normalize(kind)
-				if prev, ok := byID[entry.MediaID]; ok && prev.UpdatedAt >= entry.UpdatedAt {
+				if prev, ok := byID[entry.MediaID]; ok && !betterEntry(entry, prev) {
 					continue
 				}
 				byID[entry.MediaID] = entry
@@ -212,6 +223,28 @@ func Sync(ctx context.Context, c *Client, userID int) (Library, error) {
 		lib.Manga = []Entry{}
 	}
 	return lib, nil
+}
+
+// betterEntry dice si `next` describe mejor la misma obra que `prev`.
+// Primero la más reciente por `updatedAt`; con empate —el reloj de AniList
+// tiene resolución de segundos y dos listas pueden tocarse en el mismo
+// segundo— gana la más completa: más progreso, después nota, después la que
+// no está en PLANNING. Sin esto el merge se queda con la primera que vio,
+// que puede ser la de menos progreso (M5).
+func betterEntry(next, prev Entry) bool {
+	if next.UpdatedAt != prev.UpdatedAt {
+		return next.UpdatedAt > prev.UpdatedAt
+	}
+	if next.Progress != prev.Progress {
+		return next.Progress > prev.Progress
+	}
+	if next.Score != prev.Score {
+		return next.Score > prev.Score
+	}
+	if (next.Status != "PLANNING") != (prev.Status != "PLANNING") {
+		return next.Status != "PLANNING"
+	}
+	return false
 }
 
 func firstNonEmpty(values ...string) string {

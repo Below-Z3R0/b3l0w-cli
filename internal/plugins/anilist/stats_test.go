@@ -248,6 +248,9 @@ func TestStatsSinDatosDevuelveArraysVacios(t *testing.T) {
 
 func TestLoadStatsSirveCacheFresco(t *testing.T) {
 	dir := t.TempDir()
+	// Sin dueño verificable el caché no se sirve (M8): library.json es la
+	// pista de a quién pertenece, y el plugin lo escribe.
+	escribirLibraryJSON(t, dir, "b3low")
 	writeCache(t, dir, Stats{
 		User: "b3low",
 		Anime: AnimeStats{Count: 334, MinutesWatched: 101040, DaysWatched: 70.2, MeanScore: 78.4,

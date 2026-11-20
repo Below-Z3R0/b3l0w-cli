@@ -1,6 +1,9 @@
 package anilist
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // libraryFile es la biblioteca que escribe el plugin en disco para que la fase
 // de carátulas no repita el fetch.
@@ -29,7 +32,11 @@ func ReadLibraryFile(raw []byte) (Library, error) {
 		out.Manga = decodeEntries(value)
 	}
 	if value, ok := campos["viewer"]; ok {
-		json.Unmarshal(value, &out.Viewer)
+		// El error no se descarta: un `viewer` mal formado deja al caché de
+		// stats sin dueño verificable, y hay que enterarse (M8).
+		if err := json.Unmarshal(value, &out.Viewer); err != nil {
+			return Library{}, fmt.Errorf("viewer de library.json inválido: %w", err)
+		}
 	}
 	if value, ok := campos["fetchedAt"]; ok {
 		json.Unmarshal(value, &out.FetchedAt)
