@@ -17,6 +17,10 @@ import (
 // CoverVersion invalida el caché entero cuando cambia el esquema del meta.
 const CoverVersion = 2
 
+// maxCoverBytes es el tope de tamaño de una carátula. Es un LÍMITE: una
+// imagen más grande se rechaza, no se guarda cortada (M7).
+const maxCoverBytes = 16 << 20
+
 // CoverStats es el contrato que consume el plugin: mapa mediaId → ruta local.
 type CoverStats struct {
 	Dir        string            `json:"dir"`
@@ -95,9 +99,9 @@ func adopt(dir, reuse string) int {
 		}
 		if isMeta {
 			// Copia, nunca hardlink: el inode del origen no se comparte.
-			if err := copyFile(filepath.Join(reuse, name), target); err == nil {
-				adopted++
-			}
+			// El meta NO cuenta como carátula reusada: el contador es de
+			// carátulas, no de archivos (M6).
+			_ = copyFile(filepath.Join(reuse, name), target)
 			continue
 		}
 		if err := os.Link(filepath.Join(reuse, name), target); err == nil {
@@ -148,7 +152,12 @@ func downloadCover(ctx context.Context, client *http.Client, entry Entry, dir st
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, io.LimitReader(resp.Body, 16<<20)); err != nil {
+	// Se lee un byte de más que el tope para poder distinguir "entra justo" de
+	// "excede el límite": con LimitReader el truncamiento era silencioso y el
+	// JPEG cortado quedaba cacheado como válido para siempre (M7).
+	limit := int64(maxCoverBytes)
+	written, err := io.Copy(out, io.LimitReader(resp.Body, limit+1))
+	if err != nil {
 		out.Close()
 		os.Remove(tmp)
 		return err
@@ -156,6 +165,11 @@ func downloadCover(ctx context.Context, client *http.Client, entry Entry, dir st
 	if err := out.Close(); err != nil {
 		os.Remove(tmp)
 		return err
+	}
+	if written > limit {
+		// No se renombra: la imagen truncada no llega al disco.
+		os.Remove(tmp)
+		return fmt.Errorf("carátula de %d bytes: excede el tope de %d", written, limit)
 	}
 	if err := os.Rename(tmp, final); err != nil {
 		os.Remove(tmp)

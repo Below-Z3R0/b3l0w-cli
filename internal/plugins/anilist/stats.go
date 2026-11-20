@@ -85,15 +85,16 @@ const statsQuery = `query ($name: String) {
 }`
 
 // statsListQuery recalcula géneros y notas desde la lista cuando la API
-// devuelve los agregados vacíos. `score` va sin `format` a propósito: AniList
-// lo devuelve en la escala del usuario (POINT_10, POINT_100, ...), que es la
-// misma que usaría statistics.scores.
+// devuelve los agregados vacíos. `score` pide POINT_100 explícito: sin
+// `format` AniList lo devuelve en la escala del usuario (POINT_10 para
+// muchos) y la distribución de notas salía en 1-10 mientras la agregada por
+// la API salía en 10-100. El mismo campo no puede hablar dos lenguas (M2).
 const statsListQuery = `query ($name: String, $chunk: Int, $perChunk: Int) {
   MediaListCollection(userName: $name, type: ANIME, forceSingleCompletedList: true, chunk: $chunk, perChunk: $perChunk) {
     hasNextChunk
     lists {
       entries {
-        mediaId status score
+        mediaId status score(format: POINT_100)
         media { genres }
       }
     }
@@ -346,7 +347,14 @@ func readStatsCache(dataDir, userName string, now time.Time) (Stats, bool) {
 		// si el token cambió de cuenta, el caché es de otro y no sirve.
 		name = libraryViewerName(dataDir)
 	}
-	if name != "" && cached.User != "" && !strings.EqualFold(cached.User, name) {
+	// Sin dueño esperado NO se puede verificar de quién es el caché: servirlo
+	// es mostrarle al usuario los totales de otra cuenta (M8). El caso normal
+	// es que no haya library.json —todavía no se sincronizó, o se cambió de
+	// cuenta— y ahí el caché no se puede validar.
+	if name == "" || cached.User == "" {
+		return Stats{}, false
+	}
+	if !strings.EqualFold(cached.User, name) {
 		return Stats{}, false
 	}
 	cached.normalize()

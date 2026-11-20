@@ -1,7 +1,10 @@
 # Bugs de `internal/plugins/anilist`
 
 Revisión de integridad en contexto cero, hecha sobre `main` en `aebf878`.
-**No se arregló nada**: este archivo sólo describe lo que se encontró.
+**Estado actual: los 19 hallazgos están arreglados.** La primera ola
+(2026-11-19) cerró C1 y A1–A4; la segunda (2026-11-20, rama
+`mod/fix-anilist-resto`) cerró M1–M9 y B1–B5. Abajo queda el detalle de cada
+hallazgo: qué se encontró, por qué pasaba y qué lo arregla.
 
 Método: se leyó el módulo completo (producción + tests) y se contrastó cada
 afirmación del `README.md` contra el código. Los hallazgos se reprodujeron
@@ -21,37 +24,45 @@ Los probes que se citan son de tres tipos:
 
 ## Resumen
 
-| ID | Sev | Archivo:línea | Síntoma |
-|---|---|---|---|
-| C1 | CRÍTICO | `library.go:193-201` + `covers.go:203-205` + `cli/root.go:144-149` | `sync --gc` **borra todas las carátulas** si la API falla, y sale con código 0 |
-| A1 | ALTO | `covers.go:194,230` | Una descarga fallida (500/404) hace que el GC borre el JPG de esa entrada |
-| A2 | ALTO | `covers.go:91,149` | El hardlink de `--reuse` + `os.WriteFile` del meta **corrompe el caché de origen**: la carátula vieja se presenta como nueva |
-| A3 | ALTO | `schedule.go:37-38` | La agenda se corta en las **primeras 50** series CURRENT (119 reales → 50) |
-| A4 | ALTO | `schedule.go:54-55` | La segunda query de la agenda se corta en **50 capítulos** (`hasNextPage: true` ignorado) |
-| M1 | MEDIO | `schedule.go:38,136,156` | `mediaList` sin filtro de tipo mete manga en la lista y todo se etiqueta `ANIME` |
-| M2 | MEDIO | `stats.go:96,234` | El fallback de stats usa la escala nativa del usuario; `statistics.scores` viene en 0-100 |
-| M3 | MEDIO | `library.go:11-12,150` | `perChunk: 50` cuando la API acepta 500: 10× más consultas de las necesarias (y el comentario es falso) |
-| M4 | MEDIO | `library.go:145-168` | `chunk: 0` y `chunk: 1` devuelven **la misma página**: una consulta de más por biblioteca |
-| M5 | MEDIO | `library.go:159` | Empate de `updatedAt` en el merge: gana el primero, no el más completo |
-| M6 | MEDIO | `covers.go:92,97` + `cli/root.go:219-220` | `adopt()` cuenta archivos, no carátulas: "reusadas" sale duplicado |
-| M7 | MEDIO | `covers.go:139` | El tope de 16 MB **trunca** la imagen en silencio y guarda un JPEG corrupto como válido |
-| M8 | MEDIO | `stats.go:343-351` + `libraryfile.go:32` | Sin `library.json`, el caché de stats de **otra cuenta** se sirve |
-| M9 | MEDIO | `token.go:17-26` | `DataDir` ignora `XDG_STATE_HOME` y `NOCTALIA_STATE_HOME` |
-| B1 | BAJO | `covers.go:149` vs `153` | El meta se escribe in situ y **antes** del rename del `.part` |
-| B2 | BAJO | `discover.go:158-176` | `stripHTML` no decodifica entidades y un `<` suelto se come el resto |
-| B3 | BAJO | `library.go:152-155` | `MediaListCollection: null` → biblioteca vacía **sin error** |
-| B4 | BAJO | `cli/root.go:97` vs `304` | `--user` es `int` en `library`/`sync` y `string` en `stats` |
-| B5 | BAJO | `README.md:43-44` | El README dice que el CLI exige token; `covers --library` funciona sin él |
+| ID | Sev | Archivo:línea | Síntoma | Estado |
+|---|---|---|---|---|
+| C1 | CRÍTICO | `library.go:193-201` + `covers.go:203-205` + `cli/root.go:144-149` | `sync --gc` **borra todas las carátulas** si la API falla, y sale con código 0 | arreglado |
+| A1 | ALTO | `covers.go:194,230` | Una descarga fallida (500/404) hace que el GC borre el JPG de esa entrada | arreglado |
+| A2 | ALTO | `covers.go:91,149` | El hardlink de `--reuse` + `os.WriteFile` del meta **corrompe el caché de origen**: la carátula vieja se presenta como nueva | arreglado |
+| A3 | ALTO | `schedule.go:37-38` | La agenda se corta en las **primeras 50** series CURRENT (119 reales → 50) | arreglado |
+| A4 | ALTO | `schedule.go:54-55` | La segunda query de la agenda se corta en **50 capítulos** (`hasNextPage: true` ignorado) | arreglado |
+| M1 | MEDIO | `schedule.go:38,136,156` | `mediaList` sin filtro de tipo mete manga en la lista y todo se etiqueta `ANIME` | arreglado |
+| M2 | MEDIO | `stats.go:96,234` | El fallback de stats usa la escala nativa del usuario; `statistics.scores` viene en 0-100 | arreglado |
+| M3 | MEDIO | `library.go:11-12,150` | `perChunk: 50` cuando la API acepta 500: 10× más consultas de las necesarias (y el comentario es falso) | arreglado |
+| M4 | MEDIO | `library.go:145-168` | `chunk: 0` y `chunk: 1` devuelven **la misma página**: una consulta de más por biblioteca | arreglado |
+| M5 | MEDIO | `library.go:159` | Empate de `updatedAt` en el merge: gana el primero, no el más completo | arreglado |
+| M6 | MEDIO | `covers.go:92,97` + `cli/root.go:219-220` | `adopt()` cuenta archivos, no carátulas: "reusadas" sale duplicado | arreglado |
+| M7 | MEDIO | `covers.go:139` | El tope de 16 MB **trunca** la imagen en silencio y guarda un JPEG corrupto como válido | arreglado |
+| M8 | MEDIO | `stats.go:343-351` + `libraryfile.go:32` | Sin `library.json`, el caché de stats de **otra cuenta** se sirve | arreglado |
+| M9 | MEDIO | `token.go:17-26` | `DataDir` ignora `XDG_STATE_HOME` y `NOCTALIA_STATE_HOME` | arreglado |
+| B1 | BAJO | `covers.go:149` vs `153` | El meta se escribe in situ y **antes** del rename del `.part` | arreglado |
+| B2 | BAJO | `discover.go:158-176` | `stripHTML` no decodifica entidades y un `<` suelto se come el resto | arreglado |
+| B3 | BAJO | `library.go:152-155` | `MediaListCollection: null` → biblioteca vacía **sin error** | arreglado |
+| B4 | BAJO | `cli/root.go:97` vs `304` | `--user` es `int` en `library`/`sync` y `string` en `stats` | arreglado |
+| B5 | BAJO | `README.md:43-44` | El README dice que el CLI exige token; `covers --library` funciona sin él | arreglado |
 
 **Totales:** 1 CRÍTICO · 4 ALTO · 9 MEDIO · 5 BAJO — 19 hallazgos.
+**Estado:** 19 arreglados · 0 descartados · 0 abiertos.
+
+Los `archivo:línea` son los de la revisión original (`aebf878`): el código
+cambió, así que la ubicación actual de cada arreglo está en `## Arreglados`.
 
 ---
 
 ## Arreglados
 
-Ola del 2026-11-19: los 5 hallazgos CRÍTICOS y ALTOS. Cada arreglo viene con un
-test que se verificó **revirtiéndolo**: con el código viejo el test falla con el
-mensaje del bug, no con un error de compilación.
+Dos olas y el mismo criterio: cada arreglo viene con un test que se verificó
+**revirtiéndolo** —con el código viejo el test falla con el mensaje del bug,
+no con un error de compilación.
+
+- **Ola 1 (2026-11-19):** los 5 hallazgos CRÍTICOS y ALTOS (C1, A1–A4).
+- **Ola 2 (2026-11-20, rama `mod/fix-anilist-resto`):** los 14 hallazgos MEDIO
+  y BAJO (M1–M9, B1–B5).
 
 | ID | Arreglo | Test |
 |---|---|---|
@@ -60,6 +71,20 @@ mensaje del bug, no con un error de compilación.
 | A2 | `adopt` copia el `.meta.json` (nunca lo hardlinkea); el meta se escribe atómico y después del JPG | `TestReuseNoCorrompeElMetaDelOrigen` |
 | A3 | `currentListQuery` pagina con `$page` y `pageInfo.hasNextPage` | `TestFetchSchedulePaginaLaListaYLosCapitulos` |
 | A4 | `scheduleQuery` pagina igual, con corte extra si la página viene vacía | idem |
+| M1 | `currentListQuery` filtra `type: ANIME` y la etiqueta `mediaType` sale de `media { type }` | `TestLaAgendaFiltraPorTipoYEtiquetaConElTipoDeLaMedia` |
+| M2 | el fallback pide `score(format: POINT_100)`: la misma escala de `statistics.scores` | `TestElFallbackDeStatsUsaLaEscalaDeStatistics` |
+| M3 | `ChunkSize` = 500, el máximo real que acepta la API | `TestLaBibliotecaPideDeA500Entradas` |
+| M4 | el chunk arranca en 1: el 0 devuelve la misma página que el 1 | `TestElChunkArrancaEnUno` |
+| M5 | `betterEntry` desempata: `updatedAt` primero y, con empate, la entrada más completa | `TestElMergeDesempataPorProgreso` |
+| M6 | `adopt` cuenta carátulas: el `.meta.json` copiado no suma al contador | `TestReusedCuentaCaratulasYNoArchivos` |
+| M7 | el tope de 16 MB es un límite: la imagen que lo excede se rechaza y no se cachea | `TestUnaCaratulaMasGrandeQueElTopeSeRechaza` |
+| M8 | el caché de stats sólo se sirve si su dueño se puede verificar (`--user` o `library.json`) | `TestElCacheDeStatsNoSeSirveSinDueñoVerificable` |
+| M9 | `DataDir` respeta `NOCTALIA_STATE_HOME`, `XDG_STATE_HOME` y el flag explícito | `TestDataDirRespetaLasVariablesDeEstado` |
+| B1 | el `.meta.json` se escribe con `.part` + rename y **después** del rename del JPG | `TestElMetaSeEscribeDespuesDelRenameDelJpg`, `TestElMetaSeEscribeAtomico` |
+| B2 | `stripHTML` decodifica entidades y no se come el texto que sigue a un `<` suelto | `TestStripHTMLDecodificaEntidadesYNoSeComeElTexto` |
+| B3 | `MediaListCollection: null` es un error, no una biblioteca vacía | `TestUnaColeccionNulaEsUnError` |
+| B4 | `--user` es el mismo flag en todos los subcomandos: id numérico o nombre | `TestElFlagUserAceptaUnNombreEnLibrary`, `TestElFlagUserAceptaUnIdEnStats`, `TestElFlagUserEsElMismoEnTodosLosSubcomandos`, `TestElFlagUserCeroEsElDelToken` |
+| B5 | el README documenta que `covers --library` corre sin token | `TestElReadmeNoDiceQueElCliExijaTokenParaTodo`, `TestElArchivoDeBibliotecaNoPideToken` |
 
 **C1 — `library.go`, `cli/root.go`.** `Sync` distingue "una lista falló"
 (`Partial = true`) de "no pude leer nada" (error). El GC se desactiva cuando la
@@ -73,13 +98,81 @@ una carátula que estaba bien en disco: el id fallido se saltea en el GC.
 **A2 — `covers.go`.** El hardlink queda sólo para el `.jpg`; el `.meta.json` se
 copia con inode propio. El meta se escribe en un `.part` y se renombra después
 del JPG, que además rompe el vínculo con el caché de origen. Esto cubre también
-el mecanismo de B1 (escritura atómica y posterior al rename), pero B1 no se
-marca cerrado porque no tiene test propio de atomicidad.
+el mecanismo de B1 (escritura atómica y posterior al rename); B1 quedó
+cerrado en la ola 2, con dos tests propios de atomicidad y de orden.
 
 **A3 / A4 — `schedule.go`.** Las dos queries llevan `$page` y
 `pageInfo { hasNextPage }`. El loop corta por `hasNextPage == false` o por
-página vacía, que es la red contra un `hasNextPage` que mienta. De paso se
+página vacía, que es la red contra un `hasNextPage` que miente. De paso se
 corrigió un comentario con caracteres CJK en la cabecera de `Schedule`.
+
+### Ola 2 — MEDIO y BAJO (2026-11-20)
+
+**M1 — `schedule.go`.** `currentListQuery` filtra `type: ANIME` y las dos
+queries piden `media { type }`. La etiqueta `mediaType` sale del tipo que
+devuelve la API (`mediaType()`, con `ANIME` como default para no dejar la
+etiqueta vacía). La manga ya no ocupa los slots de la agenda ni se etiqueta
+como anime.
+
+**M2 — `stats.go`.** `statsListQuery` pide `score(format: POINT_100)`. El
+fallback y `statistics.scores` hablan la misma lengua: la distribución de
+notas ya no cambia de escala (1-10 vs 10-100) según el camino.
+
+**M3 — `library.go`.** `ChunkSize` pasa de 50 a 500, que es el máximo real de
+`MediaListCollection`; el comentario que decía "50 es el máximo" era falso. Una
+biblioteca de 600 entradas son 2 consultas en vez de 13.
+
+**M4 — `library.go`.** El chunk arranca en 1. La API devuelve la misma página
+para `chunk: 0` que para `chunk: 1`, así que pedir el 0 era una consulta de más
+por biblioteca.
+
+**M5 — `library.go`.** `betterEntry()` reemplaza el `>=` del merge: primero
+compara `updatedAt` y, con empate (el reloj de AniList tiene resolución de
+segundos), gana la entrada más completa: más progreso, después nota, después la
+que no está en `PLANNING`.
+
+**M6 — `covers.go`.** `adopt()` cuenta sólo los `.jpg` adoptados. El
+`.meta.json` se sigue copiando (nunca hardlinkeado, por A2), pero ya no suma
+una carátula de más al contador `reused`.
+
+**M7 — `covers.go`.** El tope de 16 MB pasó a ser un límite de verdad: se lee
+un byte de más que el tope para poder distinguir "entra justo" de "excede", y
+una imagen que lo excede se rechaza (y no se renombra, así que no queda un
+JPEG truncado cacheado como válido).
+
+**M8 — `stats.go`, `libraryfile.go`.** El caché de `stats.json` sólo se sirve
+si su dueño se puede verificar: con `--user` se compara contra ese nombre y
+sin `--user` contra el `viewer` de `library.json`. Si no hay `library.json`, o
+el `viewer` está mal formado, el caché no se sirve: antes se servía el de otra
+cuenta. `ReadLibraryFile` ya no se come el error de unmarshal del `viewer`.
+
+**M9 — `token.go`.** `DataDir` respeta `NOCTALIA_STATE_HOME`, después
+`XDG_STATE_HOME` y por último `~/.local/state`, igual que los módulos
+hermanos (`ytmusic/model.go`, `internal/registry/registry.go`).
+
+**B1 — `covers.go`.** El `.meta.json` se escribe con `.part` + rename y
+**después** del rename del JPG. Dos tests: uno verifica que si el rename del
+JPG falla el meta no queda escrito (nadie ve meta nuevo con imagen vieja) y el
+otro que el meta viejo se reemplaza por rename —cambia de inode— y no queda
+ningún `.part`.
+
+**B2 — `discover.go`.** `stripHTML` decodifica las entidades HTML
+(`html.UnescapeString`: `&mdash;` → `—`) y un `<` que no cierra ninguna
+etiqueta se conserva como texto (`"5 < 6 y 7"` ya no vuelve `"5"`).
+
+**B3 — `library.go`.** `listResponse.MediaListCollection` es un puntero: `null`
+se distingue de una colección vacía y `FetchList` devuelve error en vez de una
+biblioteca vacía sin error.
+
+**B4 — `cli/root.go`, `users.go`.** `--user` es un string en todos los
+subcomandos y significa lo mismo: id numérico o nombre de usuario. Un nombre
+se resuelve contra la API (`FetchUserByName`); un id numérico se usa tal cual
+en `library`/`sync`/`schedule` y se resuelve a su nombre en `stats`
+(`FetchUserByID`). El texto de uso pasó a documentarlo como opción común.
+
+**B5 — `README.md`.** El README ya no dice que el CLI exige token antes de
+correr cualquier comando: documenta que `covers --library` corre sin token
+porque trabaja sobre el archivo de biblioteca.
 
 ### Verificación de los arreglos
 
@@ -93,7 +186,37 @@ Cada uno de los 5 tests se corrió con su arreglo revertido y falló con el
 mensaje del hallazgo (C1, A1, A2, A3/A4 y el gate CLI de C1). Los tests nuevos
 están en `fixes_test.go` y `cli/gc_test.go`.
 
-**Sigue abierto:** M1–M9 y B1–B5. B1 quedó cubierto de paso, sin test propio.
+Los 18 tests de la ola 2 (`medio_test.go` y `cli/user_test.go`) se reversaron
+de a uno y todos fallaron con el mensaje del hallazgo:
+
+```console
+M1 | FALLA | TestLaAgendaFiltraPorTipoYEtiquetaConElTipoDeLaMedia
+M2 | FALLA | TestElFallbackDeStatsUsaLaEscalaDeStatistics
+M3 | FALLA | TestLaBibliotecaPideDeA500Entradas
+M4 | FALLA | TestElChunkArrancaEnUno
+M5 | FALLA | TestElMergeDesempataPorProgreso
+M6 | FALLA | TestReusedCuentaCaratulasYNoArchivos
+M7 | FALLA | TestUnaCaratulaMasGrandeQueElTopeSeRechaza
+M8 | FALLA | TestElCacheDeStatsNoSeSirveSinDueñoVerificable
+M9 | FALLA | TestDataDirRespetaLasVariablesDeEstado
+B1 | FALLA | TestElMetaSeEscribeDespuesDelRenameDelJpg
+B2 | FALLA | TestStripHTMLDecodificaEntidadesYNoSeComeElTexto
+B3 | FALLA | TestUnaColeccionNulaEsUnError
+B4 | FALLA | TestElFlagUserAceptaUnIdEnStats / TestElFlagUserAceptaUnNombreEnLibrary
+B5 | FALLA | TestElReadmeNoDiceQueElCliExijaTokenParaTodo
+```
+
+**Sigue abierto:** nada. Los 19 hallazgos (C1, A1–A4, M1–M9, B1–B5) están
+arreglados y verificados revirtiendo el arreglo.
+
+---
+
+## Descartados
+
+Ninguno. Los 14 hallazgos MEDIO y BAJO se reprodujeron (M3, M4 y M9 con la
+API real de AniList; el resto con `httptest.Server` o con un
+`RoundTripper` falso) y se cerraron con arreglo y test propio. La lista de los
+probes está en cada sección, arriba.
 
 ---
 
@@ -695,10 +818,14 @@ Contrastadas una por una contra el código. Las que se sostienen:
 | "El mapa `mediaId → ruta local` ... es la única fuente de verdad para la UI" | `covers.go:170,198` |
 | "Nadie toca la API real en los tests" | los 5 `*_test.go` del paquete y `cli/root_test.go` |
 
-Las que **no** se sostienen: `README.md:43-44` (B5), `README.md:68` (M5),
-`README.md:89-90` (M7), `README.md:121-122` (M8), `README.md:133-134` (B1),
-`README.md:139-140` (M3, y esta nota queda respondida), y `library.go:11-12`
-(M3).
+Las que **no** se sostenían —la ola 2 las corrigió y el README ahora dice la
+verdad—: `README.md:43-44` (B5: la excepción de `covers --library`),
+`README.md:68` (M5: con empate gana la más completa),
+`README.md:89-90` (M7: el tope es un límite, no un truncamiento),
+`README.md:121-122` (M8: el caché sólo se sirve con dueño verificable),
+`README.md:133-134` (B1: el `.meta.json` también se escribe atómico),
+`README.md:139-140` (M3: las dos paginan de a 500, así que la nota queda
+respondida) y `library.go:11-12` (el comentario de `ChunkSize` era falso).
 
 ---
 
@@ -760,13 +887,18 @@ Las que **no** se sostienen: `README.md:43-44` (B5), `README.md:68` (M5),
 ## Verificación
 
 ```console
-$ go test ./internal/plugins/anilist/... -count=1
+$ go build ./... && go vet ./... && go test ./internal/plugins/anilist/... -count=1
 ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist
 ok  github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist/cli
 
-$ go build ./...
-(sin salida)
+$ go test ./... -count=1
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/anilist/cli
+(… 40 paquetes más en verde)
+
+$ grep -cE '^\| [MB][0-9]+ .*\| abierto' internal/plugins/anilist/bugs.md
+0
 ```
 
-Los dos verdes: no se tocó código de producción ni tests. El árbol de trabajo
-del módulo quedó como estaba (`bugs.md` nuevo, nada más).
+La suite entera del repo pasa. El detalle de qué prueba cada test está en
+[`tests.md`](tests.md).

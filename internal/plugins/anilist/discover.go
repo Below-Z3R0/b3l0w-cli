@@ -3,6 +3,7 @@ package anilist
 import (
 	"context"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 )
@@ -154,23 +155,35 @@ func Discover(ctx context.Context, c *Client, kind string, page, perPage int) (D
 }
 
 // stripHTML quita las etiquetas que trae la sinopsis (viene en HTML aunque se
-// pida asHtml: false en algunos campos).
+// pida asHtml: false en algunos campos) y decodifica las entidades: AniList
+// manda `&mdash;` y el panel tiene que ver "—", no la entidad literal (B2).
+//
+// Un `<` que no cierra ninguna etiqueta se conserva: "5 < 6" es texto, no el
+// principio de una etiqueta.
 func stripHTML(text string) string {
 	out := make([]rune, 0, len(text))
 	depth := 0
-	for _, r := range text {
+	for i, r := range text {
 		switch r {
 		case '<':
+			// ¿Hay una etiqueta que cerrar? Si no hay ningún '>' después, el
+			// '<' es texto y se queda.
+			if !strings.ContainsRune(text[i+1:], '>') {
+				out = append(out, r)
+				continue
+			}
 			depth++
 		case '>':
 			if depth > 0 {
 				depth--
+				continue
 			}
+			out = append(out, r)
 		default:
 			if depth == 0 {
 				out = append(out, r)
 			}
 		}
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(html.UnescapeString(string(out)))
 }

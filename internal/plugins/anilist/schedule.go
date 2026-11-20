@@ -37,11 +37,12 @@ type Schedule struct {
 const currentListQuery = `query ($userId: Int, $page: Int) {
   Page(page: $page, perPage: 50) {
     pageInfo { hasNextPage }
-    mediaList(userId: $userId, status: CURRENT) {
+    mediaList(userId: $userId, status: CURRENT, type: ANIME) {
       mediaId
       status
       media {
         id
+        type
         title { userPreferred }
         coverImage { extraLarge color }
         nextAiringEpisode { episode airingAt }
@@ -62,6 +63,7 @@ const scheduleQuery = `query ($ids: [Int], $page: Int) {
       airingAt
       media {
         id
+        type
         title { userPreferred }
         coverImage { extraLarge color }
       }
@@ -78,7 +80,8 @@ type currentListResponse struct {
 			MediaID int    `json:"mediaId"`
 			Status  string `json:"status"`
 			Media   struct {
-				ID    int `json:"id"`
+				ID    int    `json:"id"`
+				Type  string `json:"type"`
 				Title struct {
 					Preferred string `json:"userPreferred"`
 				} `json:"title"`
@@ -105,7 +108,8 @@ type scheduleResponse struct {
 			Episode  int   `json:"episode"`
 			AiringAt int64 `json:"airingAt"`
 			Media    struct {
-				ID    int `json:"id"`
+				ID    int    `json:"id"`
+				Type  string `json:"type"`
 				Title struct {
 					Preferred string `json:"userPreferred"`
 				} `json:"title"`
@@ -150,7 +154,7 @@ func FetchSchedule(ctx context.Context, c *Client, userID int) (Schedule, error)
 				Title:     entry.Media.Title.Preferred,
 				CoverURL:  entry.Media.Cover.ExtraLarge,
 				CoverClr:  entry.Media.Cover.Color,
-				MediaType: "ANIME",
+				MediaType: mediaType(entry.Media.Type),
 			}
 			titulos[entry.MediaID] = item
 			ids = append(ids, entry.MediaID)
@@ -177,7 +181,7 @@ func FetchSchedule(ctx context.Context, c *Client, userID int) (Schedule, error)
 					Title:     node.Media.Title.Preferred,
 					CoverURL:  node.Media.Cover.ExtraLarge,
 					CoverClr:  node.Media.Cover.Color,
-					MediaType: "ANIME",
+					MediaType: mediaType(node.Media.Type),
 				}
 			}
 			item.Episode = node.Episode
@@ -189,4 +193,14 @@ func FetchSchedule(ctx context.Context, c *Client, userID int) (Schedule, error)
 		}
 	}
 	return out, nil
+}
+
+// mediaType devuelve el tipo de la media que trajo la API. La agenda es de
+// anime, así que ANIME es el default: una respuesta vieja sin `type` no puede
+// dejar la etiqueta vacía (M1).
+func mediaType(value string) string {
+	if value == "" {
+		return "ANIME"
+	}
+	return value
 }

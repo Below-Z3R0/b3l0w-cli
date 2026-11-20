@@ -57,7 +57,9 @@ func requestBody(t *testing.T, r *http.Request) (string, map[string]any) {
 func TestFetchListPaginaYMergeaPorMediaID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, vars := requestBody(t, r)
-		if vars["chunk"] == float64(0) {
+		// El chunk arranca en 1: la API devuelve la misma página para el 0 y
+		// el 1 (M4).
+		if vars["chunk"] == float64(1) {
 			w.Write([]byte(`{"data":{"MediaListCollection":{"hasNextChunk":true,"lists":[{"entries":[
 				{"mediaId":1,"status":"CURRENT","progress":5,"score":80,"updatedAt":100,"media":{"episodes":12,"coverImage":{"color":"#abc","extraLarge":"http://c/1a.jpg"},"title":{"userPreferred":"Zeta"},"genres":["Action"]}},
 				{"mediaId":2,"status":"COMPLETED","progress":24,"score":90,"updatedAt":200,"media":{"episodes":24,"coverImage":{"large":"http://c/2.jpg"},"title":{"userPreferred":"Alfa"},"genres":["Drama"]}}

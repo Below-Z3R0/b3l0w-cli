@@ -927,6 +927,13 @@ func TestStatsSirveElCacheSinPreguntarALaAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	escribir(t, filepath.Join(dir, "stats.json"), string(crudo))
+	// El caché sólo se sirve si se puede verificar su dueño: library.json es
+	// la pista de a quién pertenece (M8).
+	lib, err := json.Marshal(anilist.Library{Viewer: anilist.Viewer{ID: 1, Name: "b3low"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	escribir(t, filepath.Join(dir, "library.json"), string(lib))
 
 	codigo, salida, errores := capturar(t, func() int {
 		return Run([]string{"stats", "--json", "--data-dir", dir})
