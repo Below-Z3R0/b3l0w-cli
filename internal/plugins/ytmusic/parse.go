@@ -72,14 +72,22 @@ func textOf(value any) string {
 }
 
 // findRenderer devuelve el primer sub-mapa que tenga la clave pedida.
+// Recorre las claves ordenadas: el orden de un map de Go es aleatorio y con
+// varios candidatos el token de continuación (o el videoId) cambiaba entre
+// llamadas al mismo payload (Y3).
 func findRenderer(root any, key string) map[string]any {
 	switch typed := root.(type) {
 	case map[string]any:
 		if inner, ok := typed[key].(map[string]any); ok {
 			return inner
 		}
-		for _, value := range typed {
-			if found := findRenderer(value, key); found != nil {
+		keys := make([]string, 0, len(typed))
+		for name := range typed {
+			keys = append(keys, name)
+		}
+		sort.Strings(keys)
+		for _, name := range keys {
+			if found := findRenderer(typed[name], key); found != nil {
 				return found
 			}
 		}

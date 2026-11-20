@@ -39,11 +39,17 @@ func TestStopMataElGrupoEntero(t *testing.T) {
 	if !alive(pid) {
 		t.Fatal("el proceso de prueba no arrancó")
 	}
+	// La identidad que `Stop` compara: sin el starttime real no mata.
+	started, ok := processStartTime(pid)
+	if !ok {
+		t.Fatal("no se pudo leer /proc/<pid>/stat")
+	}
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     pid,
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  filepath.Join(dir, "mpv.sock"),
+		PID:       pid,
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    filepath.Join(dir, "mpv.sock"),
+		StartTime: started,
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -139,16 +139,36 @@ func durationToSeconds(text string) int {
 
 // writeJSON escribe un archivo de estado de forma atómica: un `next` puede leer
 // la sesión mientras otra llamada la reescribe.
+//
+// El temporal se crea con os.CreateTemp para que cada escritor tenga el suyo.
+// Con un `.tmp` de nombre fijo dos escritores concurrentes se pisaban: uno
+// renombraba primero y al otro el rename le daba ENOENT, perdiendo su
+// actualización (Y5).
 func writeJSON(path string, value any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	name := tmp.Name()
+	cleanup := func() { _ = os.Remove(name) }
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
 }
 
 func readJSON(path string, out any) error {

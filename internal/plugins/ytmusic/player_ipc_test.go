@@ -28,8 +28,29 @@ func socketDir(t *testing.T) string {
 // (`{"event":...}`) se descartan, como en el player real.
 func fakeMPV(t *testing.T, respond func(command []any) (any, bool)) string {
 	t.Helper()
-	dir := socketDir(t)
-	socket := filepath.Join(dir, "mpv.sock")
+	return serveFakeMPV(t, filepath.Join(socketDir(t), "mpv.sock"), respond)
+}
+
+// fakeMPVIn levanta el mpv falso en <dir>/mpv.sock: es el path que usa el
+// player por contrato (el socket se deriva del dataDir, no del JSON).
+func fakeMPVIn(t *testing.T, dir string, respond func(command []any) (any, bool)) string {
+	t.Helper()
+	return serveFakeMPV(t, filepath.Join(dir, "mpv.sock"), respond)
+}
+
+// startTimeDelProceso es la identidad real de este proceso de test: `ours`
+// compara el starttime de /proc y no acepta un player.json sin él.
+func startTimeDelProceso(t *testing.T) uint64 {
+	t.Helper()
+	value, ok := processStartTime(os.Getpid())
+	if !ok {
+		t.Fatal("no se pudo leer /proc/self/stat")
+	}
+	return value
+}
+
+func serveFakeMPV(t *testing.T, socket string, respond func(command []any) (any, bool)) string {
+	t.Helper()
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("escuchando en el socket: %v", err)
@@ -231,8 +252,8 @@ func TestIPCBoolConValorNoBooleanoEsError(t *testing.T) {
 // TestStatusInformaElFinDeLaPista: EOF es la señal de "pasa a la siguiente" y
 // llega ANTES de que el proceso muera. Es lo que rompía el autoplay.
 func TestStatusInformaElFinDeLaPista(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return true, false
@@ -246,10 +267,11 @@ func TestStatusInformaElFinDeLaPista(t *testing.T) {
 	// Un PID vivo: el del proceso de test.
 	pid := os.Getpid()
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     pid,
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  socket,
+		PID:       pid,
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -272,8 +294,8 @@ func TestStatusInformaElFinDeLaPista(t *testing.T) {
 // mpv todavía no tiene time-pos. Antes eso devolvía "0:00 / 0:00" para
 // siempre.
 func TestStatusInformaQueEstaArrancando(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return false, false
@@ -283,11 +305,12 @@ func TestStatusInformaQueEstaArrancando(t *testing.T) {
 		return nil, false
 	})
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     os.Getpid(),
-		VideoID: "abc",
-		Title:   "Canción",
-		Seconds: 225,
-		Socket:  socket,
+		PID:       os.Getpid(),
+		VideoID:   "abc",
+		Title:     "Canción",
+		Seconds:   225,
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -308,8 +331,8 @@ func TestStatusInformaQueEstaArrancando(t *testing.T) {
 
 // TestStatusInformaLaPausa.
 func TestStatusInformaLaPausa(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return false, false
@@ -323,10 +346,11 @@ func TestStatusInformaLaPausa(t *testing.T) {
 		return nil, false
 	})
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     os.Getpid(),
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  socket,
+		PID:       os.Getpid(),
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -344,8 +368,8 @@ func TestStatusInformaLaPausa(t *testing.T) {
 
 // TestPauseAlternaElEstado: un solo comando para un solo botón.
 func TestPauseAlternaElEstado(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return false, false
@@ -359,10 +383,11 @@ func TestPauseAlternaElEstado(t *testing.T) {
 		return nil, false
 	})
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     os.Getpid(),
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  socket,
+		PID:       os.Getpid(),
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -377,8 +402,8 @@ func TestPauseAlternaElEstado(t *testing.T) {
 
 // TestSeekAceptaPosicionesNegativas: un salto negativo se clava en 0.
 func TestSeekAceptaPosicionesNegativas(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return false, false
@@ -390,10 +415,11 @@ func TestSeekAceptaPosicionesNegativas(t *testing.T) {
 		return nil, false
 	})
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     os.Getpid(),
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  socket,
+		PID:       os.Getpid(),
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -404,8 +430,8 @@ func TestSeekAceptaPosicionesNegativas(t *testing.T) {
 
 // TestResumeFuerzaReproducir: no alterna, siempre reanuda.
 func TestResumeFuerzaReproducir(t *testing.T) {
-	dir := t.TempDir()
-	socket := fakeMPV(t, func(command []any) (any, bool) {
+	dir := socketDir(t)
+	socket := fakeMPVIn(t, dir, func(command []any) (any, bool) {
 		switch command[1] {
 		case "eof-reached":
 			return false, false
@@ -419,10 +445,11 @@ func TestResumeFuerzaReproducir(t *testing.T) {
 		return nil, false
 	})
 	if err := writeJSON(playerPath(dir), playerFile{
-		PID:     os.Getpid(),
-		VideoID: "abc",
-		Title:   "Canción",
-		Socket:  socket,
+		PID:       os.Getpid(),
+		VideoID:   "abc",
+		Title:     "Canción",
+		Socket:    socket,
+		StartTime: startTimeDelProceso(t),
 	}); err != nil {
 		t.Fatal(err)
 	}
