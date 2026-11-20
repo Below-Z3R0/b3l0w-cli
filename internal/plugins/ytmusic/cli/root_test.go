@@ -77,14 +77,16 @@ func TestFlagsNumberUsaElFallback(t *testing.T) {
 	}
 }
 
-// TestClockFormateaLaPosición: el panel muestra "1:01".
+// TestClockFormateaLaPosición: el panel muestra "1:01" y, con horas,
+// "1:00:00" (Y15: una hora no se muestra como "60:00").
 func TestClockFormateaLaPosición(t *testing.T) {
 	cases := map[int]string{
 		0:    "0:00",
 		5:    "0:05",
 		61:   "1:01",
 		3599: "59:59",
-		3600: "60:00",
+		3600: "1:00:00",
+		3723: "1:02:03",
 		-1:   "0:00",
 	}
 	for seconds, want := range cases {

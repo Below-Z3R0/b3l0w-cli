@@ -87,11 +87,21 @@ func DataDir(explicit string) string {
 
 // EnsureDir crea el directorio con permisos de dueño. MPV y el socket IPC viven
 // acá, así que no puede quedar legible por otros.
+//
+// MkdirAll no cambia los permisos de un directorio que YA existía: un dataDir
+// de una corrida anterior puede quedar en 0755 y dejar el socket de mpv
+// legible por otros (Y8). Por eso, después de crear, se ajustan los permisos.
 func EnsureDir(dir string) error {
 	if dir == "" {
 		return fmt.Errorf("directorio de datos vacío")
 	}
-	return os.MkdirAll(dir, 0o700)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("ajustando permisos de %s: %w", dir, err)
+	}
+	return nil
 }
 
 func nowUnix() int64 { return time.Now().Unix() }
@@ -111,30 +121,45 @@ func songDedup(in []Song) []Song {
 	return out
 }
 
+// maxDurationSeconds es el techo de una duración: un año. Un `lengthText`
+// enorme (viene de la red) desbordaba el int y devolvía segundos negativos o
+// absurdos (Y12); con el techo no hay forma de desbordar.
+const maxDurationSeconds = 366 * 24 * 60 * 60
+
 // durationToSeconds convierte "3:45" o "1:02:03" a segundos.
+//
+// Una duración que no es un número devuelve 0, como las demás entradas raras.
+// Una duración absurda (más larga que un año) también: el panel nunca muestra
+// un número negativo ni un overflow (Y12).
 func durationToSeconds(text string) int {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return 0
 	}
 	parts := strings.Split(text, ":")
-	total := 0
+	total := int64(0)
 	for _, part := range parts {
-		n := 0
+		n := int64(0)
 		found := false
 		for _, r := range part {
 			if r < '0' || r > '9' {
 				return 0
 			}
-			n = n*10 + int(r-'0')
+			n = n*10 + int64(r-'0')
+			if n > maxDurationSeconds {
+				return 0
+			}
 			found = true
 		}
 		if !found {
 			return 0
 		}
 		total = total*60 + n
+		if total > maxDurationSeconds {
+			return 0
+		}
 	}
-	return total
+	return int(total)
 }
 
 // writeJSON escribe un archivo de estado de forma atómica: un `next` puede leer

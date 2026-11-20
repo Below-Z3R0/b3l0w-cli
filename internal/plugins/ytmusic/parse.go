@@ -128,49 +128,76 @@ func collectRenderers(root any, key string, out *[]map[string]any) {
 
 // bestThumb elige la portada más grande que no sea gigante: 544 px de carátula
 // para una fila de 46 px es ancho de banda tirado.
+//
+// Si la página sólo trae portadas de más de 400 px, se queda con la más chica
+// de las grandes: antes no quedaba ninguna y la fila salía sin imagen (Y11).
 func bestThumb(renderer map[string]any) string {
 	if renderer == nil {
 		return ""
 	}
-	best, bestWidth := "", 0
-	if thumb := findRenderer(renderer, "musicThumbnailRenderer"); thumb != nil {
-		best, bestWidth = pickThumb(asSlice(asMap(thumb["thumbnail"])["thumbnails"]), 0)
-	}
-	if thumb := findRenderer(renderer, "thumbnailRenderer"); thumb != nil {
-		url, width := pickThumb(asSlice(asMap(thumb["thumbnail"])["thumbnails"]), 0)
-		if url != "" && width > bestWidth {
-			best, bestWidth = url, width
-		}
-	}
-	if url, width := pickThumb(asSlice(renderer["thumbnails"]), 0); url != "" && width > bestWidth {
-		best = url
-	}
-	// playlistPanelVideoRenderer cuelga las suyas de `thumbnail.thumbnails`.
-	if thumb := asMap(renderer["thumbnail"]); thumb != nil {
-		if url, width := pickThumb(asSlice(thumb["thumbnails"]), 0); url != "" && width > bestWidth {
-			best = url
-		}
-	}
-	return best
+	return pickThumb(thumbCandidates(renderer)).url
 }
 
-func pickThumb(thumbs []any, _ int) (string, int) {
-	chosen, chosenWidth := "", 0
-	for _, entry := range thumbs {
-		thumb := asMap(entry)
-		url := asString(thumb["url"])
-		width := asInt(thumb["width"])
-		if url == "" {
-			continue
-		}
-		if width == 0 && chosen == "" {
-			chosen = url
-		}
-		if width <= 400 && width >= chosenWidth {
-			chosen, chosenWidth = url, width
+// thumbCandidate es una portada con su ancho.
+type thumbCandidate struct {
+	url   string
+	width int
+}
+
+// thumbCandidates junta las portadas de todas las formas en que innertube las
+// cuelga: `thumbnail.thumbnails`, `thumbnails` y los dos renderers.
+func thumbCandidates(renderer map[string]any) []thumbCandidate {
+	out := []thumbCandidate{}
+	add := func(list []any) {
+		for _, entry := range list {
+			thumb := asMap(entry)
+			url := asString(thumb["url"])
+			if url == "" {
+				continue
+			}
+			out = append(out, thumbCandidate{url: url, width: asInt(thumb["width"])})
 		}
 	}
-	return chosen, chosenWidth
+	if thumb := findRenderer(renderer, "musicThumbnailRenderer"); thumb != nil {
+		add(asSlice(asMap(thumb["thumbnail"])["thumbnails"]))
+	}
+	if thumb := findRenderer(renderer, "thumbnailRenderer"); thumb != nil {
+		add(asSlice(asMap(thumb["thumbnail"])["thumbnails"]))
+	}
+	add(asSlice(renderer["thumbnails"]))
+	// playlistPanelVideoRenderer cuelga las suyas de `thumbnail.thumbnails`.
+	if thumb := asMap(renderer["thumbnail"]); thumb != nil {
+		add(asSlice(thumb["thumbnails"]))
+	}
+	return out
+}
+
+// pickThumb elige la mejor candidata: la más grande de hasta 400 px. Si todas
+// pasan de 400 px, la más chica de las grandes (Y11).
+func pickThumb(candidates []thumbCandidate) thumbCandidate {
+	best, fallback := thumbCandidate{}, thumbCandidate{}
+	for _, candidate := range candidates {
+		if candidate.width == 0 {
+			// Sin ancho declarado: sirve si no hay nada mejor.
+			if best.url == "" {
+				best = candidate
+			}
+			continue
+		}
+		if candidate.width <= 400 {
+			if candidate.width >= best.width {
+				best = candidate
+			}
+			continue
+		}
+		if fallback.url == "" || candidate.width < fallback.width {
+			fallback = candidate
+		}
+	}
+	if best.url != "" {
+		return best
+	}
+	return fallback
 }
 
 // continuationOf busca el primer token de continuación en un subárbol,

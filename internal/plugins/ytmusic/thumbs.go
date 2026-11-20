@@ -11,6 +11,27 @@ import (
 	"time"
 )
 
+// safeThumbName devuelve el nombre de archivo de la portada de un videoId.
+//
+// El id viene de la red y no está validado: sin sanear, un "../../escaped"
+// sacaba la escritura fuera del directorio de portadas (Y9). Un id que no sea
+// un nombre plano se descarta: la canción queda sin portada en vez de
+// escribir donde le digan.
+func safeThumbName(videoID string) (string, bool) {
+	if videoID == "" || len(videoID) > 64 {
+		return "", false
+	}
+	for _, r := range videoID {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-' || r == '_':
+		default:
+			return "", false
+		}
+	}
+	return videoID, true
+}
+
 // Thumbs baja las portadas a disco: ui.image sólo acepta rutas locales, y una
 // URL remota en el panel se dibuja como un rectángulo vacío sin ningún error.
 // Se cachea por videoId: la segunda visita a Charts no baja nada.
@@ -23,13 +44,22 @@ func Thumbs(ctx context.Context, dir string, songs []Song, limit int) []Song {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return songs
 	}
-	if limit <= 0 || limit > len(songs) {
+	// Un límite inválido (0 o negativo) no significa "todas": no se baja
+	// ninguna. Es lo mismo que hace EnrichDurations (Y14).
+	if limit <= 0 {
+		return songs
+	}
+	if limit > len(songs) {
 		limit = len(songs)
 	}
 	// Las portadas ya cacheadas se resuelven sin red y sin goroutine.
 	pending := make([]int, 0, limit)
 	for index := 0; index < limit; index++ {
-		path := filepath.Join(dir, songs[index].VideoID+".jpg")
+		name, ok := safeThumbName(songs[index].VideoID)
+		if !ok {
+			continue
+		}
+		path := filepath.Join(dir, name+".jpg")
 		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
 			songs[index].Thumb = path
 			continue
@@ -54,7 +84,11 @@ func Thumbs(ctx context.Context, dir string, songs []Song, limit int) []Song {
 			if url == "" {
 				return
 			}
-			path := filepath.Join(dir, songs[index].VideoID+".jpg")
+			name, ok := safeThumbName(songs[index].VideoID)
+			if !ok {
+				return
+			}
+			path := filepath.Join(dir, name+".jpg")
 			if err := downloadThumb(ctx, client, url, path); err != nil {
 				return
 			}
