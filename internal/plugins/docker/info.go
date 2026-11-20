@@ -48,7 +48,7 @@ func GetInfo(ctx context.Context, runner Runner) (Info, error) {
 		return Info{}, err
 	}
 	var raw infoRaw
-	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+	if err := json.Unmarshal([]byte(extraerJSON(out)), &raw); err != nil {
 		return Info{}, err
 	}
 	return Info{

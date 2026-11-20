@@ -11,10 +11,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"io"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -78,16 +81,95 @@ type Snapshot struct {
 // Runner ejecuta un comando y devuelve stdout. Se inyecta para poder testear.
 type Runner func(ctx context.Context, args ...string) (string, error)
 
+// ErrorDocker es el error de un comando de docker: la primera línea de su
+// stderr (o de su stdout, si no escribió nada) y el código de salida.
+//
+// Antes el error se armaba con la salida y se perdía el código real: el
+// mensaje podía ser una línea de progreso y el código de salida nunca
+// llegaba a `ExecResult.Exit` (D6, D7, D21).
+type ErrorDocker struct {
+	Mensaje string
+	Codigo  int
+}
+
+func (e *ErrorDocker) Error() string { return e.Mensaje }
+
 // Exec es el runner real.
+//
+// stderr se guarda aparte: el mensaje del error sale de stderr (o del error
+// de Go si docker no escribió nada), no de la primera línea de stdout, que
+// en una salida progresiva es una línea de progreso y no el error (D6, D7).
+//
+// El valor devuelto sigue siendo stdout+stderr, como antes: `docker logs`
+// escribe la salida del contenedor por stderr y `docker build` escribe el
+// progreso por ahí. Los dos parsers que.Unmarshal de toda la salida
+// (Inspect y GetInfo) aíslan el objeto JSON para que un warning no los
+// rompa.
+// bufferSeguro es un bytes.Buffer protegido con mutex. os/exec copia
+// stdout y stderr en goroutines separadas: si los dos escriben en el mismo
+// buffer sin candado, el detector de carreras lo marca (D7).
+type bufferSeguro struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *bufferSeguro) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *bufferSeguro) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func Exec(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	var out bytes.Buffer
+	var out, errOut bufferSeguro
 	cmd.Stdout = &out
-	cmd.Stderr = &out
+	cmd.Stderr = io.MultiWriter(&out, &errOut)
 	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("%s", primeraLinea(out.String()))
+		codigo := 1
+		var salida *exec.ExitError
+		if errors.As(err, &salida) && salida.ExitCode() > 0 {
+			codigo = salida.ExitCode()
+		}
+		mensaje := primeraLinea(errOut.String())
+		if mensaje == "" {
+			mensaje = primeraLinea(out.String())
+		}
+		if mensaje == "" {
+			// Docker no escribió nada: el error real de Go (binario
+			// ausente, contexto cancelado) es lo que hay que mostrar (D6).
+			mensaje = err.Error()
+		}
+		return out.String(), &ErrorDocker{Mensaje: mensaje, Codigo: codigo}
 	}
 	return out.String(), nil
+}
+
+// codigoDeSalida saca el código de salida del error de docker. El runner
+// real devuelve un *ErrorDocker; un runner de mentira puede devolver un
+// error normal con el texto "exit status N".
+func codigoDeSalida(err error) int {
+	if err == nil {
+		return 0
+	}
+	var de *ErrorDocker
+	if errors.As(err, &de) && de.Codigo > 0 {
+		return de.Codigo
+	}
+	const marca = "exit status "
+	if idx := strings.LastIndex(err.Error(), marca); idx >= 0 {
+		if n, err := strconv.Atoi(strings.TrimSpace(err.Error()[idx+len(marca):])); err == nil {
+			return n
+		}
+	}
+	// El comando falló pero no se puede saber el código: 1 (no 0, que
+	// significaría "terminó bien").
+	return 1
 }
 
 // runnerDe devuelve el runner a usar. Si no se inyectó ninguno cae en Exec
@@ -98,6 +180,22 @@ func runnerDe(run Runner) Runner {
 		return Exec
 	}
 	return run
+}
+
+// extraerJSON aísla el objeto JSON de una salida que puede venir con ruido
+// antes (un warning de docker por stderr, D7). Si no hay JSON, devuelve el
+// texto tal cual para que el error del unmarshal sea el de siempre.
+func extraerJSON(texto string) string {
+	limpio := strings.TrimSpace(texto)
+	inicio := strings.Index(limpio, "{")
+	if inicio < 0 {
+		return limpio
+	}
+	final := strings.LastIndex(limpio, "}")
+	if final < inicio {
+		return limpio
+	}
+	return limpio[inicio : final+1]
 }
 
 func primeraLinea(texto string) string {
@@ -127,12 +225,16 @@ type psRow struct {
 
 // HealthStatus no viene en `docker ps` estándar; se deduce del Status cuando
 // trae el sufijo "(healthy)" / "(unhealthy)".
+//
+// Docker escribe el estado de arranque como "(health: starting)", no como
+// "(starting)": sin el prefijo el estado `starting` nunca se veía (D15).
 func healthFromStatus(status, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
 	if idx := strings.LastIndex(status, "("); idx >= 0 {
 		inner := strings.TrimSuffix(strings.TrimSpace(status[idx+1:]), ")")
+		inner = strings.TrimSpace(strings.TrimPrefix(inner, "health:"))
 		if inner == "healthy" || inner == "unhealthy" || inner == "starting" {
 			return inner
 		}

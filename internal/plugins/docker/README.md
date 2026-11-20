@@ -40,6 +40,33 @@ subcomandos sin Docker. Los dos comandos que siguen logs en vivo
 y su stdout conectado a la terminal, así que se prueban con un script
 `docker` falso en el `PATH`.
 
+**`AllowedActions` es una barrera real**: el CLI consulta la lista antes de
+correr cualquier subcomando que mute estado (`comandosMutantes` en
+`cli/root.go`). Si la acción no está en la lista, el comando falla con
+código 2 **sin llamar a docker**.
+
+### El CLI: `logs-stream`, `logs-stop` y las rutas de respaldo
+
+- **`logs-stream` no usa un shell.** El comando se arma con
+  `exec.Command("docker", "logs", "-f", "--tail", "200", id)` y la
+  redirección al archivo la hace Go con un `*os.File`. El id nunca pasa por
+  un shell, así que un id con `$(...)`, `;` o backticks no ejecuta nada.
+- **El pidfile lleva pid + starttime** (el campo 22 de `/proc/<pid>/stat`).
+  `logs-stop` verifica que el proceso vivo tenga ese starttime antes de
+  mandarle la señal: un número de pid reciclado no es el seguimiento y no se
+  mata. Sin proceso vivo, `logs-stop` dice "sin seguimiento" (nunca
+  "detenido") y borra el pidfile obsoleto.
+- **`logs-stream` avisa si docker muere enseguida**: un contenedor inexistente
+  sale con código 1 y el error de docker, y no deja pidfile de un proceso
+  muerto.
+- **El nombre del archivo de log lleva un hash del id original**: el saneo
+  solo no alcanza, porque "Web" y "web" son dos contenedores válidos y
+  distintos en docker.
+- **Las rutas de `volume-export`/`volume-import` se resuelven a absolutas**
+  dentro del directorio actual. Una ruta relativa **no** puede convertirse
+  en `/` (que era el bind mount de la raíz del host), y lo que queda fuera
+  del directorio se rechaza.
+
 ## Salidas
 
 ### `Snapshot` (`b3l0w docker snapshot`)
@@ -121,8 +148,16 @@ error en `Output`.
 
 ## Errores
 
+La salida de `docker` y su stderr van a buffers separados: `os/exec` los
+copia en goroutines distintas, así que el buffer de salida va protegido con
+un mutex (`bufferSeguro`). Sin eso, `go test -race` reporta la carrera.
+
 - `Exec` recorta el error de docker a la **primera línea** y a 200 caracteres:
-  el stack entero no le sirve al panel.
+  el stack entero no le sirve al panel. El mensaje sale de **stderr**, no de
+  stdout: stdout es la salida normal del comando y su primera línea es
+  a menudo una línea de progreso, no el error. Si docker no escribe nada, el
+  error es el propio de Go (`exec: "docker": executable file not found in
+  $PATH`, `context canceled`), nunca una cadena vacía.
 - Los errores de validación (puerto inválido, variable sin `=`, etiqueta de
   build que empieza con `-`) se devuelven **antes** de llamar a docker: el
   comando no se ejecuta y el `Action` viene con `OK: false`.
@@ -140,6 +175,10 @@ error en `Output`.
   `internal/services` **no** lo tiene (su `DockerAdapter` llama al sistema
   directamente): no se copió de ahí.
 - **El `nil` es `Exec`**: un `nil` de runner es un error de programación.
+- **Los ids se validan antes de llegar a docker**: un identificador que
+  empieza con `-` lo interpretaría docker como un flag suyo (`--privileged`,
+  `--user root`) y no como el nombre de un contenedor. Se rechaza en la
+  capa del CLI y en la del paquete, y el motivo va en `Output`.
 - **Slices vacíos, nunca `nil`**: el plugin Luau indexa las listas sin
   preguntar.
 - **Timeout por comando**: `GetInfo` usa 10s, `Events` 20s y `ComposeAction`
@@ -157,7 +196,7 @@ go test ./internal/plugins/docker/...
 go test -race ./internal/plugins/docker/...
 ```
 
-Cobertura: **94.9%** del paquete `docker` y **75%** de `cli/root.go`.
+Cobertura: **96.7%** del paquete `docker` y **79.1%** del subpaquete `cli`.
 
 | Archivo | Qué cubre |
 |---|---|
@@ -170,8 +209,10 @@ Cobertura: **94.9%** del paquete `docker` y **75%** de `cli/root.go`.
 | `compose_test.go` | `GroupProjects`, `ComposeAction`, `Events` |
 | `actions_test.go` | Todas las acciones, sus validaciones y `Build` |
 | `desktop_test.go` | exec, cp, commit, tag, `PrettyBytes`, `GetInfo` |
+| `fixes_test.go` | Los arreglos de D1, D6–D10, D12, D13–D16, D17 y D21 |
 | `cli/root_test.go` | Helpers del CLI: flags, rutas, pid, logs |
 | `cli/commands_test.go` | El despacho completo y la salida JSON de cada comando |
+| `cli/fixes_test.go` | Los arreglos de D2–D5, D11, D12, D17–D20 |
 
 **Nunca se ejecuta docker real en los tests.** Todo pasa por el runner
 falso. Los dos comandos que necesitan un proceso de verdad (`logs-follow`,
@@ -182,9 +223,13 @@ falso. Los dos comandos que necesitan un proceso de verdad (`logs-follow`,
 - **Corregido**: `Collect` pisaba `containers` con un `nil` cuando no había
   contenedores, y el snapshot mandaba `"containers": null` al plugin. Ahora
   la lista queda vacía.
-- **Anotado, no cambiado**: `splitPath("/backup.tar.gz")` devuelve el
-  archivo con la barra pegada, lo que deja una doble barra en el comando de
-  `tar`. No rompe nada: `tar` la resuelve igual.
+- **Corregido**: la revisión de integridad de `main` (8c2fdd9) encontró 21
+  bugs en este módulo. Están todos arreglados y documentados en `bugs.md`,
+  con el test de cada uno.
+- **Corregido**: las rutas del respaldo (`volume-export`/`volume-import`)
+  se resuelven a absolutas dentro del directorio actual. Antes una ruta
+  relativa (`backup.tar.gz`) montaba **la raíz del host** (`-v /:/respaldo`)
+  y escribía el tarball en `/`.
 - **(verificar)** El formato exacto de `docker ps --format '{{json .}}'`
   depende de la versión del daemon: los tests usan el de Docker 27.x.
 - **(verificar)** `HealthStatus` no existe en el `docker ps` estándar; el

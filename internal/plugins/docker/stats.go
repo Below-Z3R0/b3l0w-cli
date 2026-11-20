@@ -38,7 +38,9 @@ func Stats(ctx context.Context, run Runner) ([]Stat, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []Stat
+	// Slice vacío, nunca nil: en JSON un nil sale `null` y el plugin hace
+	// `#payload.stats` sobre null (D14).
+	out := []Stat{}
 	scanner := bufio.NewScanner(strings.NewReader(raw))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scanner.Scan() {

@@ -1,19 +1,23 @@
 # Tests de `internal/plugins/docker`
 
-Mapa de los tests del módulo: **qué contrato fija cada uno**. Los tests
-existentes no se modificaron en esta ronda; este documento los describe.
+Mapa de los tests del módulo: **qué contrato fija cada uno**.
 
-Total: **129 tests** en 10 archivos de test (2.480 líneas), más `fakes_test.go`
-que no es un test sino la herramienta.
+Después de la ronda de arreglos (los 21 hallazgos de `bugs.md`), los tests
+existentes que fijaban un contrato **equivocado** se ajustaron al contrato
+nuevo —no se rompieron: se corrigió lo que estaba mal— y se agregaron los
+tests de cada arreglo en `fixes_test.go`.
 
-Cobertura medida sobre `main` en `68d4a8d`:
+Total: **168 tests** en 13 archivos de test, más `fakes_test.go` que no es un
+test sino la herramienta.
+
+Cobertura medida sobre `main` en `8c2fdd9`:
 
 ```console
 $ go test ./internal/plugins/docker/ -count=1 -cover
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker	0.006s	coverage: 94.9% of statements
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker	0.007s	coverage: 96.7% of statements
 
 $ go test ./internal/plugins/docker/cli/ -count=1 -cover
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli	0.631s	coverage: 76.6% of statements
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli	3.916s	coverage: 79.1% of statements
 ```
 
 ## Herramienta
@@ -167,6 +171,35 @@ esperaba, en vez de devolver vacío en silencio.
 | `TestGetInfoPropagaElError` | El error del daemon vuelve. |
 | `TestExecUsaLaPrimeraLineaDelError` | `primeraLinea` recorta el error a **una sola línea** (el stack entero no sirve al panel). |
 
+## `fixes_test.go` — los arreglos de los hallazgos
+
+Un test por hallazgo, cada uno **falla si se revierte el arreglo** (verificado
+revirtiendo el cambio en el código y corriendo el test).
+
+| Test | Hallazgo | Contrato que fija |
+|---|---|---|
+| `TestInspectLeeElHealthDeState` | D1 | El health sale de `State.Health` (no de `Config`): `Health` y `HealthLog` se llenan. |
+| `TestInspectIgnoraElHealthDeConfig` | D1 | Un health bajo `Config` (donde docker no lo manda) **no** se lee. |
+| `TestHealthLogTomaLasUltimasCinco` | D13 | De 8 entradas se conservan las **últimas** cinco. |
+| `TestListasDelSnapshotNoSonNull` | D14 | Ninguna lista del snapshot sale `null` en el JSON. |
+| `TestStatsYDFNoSonNull` | D14 | `stats` y `df` salen `[]`, no `null`. |
+| `TestInspectNoTieneListasNull` | D14 | `env`, `mounts`, `healthLog` y `labels` no salen `null`. |
+| `TestExecSinBinarioDevuelveElErrorReal` | D6 | Sin docker en el `PATH`, el error no es la cadena vacía y nombra al binario. |
+| `TestExecTomaElErrorDeStderr` | D7 | El mensaje del error sale de **stderr**, no de una línea de progreso de stdout. |
+| `TestGetInfoAguantaUnWarningPorStderr` | D7 | Un warning por stderr no rompe el parseo del JSON de `info`. |
+| `TestRunImageRespetaDetach` | D8 | `Detach: false` ⇒ el comando **no** lleva `-d`. |
+| `TestRunImageConDetachPoneElDashD` | D8 | `Detach: true` ⇒ `-d`. |
+| `TestEventsPropagaElErrorConSalidaParcial` | D9 | Si docker falla con salida parcial, el error vuelve y no hay eventos. |
+| `TestDiskUsagePropagaElErrorDelTotal` | D10 | El error del **segundo** `system df` (el del total) se propaga. |
+| `TestExecInContainerRechazaIdConGuion` | D12 | Un id con `-` se rechaza **sin llamar a docker**. |
+| `TestLasAccionesRechazanIdsConGuion` | D12 | Las 21 acciones del paquete rechazan un id con `-`, sin llamar a docker, y con el motivo en `Output`. |
+| `TestCopyRechazaIdConGuion` | D12 | `Copy` y `CopyFrom` también rechazan el id con guion. |
+| `TestHealthStartingEsReconocido` | D15 | `(health: starting)` ⇒ `"starting"` (la forma real de docker). |
+| `TestGroupProjectsNoRepiteServicios` | D16 | Un servicio escalado (`--scale web=2`) aparece **una vez** en `Services`. |
+| `TestAllowedActionsIncluyeLasAccionesDelPaquete` | D17 | La lista incluye las 19 acciones del paquete y no acciones inventadas. |
+| `TestExecResultPropagaElCodigoDeSalida` | D21 | `ExecResult.Exit` lleva el código real (`exit status 1` ⇒ `1`). |
+| `TestExecResultExitEnElErrorDelDaemon` | D21 | Si no se conoce el código, `Exit` **no** dice 0. |
+
 ## `cli/root_test.go` — los helpers del CLI
 
 | Test | Contrato que fija |
@@ -213,33 +246,35 @@ esperaba, en vez de devolver vacío en silencio.
 | `TestBuildSinTagDevuelveUno` | `build` sin `--tag` ⇒ **códig 1**. |
 | `TestCopySinDestinoDevuelveUno` | `cp` sin `--to` ⇒ **código 1**. |
 
-## Qué no cubren los tests (y por qué hay bugs)
+## Los huecos que había (y cómo se cerraron)
 
-Los huecos son la explicación de los hallazgos de `bugs.md`:
+Cada fila es un hueco de test que **explicaba** un hallazgo de `bugs.md`. Los
+21 están cerrados: el hueco se tapó con un test nuevo o el test viejo se
+ajustó al contrato correcto.
 
-| Hueco | Hallazgo |
-|---|---|
-| El fixture de `inspect_test.go` pone el health bajo `Config`, que **no es** donde lo manda docker (`State.Health`). El test pasa porque el test y el código comparten el mismo error. | **D1** |
-| Ningún test pasa un id con metacaracteres de shell a `logs-stream`. | **D2** |
-| `TestLogsStopMataElProceso` **requiere** que el pid apunte a un proceso: nunca prueba el caso del pid reciclado ni el de un proceso ajeno. | **D3** |
-| `TestVolumeExportEImportArmanElComando` sólo prueba paths **absolutos**; el caso relativo (que monta `/`) no está. | **D4** |
-| `compose --action` no se testea en ningún orden: el test de `compose` es el de `compose ls`. | **D5** |
-| No hay test de `Exec` con el binario ausente o el contexto cancelado (el `runner` falso nunca falla así). | **D6** |
-| No hay test de `Exec` con docker que escribe en stderr. | **D7** |
-| `RunImage` siempre se llama sin `Detach` en los tests, así que el `|| true` no se nota. | **D8** |
-| `TestEventsPropagaElError` usa un runner que falla **con salida vacía**: es justo el caso que `Events` sí maneja. El caso "falla con salida parcial" no está. | **D9** |
-| `TestDiskUsagePropagaElError` hace fallar el **primer** `system df`; el segundo (el del total) nunca falla en un test. | **D10** |
-| `TestRutaLogSaneaElNombre` prueba un id con `/` y espacios, no dos ids que colisionen. | **D11** |
-| Sólo `search`, `update` y `volume-export/import` tienen test del prefijo `-`. Los demás no. | **D12** |
-| `TestInspectCortaElHealthLog` afirma que la primera conservada es `"linea 1"`: **codifica** el bug. | **D13** |
-| `TestParsePortsSalidaVacia` **exige** que `Ports` sea `nil`: **codifica** el `null` del JSON. | **D14** |
-| `TestHealthFromStatus` afirma que `(health: starting)` ⇒ `""`: **codifica** el bug. | **D15** |
-| `TestGroupProjectsAgrupaYOrdena` usa un servicio distinto por contenedor: nunca prueba réplicas. | **D16** |
-| `TestAllowedActions` verifica la lista contra sí misma; ningún test verifica que el CLI la use. | **D17** |
-| `TestSacarFlagQuitaTodasLasOcurrencias` no comprueba que el slice de entrada quede intacto. | **D18** |
-| `TestLogsStopSinSeguimiento` cubre el pidfile ausente, no el pidfile con un pid muerto. | **D19** |
-| Ningún test usa un `docker` falso que **falle** en `logs-stream`. | **D20** |
-| `TestExecInContainerCorreElComando` usa el camino feliz: el `Exit` en 0 del camino de error no se comprueba. | **D21** |
+| Hueco (antes) | Hallazgo | Cómo se cerró |
+|---|---|---|
+| El fixture de `inspect_test.go` ponía el health bajo `Config`, que **no es** donde lo manda docker (`State.Health`). El test pasaba porque el test y el código compartían el mismo error. | **D1** | Fixture movido a `State.Health` + `TestInspectLeeElHealthDeState` |
+| Ningún test pasaba un id con metacaracteres de shell a `logs-stream`. | **D2** | `TestLogsStreamNoEjecutaComandosDelId` |
+| `TestLogsStopMataElProceso` **requería** que el pid apunte a un proceso: nunca probaba el caso del pid reciclado ni el de un proceso ajeno. | **D3** | `TestLogsStopNoMataUnProcesoAjeno` (el pidfile ahora lleva pid + starttime) |
+| `TestVolumeExportEImportArmanElComando` sólo probaba paths **absolutos**; el caso relativo (que monta `/`) no estaba. | **D4** | `TestVolumeExportConRutaRelativaNoMontaLaRaiz` |
+| `compose --action` no se testeaba en ningún orden: el test de `compose` es el de `compose ls`. | **D5** | `TestComposeAceptaElActionDespuesDelProyecto` |
+| No había test de `Exec` con el binario ausente o el contexto cancelado. | **D6** | `TestExecSinBinarioDevuelveElErrorReal` |
+| No había test de `Exec` con docker que escribe en stderr. | **D7** | `TestExecTomaElErrorDeStderr` + `TestGetInfoAguantaUnWarningPorStderr` |
+| `RunImage` siempre se llamaba sin `Detach`, así que el `|| true` no se notaba. | **D8** | `TestRunImageRespetaDetach` |
+| `TestEventsPropagaElError` usaba un runner que falla **con salida vacía**: justo el caso que `Events` sí manejaba. El caso "falla con salida parcial" no estaba. | **D9** | `TestEventsPropagaElErrorConSalidaParcial` |
+| `TestDiskUsagePropagaElError` hacía fallar el **primer** `system df`; el segundo (el del total) nunca fallaba en un test. | **D10** | `TestDiskUsagePropagaElErrorDelTotal` |
+| `TestRutaLogSaneaElNombre` probaba un id con `/` y espacios, no dos ids que colisionen. | **D11** | `TestRutaLogNoColisiona` |
+| Sólo `search`, `update` y `volume-export/import` tenían test del prefijo `-`. Los demás no. | **D12** | `TestIdsConGuionSeRechazan` (CLI) + `TestLasAccionesRechazanIdsConGuion` (paquete) |
+| `TestInspectCortaElHealthLog` afirmaba que la primera conservada es `"linea 1"`: **codificaba** el bug. | **D13** | Test ajustado (ahora exige las últimas cinco) + `TestHealthLogTomaLasUltimasCinco` |
+| `TestParsePortsSalidaVacia` **exigía** que `Ports` sea `nil`: **codificaba** el `null` del JSON. | **D14** | Test ajustado (ahora exige lista vacía) + `TestListasDelSnapshotNoSonNull` |
+| `TestHealthFromStatus` afirmaba que `(health: starting)` ⇒ `""`: **codificaba** el bug. | **D15** | Test ajustado + `TestHealthStartingEsReconocido` |
+| `TestGroupProjectsAgrupaYOrdena` usaba un servicio distinto por contenedor: nunca probaba réplicas. | **D16** | `TestGroupProjectsNoRepiteServicios` |
+| `TestAllowedActions` verificaba la lista contra sí misma; ningún test verificaba que el CLI la use. | **D17** | `TestComandoFueraDeLaListaNoSeEjecuta` + `TestTodasLasAccionesMutantesEstanPermitidas` |
+| `TestSacarFlagQuitaTodasLasOcurrencias` no comprobaba que el slice de entrada quede intacto. | **D18** | `TestSacarFlagNoMutaElSliceDelCaller` |
+| `TestLogsStopSinSeguimiento` cubría el pidfile ausente, no el pidfile con un pid muerto. | **D19** | `TestLogsStopConProcesoMuertoNoDiceDetenido` |
+| Ningún test usaba un `docker` falso que **fallara** en `logs-stream`. | **D20** | `TestLogsStreamConContenedorInexistenteFalla` |
+| `TestExecInContainerCorreElComando` usaba el camino feliz: el `Exit` en 0 del camino de error no se comprobaba. | **D21** | `TestExecResultPropagaElCodigoDeSalida` + `TestExecResultExitEnElErrorDelDaemon` |
 
 ## Lo que sí está bien cubierto
 
@@ -264,13 +299,21 @@ Los huecos son la explicación de los hallazgos de `bugs.md`:
 ## Verificación
 
 ```console
-$ cd /home/b3low-z3r0/Documents/Github/Cli/branches/rev-docker
-$ go test ./internal/plugins/docker/... -count=1
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker	0.006s
-ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli	0.631s
-
+$ cd /home/b3low-z3r0/Documents/Github/Cli/branches/fix-docker
 $ go build ./...
 (sin salida)
+
+$ go vet ./internal/plugins/docker/...
+(sin salida)
+
+$ go test ./internal/plugins/docker/... -count=1
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker	0.008s
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli	3.914s
+
+$ go test ./internal/plugins/docker/... -race -count=1
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker	0.010s
+ok  	github.com/Below-Z3R0/b3l0w-cli/internal/plugins/docker/cli	4.106s
 ```
 
-No se modificó ningún test ni código de producción en esta ronda.
+Cada arreglo se verificó **revirtiéndolo**: se deshizo el cambio en el
+código, se corrió el test del hallazgo y se comprobó que falla.

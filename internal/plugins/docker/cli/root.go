@@ -3,6 +3,8 @@ package dockercli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -74,9 +76,27 @@ uso: b3l0w docker <comando> [opciones]
 
 // Run despacha un subcomando de `b3l0w docker` y devuelve el código de salida:
 // 0 correcto, 1 error de uso o de docker. Sin argumentos imprime la ayuda.
+// comandosMutantes son los subcomandos que cambian algo. Cada uno tiene que
+// estar en docker.AllowedActions: el CLI consulta la lista y lo que no está
+// tiene que fallar en vez de ejecutar algo no previsto (D17).
+var comandosMutantes = map[string]bool{
+	"start": true, "stop": true, "restart": true, "remove": true,
+	"rmi": true, "volume-rm": true, "network-rm": true, "run": true,
+	"pause": true, "unpause": true, "pull": true, "push": true,
+	"volume-create": true, "network-create": true,
+	"save": true, "load": true, "export": true, "diff": true,
+	"build": true, "commit": true, "rename": true, "tag": true,
+	"cp": true, "exec": true, "update": true, "prune": true,
+	"volume-export": true, "volume-import": true, "compose": true,
+}
+
 func Run(args []string) int {
 	if len(args) == 0 {
 		fmt.Print(usage)
+		return 2
+	}
+	if comandosMutantes[args[0]] && !docker.AllowedActions[args[0]] {
+		fmt.Fprintf(os.Stderr, "acción no permitida: %s\n", args[0])
 		return 2
 	}
 	switch args[0] {
@@ -200,20 +220,36 @@ func dirLogs() string {
 }
 
 // rutaLog devuelve el archivo y el pid de un contenedor.
+//
+// El nombre es el id saneado (minúsculas, lo que no es alfanumérico a "_")
+// más un hash corto del id original. El hash es lo que evita que dos
+// contenedores distintos compartan el archivo de log y el pidfile: el
+// saneo por sí solo no alcanza, porque "Web" y "web" son dos contenedores
+// válidos y distintos en docker y los dos daban "web.log" (D11).
 func rutaLog(id string) (string, string) {
 	seguro := strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
 			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
 		}
 		return '_'
-	}, strings.ToLower(id))
-	if len(seguro) > 40 {
-		seguro = seguro[:40]
+	}, id)
+	if len(seguro) > 32 {
+		seguro = seguro[:32]
 	}
+	suma := sha256.Sum256([]byte(id))
+	nombre := seguro + "-" + hex.EncodeToString(suma[:4])
 	dir := dirLogs()
-	return filepath.Join(dir, seguro+".log"), filepath.Join(dir, seguro+".pid")
+	return filepath.Join(dir, nombre+".log"), filepath.Join(dir, nombre+".pid")
 }
 
+// logsStreamCmd sigue el log de un contenedor en segundo plano.
+//
+// El comando se arma con exec.Command y los argumentos separados: el id
+// nunca pasa por un shell (un id con `$(...)` ejecutaba comandos, D2). La
+// redirección al archivo la hace Go con un *os.File.
 func logsStreamCmd(args []string) int {
 	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprintln(os.Stderr, "uso: logs-stream <contenedor>")
@@ -221,29 +257,62 @@ func logsStreamCmd(args []string) int {
 	}
 	id := args[0]
 	archivo, pidFile := rutaLog(id)
-	// Si ya hay un seguimiento vivo no se duplica.
-	if pid := leerPid(pidFile); pid > 0 && procesoVivo(pid) {
+	// Si ya hay un seguimiento vivo no se duplica. El pid del pidfile se
+	// valida contra el /proc: si el número fue reciclado, no es nuestro.
+	if pid, start := leerSeguimiento(pidFile); pid > 0 && esSeguimiento(pid, start) {
 		// Ya está corriendo: se devuelve la ruta para que el panel la lea.
 		fmt.Println(archivo)
 		return 0
 	}
-	if err := os.WriteFile(archivo, nil, 0o644); err != nil {
+	// Un pidfile viejo (de un proceso que ya no es el nuestro) se borra: si
+	// no, el `logs-stop` podría matar a un proceso ajeno (D3).
+	borrarPidfile(pidFile)
+	// El archivo lo abre Go y el hijo escribe en él: el id nunca pasa por
+	// un shell (un id con `$(...)` ejecutaba comandos, D2).
+	salida, err := os.OpenFile(archivo, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "no pude crear %s: %v\n", archivo, err)
 		return 1
 	}
-	// `sh -c` con setsid: el proceso sobrevive a la salida del CLI.
-	// `exec` hace que el pid del shell SEA el de docker: sin esto se
-	// guardaba el pid del `sh -c` y `logs-stop` mataba al shell, dejando el
-	// `docker logs -f` huérfano para siempre.
-	cmd := exec.Command("sh", "-c",
-		fmt.Sprintf("exec docker logs -f --tail 200 %q >> %q 2>&1", id, archivo))
+	// `setsid`: el proceso sobrevive a la salida del CLI. Sin el `sh -c` el
+	// pid guardado es el de docker, así que `logs-stop` corta el seguimiento
+	// y no un shell intermediario.
+	cmd := exec.Command("docker", "logs", "-f", "--tail", "200", id)
+	cmd.Stdout = salida
+	cmd.Stderr = salida
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
+		_ = salida.Close()
 		fmt.Fprintf(os.Stderr, "no pude seguir el log: %v\n", err)
 		return 1
 	}
+	// El padre no escribe más: el hijo tiene su propia copia del archivo.
+	_ = salida.Close()
 	pid := cmd.Process.Pid
-	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+	// El Wait corre en una goroutine: si el proceso muere enseguida, docker
+	// falló (por ejemplo, el contenedor no existe) y el error quedó escrito
+	// en el archivo de log. Antes el comando devolvía 0 y dejaba el pidfile
+	// de un proceso muerto (D20).
+	terminado := make(chan error, 1)
+	go func() { terminado <- cmd.Wait() }()
+	select {
+	case <-terminado:
+		detalle, _ := os.ReadFile(archivo)
+		msg := strings.TrimSpace(string(detalle))
+		if msg == "" {
+			msg = "docker terminó enseguida"
+		}
+		fmt.Fprintf(os.Stderr, "no pude seguir el log de %s: %s\n", id, msg)
+		return 1
+	case <-time.After(400 * time.Millisecond):
+	}
+	// El pidfile lleva el pid y el starttime del proceso: con sólo el pid no
+	// se puede saber si el número fue reciclado (D3).
+	contenido := strconv.Itoa(pid)
+	if start, ok := leerStartTime(pid); ok {
+		contenido = fmt.Sprintf("%d %d", pid, start)
+	}
+	if err := os.WriteFile(pidFile, []byte(contenido), 0o644); err != nil {
 		// Sin pid guardado nadie puede parar el `docker logs -f`: el
 		// proceso quedaría huérfano escribiendo para siempre. Se mata el
 		// grupo entero (setsid lo dejó como líder) y se espera a que
@@ -253,19 +322,18 @@ func logsStreamCmd(args []string) int {
 		_ = syscall.Kill(-pid, syscall.SIGTERM)
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		// Se espera al Wait de la goroutine: el proceso tiene que estar
+		// muerto y recogido, no zombi.
+		<-terminado
 		// Un pid a medias (una escritura a medias) apuntaría a otro
 		// proceso y `logs-stop` mataría al equivocado. Sólo se borra si
 		// es un archivo común: un directorio no se toca.
-		if info, err := os.Stat(pidFile); err == nil && info.Mode().IsRegular() {
-			_ = os.Remove(pidFile)
-		}
+		borrarPidfile(pidFile)
 		fmt.Fprintf(os.Stderr, "no pude guardar el pidfile %s: %v\n", pidFile, err)
 		return 1
 	}
-	// El padre no espera al hijo: queda huérfano a propósito. El pid se
-	// guarda ANTES del Release — después ya no es legible.
-	_ = cmd.Process.Release()
+	// El padre no espera al hijo: queda huérfano a propósito. El Wait de
+	// la goroutine lo recoge cuando termine.
 	// Sólo la ruta: el service la publica y el panel la lee con readFile.
 	fmt.Println(archivo)
 	return 0
@@ -277,8 +345,17 @@ func logsStopCmd(args []string) int {
 		return 2
 	}
 	_, pidFile := rutaLog(args[0])
-	pid := leerPid(pidFile)
+	pid, start := leerSeguimiento(pidFile)
 	if pid <= 0 {
+		fmt.Println("sin seguimiento")
+		return 0
+	}
+	// Antes de mandar una señal se comprueba que el proceso sea realmente el
+	// seguimiento: un pid reciclado es otro proceso del usuario y matarlo a
+	// él no es lo que se pidió (D3). Sin identidad verificable no se mata
+	// nada y el pidfile viejo se borra.
+	if !esSeguimiento(pid, start) {
+		borrarPidfile(pidFile)
 		fmt.Println("sin seguimiento")
 		return 0
 	}
@@ -288,21 +365,111 @@ func logsStopCmd(args []string) int {
 	if proc, err := os.FindProcess(pid); err == nil {
 		_ = proc.Signal(syscall.SIGTERM)
 	}
-	_ = os.Remove(pidFile)
+	borrarPidfile(pidFile)
 	fmt.Println("detenido")
 	return 0
 }
 
-func leerPid(archivo string) int {
+// borrarPidfile borra el pidfile. Sólo si es un archivo común: un directorio
+// no se toca (puede ser el marcador de un fallo del WriteFile).
+func borrarPidfile(archivo string) {
+    if info, err := os.Stat(archivo); err == nil && info.Mode().IsRegular() {
+        _ = os.Remove(archivo)
+    }
+}
+
+// leerSeguimiento lee el pidfile: el pid y, si está, el starttime del
+// proceso con el que se arrancó.
+func leerSeguimiento(archivo string) (int, int) {
 	datos, err := os.ReadFile(archivo)
 	if err != nil {
-		return 0
+		return 0, 0
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(datos)))
+	campos := strings.Fields(string(datos))
+	if len(campos) == 0 {
+		return 0, 0
+	}
+	pid, err := strconv.Atoi(campos[0])
 	if err != nil {
-		return 0
+		return 0, 0
 	}
-	return n
+	start := 0
+	if len(campos) > 1 {
+		if n, err := strconv.Atoi(campos[1]); err == nil {
+			start = n
+		}
+	}
+	return pid, start
+}
+
+// leerPid devuelve el pid del pidfile (0 si no hay o no es un número).
+func leerPid(archivo string) int {
+	pid, _ := leerSeguimiento(archivo)
+	return pid
+}
+
+// camposStat devuelve los campos de /proc/<pid>/stat que siguen al nombre
+// del proceso (que va entre paréntesis y puede tener espacios).
+func camposStat(pid int) ([]string, bool) {
+	datos, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return nil, false
+	}
+	fin := strings.LastIndex(string(datos), ")")
+	if fin < 0 {
+		return nil, false
+	}
+	return strings.Fields(string(datos)[fin+1:]), true
+}
+
+// leerStartTime devuelve el starttime del proceso (campo 22 de
+// /proc/<pid>/stat): los ticks desde el arranque del sistema. Cada proceso
+// tiene el suyo, así que dos procesos nunca comparten el valor.
+func leerStartTime(pid int) (int, bool) {
+	campos, ok := camposStat(pid)
+	if !ok || len(campos) < 20 {
+		return 0, false
+	}
+	// campos[0] es el estado (campo 3 del stat), así que el starttime
+	// (campo 22) es el índice 19.
+	start, err := strconv.Atoi(campos[19])
+	if err != nil {
+		return 0, false
+	}
+	return start, true
+}
+
+// esSeguimiento dice si el proceso es el `docker logs -f` que arrancó este
+// CLI. Se comparan el pid y el starttime: un pid reciclado es otro proceso
+// con el mismo número, y mandarle la señal mataría a un proceso ajeno (D3).
+func esSeguimiento(pid int, start int) bool {
+	if pid <= 0 {
+		return false
+	}
+	actual, ok := leerStartTime(pid)
+	if !ok {
+		return false
+	}
+	if start > 0 {
+		return actual == start
+	}
+	// Un pidfile viejo (sin starttime) no se puede validar por número: se
+	// mira la línea de comandos, que tiene que ser un `docker logs`.
+	return lineaDeComando(pid) != ""
+}
+
+// lineaDeComando devuelve la línea de comandos del proceso si es un
+// seguimiento de logs, o "" si no se puede leer o no es uno.
+func lineaDeComando(pid int) string {
+	datos, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return ""
+	}
+	texto := strings.ReplaceAll(string(datos), "\x00", " ")
+	if !strings.Contains(texto, "logs") {
+		return ""
+	}
+	return strings.TrimSpace(texto)
 }
 
 func procesoVivo(pid int) bool {
@@ -383,7 +550,9 @@ func extraerValor(args []string, nombre string) ([]string, string, bool) {
 
 func sacarFlag(args []string, nombre string) ([]string, bool) {
 	encontrado := false
-	resto := args[:0]
+	// Copia propia: con `args[:0]` se reusaba el backing array del slice
+	// del caller y le pisaba los elementos (D18).
+	resto := make([]string, 0, len(args))
 	for _, arg := range args {
 		if arg == nombre {
 			encontrado = true
@@ -416,9 +585,13 @@ func eventsCmd(args []string) int {
 func composeCmd(args []string) int {
 	args, jsonFlag := sacarFlag(args, "--json")
 	_ = jsonFlag
-	fs := flag.NewFlagSet("compose", flag.ExitOnError)
-	accion := fs.String("action", "restart", "up|down|restart|stop|pull")
-	fs.Parse(args)
+	// El flag se saca a mano: el `flag` de Go deja de parsear en el primer
+	// posicional, así que `compose <proyecto> --action up` perdía la acción
+	// y corría la de por defecto (D5).
+	args, accion, hayAccion := extraerValor(args, "--action")
+	if !hayAccion || accion == "" {
+		accion = "restart"
+	}
 
 	// `compose ls` lista los stacks: se arma desde el snapshot de
 	// contenedores (las etiquetas de compose), sin un proceso extra.
@@ -436,9 +609,13 @@ func composeCmd(args []string) int {
 		fmt.Fprintln(os.Stderr, "uso: b3l0w docker compose ls\n       b3l0w docker compose <proyecto> --action up|down|restart|stop|pull")
 		return 2
 	}
+	if strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "compose: falta el nombre del proyecto")
+		return 2
+	}
 	ctx, cancel := ctxDe()
 	defer cancel()
-	res, err := docker.ComposeAction(ctx, runner, args[0], *accion)
+	res, err := docker.ComposeAction(ctx, runner, args[0], accion)
 	data, _ := json.Marshal(map[string]any{"ok": err == nil && res.OK, "command": res.Command, "output": res.Output})
 	fmt.Println(string(data))
 	if err != nil {
@@ -464,6 +641,12 @@ func infoCmd(args []string) int {
 
 func ctxDe() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 60*time.Second)
+}
+
+// ctxRespaldo es el timeout del respaldo de volúmenes: empaquetar o
+// restaurar un volumen grande tarda bastante más que un comando normal.
+func ctxRespaldo() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Minute)
 }
 
 func snapshot(args []string) int {
@@ -555,6 +738,9 @@ func runImage(args []string) int {
 	defer cancel()
 	res, err := docker.RunImage(ctx, runner, docker.RunOptions{
 		Image: *image, Name: *name, Network: *network, Ports: ports, Env: env,
+		// El CLI corre el contenedor en segundo plano: `Detach` se respeta
+		// en el paquete (D8), así que el CLI lo pide explícitamente.
+		Detach: true,
 	})
 	if *asJSON {
 		json.NewEncoder(os.Stdout).Encode(res)
@@ -786,6 +972,9 @@ func execCmd(args []string) int {
 	if len(argv) == 0 {
 		return errorSimple("exec: falta el comando")
 	}
+	if codigo := idInvalido("exec", id); codigo != 0 {
+		return codigo
+	}
 	ctx, cancel := ctxDe()
 	defer cancel()
 	res, err := docker.ExecInContainer(ctx, runner, id, argv)
@@ -845,6 +1034,9 @@ func copyCmd(args []string) int {
 	resto, id, ok := extraerValor(resto, "--from")
 	if !ok || id == "" {
 		return errorSimple("cp: falta --from <contenedor>")
+	}
+	if codigo := idInvalido("cp", id); codigo != 0 {
+		return codigo
 	}
 	resto, destino, okDestino := extraerValor(resto, "--to")
 	if !okDestino || destino == "" {
@@ -931,6 +1123,9 @@ func commitCmd(args []string) int {
 	if !ok || id == "" {
 		return errorSimple("commit: falta --id")
 	}
+	if codigo := idInvalido("commit", id); codigo != 0 {
+		return codigo
+	}
 	_, repo, _ := extraerValor(resto, "--repo")
 	_, tag, _ := extraerValor(resto, "--tag")
 	_, mensaje, _ := extraerValor(resto, "--message")
@@ -949,6 +1144,9 @@ func pauseCmd(args []string, pausar bool) int {
 			return errorSimple("pause: falta --id")
 		}
 		return errorSimple("unpause: falta --id")
+	}
+	if codigo := idInvalido(accionPause(pausar), id); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -969,6 +1167,9 @@ func renameCmd(args []string) int {
 	if !ok || id == "" {
 		return errorSimple("rename: falta --id")
 	}
+	if codigo := idInvalido("rename", id); codigo != 0 {
+		return codigo
+	}
 	_, nombre, _ := extraerValor(resto, "--name")
 	if nombre == "" {
 		return errorSimple("rename: falta --name")
@@ -985,6 +1186,9 @@ func tagCmd(args []string) int {
 	_, id, ok := extraerValor(resto, "--id")
 	if !ok || id == "" {
 		return errorSimple("tag: falta --id")
+	}
+	if codigo := idInvalido("tag", id); codigo != 0 {
+		return codigo
 	}
 	_, repo, _ := extraerValor(resto, "--repo")
 	if repo == "" {
@@ -1017,11 +1221,37 @@ func errorSimple(msg string) int {
 	return 1
 }
 
+// idValido dice si un identificador se puede pasar a docker. Un id que
+// empieza con "-" lo interpretaría docker como un flag suyo (--privileged,
+// --user root) y no como el nombre de un contenedor (D12).
+func idValido(id string) bool {
+	return id != "" && !strings.HasPrefix(id, "-")
+}
+
+// accionPause devuelve el nombre del comando de pause o unpause.
+func accionPause(pausar bool) string {
+	if pausar {
+		return "pause"
+	}
+	return "unpause"
+}
+
+// idInvalido devuelve 1 si el id no se puede pasar a docker.
+func idInvalido(comando string, id string) int {
+	if idValido(id) {
+		return 0
+	}
+	return errorSimple(comando + ": el id no puede empezar con -")
+}
+
 // pullCmd descarga una imagen del registro.
 func pullCmd(args []string) int {
 	resto, jsonFlag := flagJSON(args)
 	if len(resto) == 0 {
 		return errorSimple("pull: falta el nombre de la imagen")
+	}
+	if codigo := idInvalido("pull", resto[0]); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1034,6 +1264,9 @@ func pushCmd(args []string) int {
 	resto, jsonFlag := flagJSON(args)
 	if len(resto) == 0 {
 		return errorSimple("push: falta el nombre de la imagen")
+	}
+	if codigo := idInvalido("push", resto[0]); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1067,6 +1300,9 @@ func saveCmd(args []string) int {
 	if !okImagen || !okDestino || imagen == "" || destino == "" {
 		return errorSimple("save: falta --image o --out")
 	}
+	if codigo := idInvalido("save", imagen); codigo != 0 {
+		return codigo
+	}
 	ctx, cancel := ctxDe()
 	defer cancel()
 	res, err := docker.SaveImage(ctx, runner, imagen, destino)
@@ -1079,6 +1315,9 @@ func loadCmd(args []string) int {
 	_, origen, ok := extraerValor(resto, "--in")
 	if !ok || origen == "" {
 		return errorSimple("load: falta --in")
+	}
+	if codigo := idInvalido("load", origen); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1094,6 +1333,9 @@ func exportCmd(args []string) int {
 	if !okID || !okDestino || id == "" || destino == "" {
 		return errorSimple("export: falta --id o --out")
 	}
+	if codigo := idInvalido("export", id); codigo != 0 {
+		return codigo
+	}
 	ctx, cancel := ctxDe()
 	defer cancel()
 	res, err := docker.ExportContainer(ctx, runner, id, destino)
@@ -1106,6 +1348,9 @@ func diffCmd(args []string) int {
 	_, id, ok := extraerValor(resto, "--id")
 	if !ok || id == "" {
 		return errorSimple("diff: falta --id")
+	}
+	if codigo := idInvalido("diff", id); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1146,6 +1391,9 @@ func portCmd(args []string) int {
 	resto, jsonFlag := flagJSON(args)
 	if len(resto) == 0 {
 		return errorSimple("port: falta el id o nombre del contenedor")
+	}
+	if codigo := idInvalido("port", resto[0]); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1211,6 +1459,9 @@ func volumeInspectCmd(args []string) int {
 	if len(resto) == 0 {
 		return errorSimple("volume-inspect: falta el nombre del volumen")
 	}
+	if codigo := idInvalido("volume-inspect", resto[0]); codigo != 0 {
+		return codigo
+	}
 	ctx, cancel := ctxDe()
 	defer cancel()
 	res, err := docker.RunCommand(ctx, runner, "volume", append([]string{"inspect"}, resto...))
@@ -1221,6 +1472,9 @@ func networkInspectCmd(args []string) int {
 	resto, jsonFlag := flagJSON(args)
 	if len(resto) == 0 {
 		return errorSimple("network-inspect: falta el nombre de la red")
+	}
+	if codigo := idInvalido("network-inspect", resto[0]); codigo != 0 {
+		return codigo
 	}
 	ctx, cancel := ctxDe()
 	defer cancel()
@@ -1246,8 +1500,12 @@ func volumeExportCmd(args []string) int {
 	if strings.HasPrefix(nombre, "-") || strings.HasPrefix(destino, "-") {
 		return errorSimple("volume-export: ni el nombre ni la salida pueden empezar con -")
 	}
-	carpeta, archivo := splitPath(destino)
-	ctx, cancel := ctxDe()
+	carpeta, archivo, err := rutaRespaldo(destino)
+	if err != nil {
+		return errorSimple("volume-export: " + err.Error())
+	}
+	// El respaldo de un volumen grande tarda más que el timeout general.
+	ctx, cancel := ctxRespaldo()
 	defer cancel()
 	comando := []string{
 		"--rm",
@@ -1273,8 +1531,12 @@ func volumeImportCmd(args []string) int {
 	if strings.HasPrefix(nombre, "-") || strings.HasPrefix(origen, "-") {
 		return errorSimple("volume-import: ni el nombre ni el origen pueden empezar con -")
 	}
-	carpeta, archivo := splitPath(origen)
-	ctx, cancel := ctxDe()
+	carpeta, archivo, err := rutaRespaldo(origen)
+	if err != nil {
+		return errorSimple("volume-import: " + err.Error())
+	}
+	// La restauración de un volumen grande tarda más que el timeout general.
+	ctx, cancel := ctxRespaldo()
 	defer cancel()
 	comando := []string{
 		"--rm",
@@ -1286,13 +1548,47 @@ func volumeImportCmd(args []string) int {
 	return salidaJSON(res, err, jsonFlag)
 }
 
-// splitPath separa una ruta absoluta en carpeta y nombre de archivo.
-func splitPath(ruta string) (string, string) {
-	i := strings.LastIndex(ruta, "/")
-	if i <= 0 {
-		return "/", ruta
+// rutaRespaldo resuelve la ruta de un archivo de respaldo a una ruta
+// absoluta y devuelve la carpeta que se monta y el nombre del archivo.
+//
+// Una ruta relativa se resuelve dentro del directorio actual y no puede
+// salirse de ahí. Antes, una ruta sin barra ("backup.tar.gz") devolvía la
+// raíz del sistema y el comando montaba "/" del host en el contenedor y
+// escribía el tarball en "/" (D4).
+func rutaRespaldo(ruta string) (string, string, error) {
+	if strings.TrimSpace(ruta) == "" {
+		return "", "", fmt.Errorf("la ruta está vacía")
 	}
-	return ruta[:i], ruta[i+1:]
+	absoluta := ruta
+	if !filepath.IsAbs(ruta) {
+		base, err := os.Getwd()
+		if err != nil {
+			return "", "", fmt.Errorf("no pude resolver el directorio actual: %w", err)
+		}
+		absoluta = filepath.Join(base, ruta)
+		if !dentroDe(base, absoluta) {
+			return "", "", fmt.Errorf("la ruta %q se sale del directorio actual", ruta)
+		}
+	}
+	absoluta = filepath.Clean(absoluta)
+	carpeta := filepath.Dir(absoluta)
+	archivo := filepath.Base(absoluta)
+	if carpeta == "/" {
+		return "", "", fmt.Errorf("la ruta %q no puede quedar en la raíz del sistema", ruta)
+	}
+	if archivo == "." || archivo == ".." || archivo == string(filepath.Separator) {
+		return "", "", fmt.Errorf("la ruta %q no es un archivo", ruta)
+	}
+	return carpeta, archivo, nil
+}
+
+// dentroDe dice si la ruta está dentro de la base.
+func dentroDe(base, ruta string) bool {
+	rel, err := filepath.Rel(base, ruta)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // ── logs en vivo ────────────────────────────────────────────────────────
